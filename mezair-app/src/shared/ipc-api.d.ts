@@ -86,6 +86,8 @@ import type {
   BaMessage,
   BaRepoLink,
   BaSession,
+  CheckoutOptions,
+  ThreadCheckoutInput,
   ChatAttachment,
   ChatFollowUpRequest,
   ChatFollowUpResult,
@@ -430,6 +432,8 @@ export interface MezairAPI {
     ): Promise<ChatThreadPullRequestLink[]>;
     refreshPullRequestLink(threadId: string, linkId: string): Promise<ChatThreadPullRequestLink>;
     invalidateThreadAccess(threadId: string): Promise<string[]>;
+    checkoutOptions: (repoId: string) => Promise<CheckoutOptions>;
+    selectCheckout: (input: ThreadCheckoutInput) => Promise<{ repo: RepoInfo; thread: ChatThread }>;
     startSession: (
       repoIds: string[],
       personaId: string,

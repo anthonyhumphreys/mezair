@@ -469,10 +469,22 @@ export async function addWorktree(
   await git.raw(['worktree', 'add', '-b', branchName, worktreePath, startPoint]);
 }
 
-export async function removeWorktree(repoPath: string, worktreePath: string): Promise<void> {
+/**
+ * Removes a linked worktree. By default Git refuses dirty or locked worktrees, so user work is
+ * kept. Pass `force` only for a disposable worktree Mezair created and filled itself.
+ */
+export async function removeWorktree(
+  repoPath: string,
+  worktreePath: string,
+  options: { force?: boolean } = {},
+): Promise<void> {
   const git = gitClient(repoPath);
   try {
-    await git.raw(['worktree', 'remove', worktreePath]);
+    await git.raw(
+      options.force
+        ? ['worktree', 'remove', '--force', worktreePath]
+        : ['worktree', 'remove', worktreePath],
+    );
   } finally {
     await git.raw(['worktree', 'prune']).catch(() => undefined);
   }

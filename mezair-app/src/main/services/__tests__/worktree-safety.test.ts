@@ -14,7 +14,7 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'anvil-worktrees-'));
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'mezair-worktrees-'));
   repo = path.join(root, 'source');
   fs.mkdirSync(repo);
   git(repo, 'init', '-b', 'main');
@@ -73,6 +73,14 @@ describe('worktree safety with real Git repositories', () => {
     await expect(removeWorktree(repo, locked)).rejects.toThrow();
     expect(fs.readFileSync(path.join(dirty, 'untracked.txt'), 'utf8')).toBe('keep this');
     expect(git(repo, 'worktree', 'list', '--porcelain')).toContain(locked);
+  });
+
+  it('force-removes a dirty disposable worktree only when asked', async () => {
+    const scratch = path.join(root, 'scratch');
+    await addWorktree(repo, scratch, 'feature/scratch');
+    fs.writeFileSync(path.join(scratch, 'build-output.txt'), 'generated');
+    await removeWorktree(repo, scratch, { force: true });
+    expect(fs.existsSync(scratch)).toBe(false);
   });
 });
 

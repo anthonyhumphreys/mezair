@@ -1,5 +1,6 @@
 import { assertWorkspaceRepositoryMembership } from './chat-session-scope.js';
 import { canonicalCheckpointPath, hasCheckpointRestore } from './chat-checkpoint-locks.js';
+import { validateThreadCheckouts } from './thread-checkout.service.js';
 import { listDojoPrices, recordDojoExecutionEvent } from './dojo-analytics.service.js';
 import { spawn } from 'node:child_process';
 import type { AgentProcess } from './agent-process.js';
@@ -48,7 +49,6 @@ import {
 } from './persona.service.js';
 import { getSettings } from './settings.service.js';
 import {
-  commonParentDir,
   handleCodexServerLine,
   type JsonRpcRequestId,
   sendCodexJsonRpc,
@@ -396,6 +396,21 @@ function acpProcessLabel(provider: ManagedSession['provider']): string {
  * Start a new Codex app-server session for a repo + persona combo.
  * Protocol: initialize → thread/start → turn/start for each message.
  */
+const startingThreads = new Set<string>();
+
+export function hasActiveThreadSession(threadId: string): boolean {
+  return (
+    startingThreads.has(threadId) ||
+    [...sessions.values()].some((session) => session.appThreadId === threadId)
+  );
+}
+
+export function hasActiveSessionAtPath(repoPath: string): boolean {
+  // Session paths are canonical (symlinks resolved), so compare like with like.
+  const target = canonicalCheckpointPath(repoPath);
+  return [...sessions.values()].some((session) => session.repoPaths.includes(target));
+}
+
 export async function startSession(
   repoPaths: string[],
   repoIds: string[],
@@ -405,8 +420,38 @@ export async function startSession(
 ): Promise<CodexSession> {
   if (repoIds.length > 0 && repoPaths.length !== repoIds.length)
     throw new Error('A session repository is unavailable. Reconnect it before starting.');
+  const threadId = options?.threadId;
+  // Capture the access fence before any await, so a change during checkout validation is caught too.
+  const assertStartAccess = captureThreadAccessFence(threadId);
+  if (threadId && hasActiveThreadSession(threadId)) {
+    throw new Error('This thread already has an active session. Reopen it to continue.');
+  }
+  if (threadId) startingThreads.add(threadId);
+  try {
+    // Temporary chats have no stored thread or repositories, so there is no checkout to check.
+    if (threadId && !options?.temporaryChat) await validateThreadCheckouts(threadId, repoIds);
+    return await startManagedSession(
+      repoPaths,
+      repoIds,
+      personaId,
+      assertStartAccess,
+      options,
+      runtime,
+    );
+  } finally {
+    if (threadId) startingThreads.delete(threadId);
+  }
+}
+
+async function startManagedSession(
+  repoPaths: string[],
+  repoIds: string[],
+  personaId: string,
+  assertStartAccess: () => void,
+  options?: ChatStartOptions,
+  runtime?: RemoteSessionRuntimeOptions,
+): Promise<CodexSession> {
   const id = randomUUID();
-  const assertStartAccess = captureThreadAccessFence(options?.threadId);
   const settings = getSettings();
   const agentProvider = runtime?.provider ?? options?.provider ?? settings.llmProvider;
   const appThread = options?.threadId ? getChatThread(options.threadId) : null;
@@ -487,7 +532,12 @@ export async function startSession(
       ? buildScaffoldSystemPrompt(personaId, options.scaffold.rootPath)
       : personaId === 'design'
         ? buildDesignSystemPrompt(repoIds, options?.designMode ?? 'design', options?.figmaContext)
-        : buildSystemPrompt(personaId, repoIds, options?.workspace?.workspaceId);
+        : buildSystemPrompt(
+            personaId,
+            repoIds,
+            options?.workspace?.workspaceId,
+            Object.fromEntries(repoIds.map((id, index) => [id, repoPaths[index]])),
+          );
   const cwd = resolveSessionCwd(repoPaths, options, app.getPath('userData'));
 
   // Build environment — allowlisted, never a full process.env copy
@@ -821,6 +871,8 @@ export async function sendMessage(
 
     // Wait for thread to be ready before sending
     await session.threadReady;
+    if (session.appThreadId && !session.temporaryChat)
+      await validateThreadCheckouts(session.appThreadId);
     assertSessionActive(session);
     if (prepare && (await prepare())) return;
     assertSessionRepositoryScope(session);
@@ -997,7 +1049,11 @@ export async function sendMessage(
           input: buildUserInput(providerMessage, attachments),
           approvalPolicy: codexPolicy.approvalPolicy,
           approvalsReviewer: profile === 'auto-review' ? 'auto_review' : 'user',
-          sandboxPolicy: sandboxModeToTurnPolicy(codexPolicy.sandbox, session.cwd),
+          sandboxPolicy: sandboxModeToTurnPolicy(
+            codexPolicy.sandbox,
+            session.cwd,
+            session.repoPaths,
+          ),
           model,
           ...(options?.serviceTier !== undefined ? { serviceTier: options.serviceTier } : {}),
           ...(effort ? { effort } : {}),
@@ -2227,8 +2283,8 @@ export function resolveSessionCwd(
     return mkdtempSync(path.join(os.tmpdir(), 'mezair-temporary-chat-'));
   }
   if (options?.scaffold?.rootPath) return options.scaffold.rootPath;
+  if (repoPaths.length > 0) return repoPaths[0];
   if (options?.workspace?.cwd) return options.workspace.cwd;
-  if (repoPaths.length > 0) return commonParentDir(repoPaths);
   if (options?.workspace?.workspaceId) {
     const workspaceId = options.workspace.workspaceId;
     if (!/^[a-zA-Z0-9_-]+$/.test(workspaceId)) {
@@ -3021,6 +3077,7 @@ export function resolvePersonaCodexPolicy(
 function sandboxModeToTurnPolicy(
   mode: 'read-only' | 'workspace-write' | 'danger-full-access',
   cwd: string,
+  repoPaths: string[] = [],
 ): Record<string, unknown> {
   switch (mode) {
     case 'danger-full-access':
@@ -3031,7 +3088,7 @@ function sandboxModeToTurnPolicy(
     default:
       return {
         type: 'workspaceWrite',
-        writableRoots: [cwd],
+        writableRoots: repoPaths.length > 0 ? repoPaths : [cwd],
         networkAccess: false,
         excludeTmpdirEnvVar: false,
         excludeSlashTmp: false,

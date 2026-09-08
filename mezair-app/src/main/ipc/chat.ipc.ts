@@ -14,6 +14,11 @@ import {
   assertReviewRepairForkAllowed,
   resolveReviewRepairPaths,
 } from '../services/change-review.service.js';
+import {
+  listCheckoutOptions,
+  selectThreadCheckout,
+  copyThreadCheckouts,
+} from '../services/thread-checkout.service.js';
 import { ipcMain } from 'electron';
 import { loadChatHistoryPage } from '../services/chat-history-page.service.js';
 import type { ChatHistoryPageRequest } from '../../shared/history-pages.js';
@@ -53,6 +58,7 @@ import type {
 import { getDb } from '../db/database.js';
 import {
   startSession,
+  hasActiveThreadSession,
   sendMessage,
   steerTurn,
   followUpTurn,
@@ -71,7 +77,6 @@ import {
   assertCodexSessionScope,
   isTemporaryChatSession,
   stopAllSessions,
-  getSessionForRepo,
   listActiveCodexSessions,
   resolveApproval,
   resolveInputRequest,
@@ -399,6 +404,19 @@ export function registerChatHandlers(): void {
   ipcMain.handle('chat:refresh-pull-request-link', (_event, threadId: string, linkId: string) =>
     refreshThreadPullRequest(threadId, linkId),
   );
+  ipcMain.handle('chat:checkout-options', (_event, repoId: string) => listCheckoutOptions(repoId));
+  ipcMain.handle(
+    'chat:select-checkout',
+    async (_event, input: import('../../shared/types.js').ThreadCheckoutInput) => {
+      if (hasActiveThreadSession(input.threadId)) {
+        throw new Error(
+          'This thread has an active session. Start a new thread to choose another checkout.',
+        );
+      }
+      const repo = await selectThreadCheckout(input);
+      return { repo, thread: updateChatThread(input.threadId, {})! };
+    },
+  );
   ipcMain.handle(
     'chat:start-session',
     async (
@@ -682,9 +700,9 @@ export function registerChatHandlers(): void {
     async (_event, sourceThreadId: string, targetThreadId: string): Promise<ChatThread | null> => {
       assertReviewRepairForkAllowed(sourceThreadId);
       assertReviewRepairForkAllowed(targetThreadId);
+      copyThreadCheckouts(sourceThreadId, targetThreadId);
       const sourceBinding = getChatThreadProviderBinding(sourceThreadId);
-      if (!sourceBinding) return null;
-
+      if (!sourceBinding) return updateChatThread(targetThreadId, {});
       const targetThread = updateChatThread(targetThreadId, {});
       if (!targetThread) return null;
 
@@ -781,12 +799,6 @@ export function registerChatHandlers(): void {
   ipcMain.handle(
     'chat:switch-persona',
     async (_event, repoId: string, personaId: string): Promise<CodexSession> => {
-      // Kill existing session for this repo
-      const existing = getSessionForRepo(repoId);
-      if (existing) {
-        stopSession(existing.id);
-      }
-
       // Get repo path
       const db = getDb();
       const repoRow = db.prepare('SELECT path FROM repos WHERE id = ?').get(repoId) as

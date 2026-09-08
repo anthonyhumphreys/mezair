@@ -483,7 +483,9 @@ async function runReviewVerification(opts: {
     });
   } finally {
     if (!keepWorktree) {
-      await removeWorktree(repoPath, worktreePath).catch(() => {
+      // The verification worktree is Mezair's own disposable copy, left dirty by installs and
+      // builds, so it is force-removed; a plain remove would leak one per review.
+      await removeWorktree(repoPath, worktreePath, { force: true }).catch(() => {
         keepWorktree = true;
       });
     }

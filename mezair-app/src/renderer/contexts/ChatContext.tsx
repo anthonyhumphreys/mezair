@@ -149,6 +149,9 @@ export interface ChatContextValue {
   shareArtifact: (artifactId: string) => Promise<ChatArtifact>;
   unshareArtifact: (artifactId: string) => Promise<ChatArtifact>;
   chatLayout: ChatLayout;
+  chooseCheckout: (
+    input: Omit<import('../../shared/types').ThreadCheckoutInput, 'threadId'>,
+  ) => Promise<void>;
   setActiveRepo: (repo: RepoInfo) => void;
   setActiveRepos: (repos: RepoInfo[]) => void;
   setSelectedGovernanceDocs: (docs: GovernanceDocument[]) => void;
@@ -874,6 +877,29 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [activePersona, applyThreadState, createThreadRecord],
   );
 
+  const chooseCheckout = useCallback(
+    async (input: Omit<import('../../shared/types').ThreadCheckoutInput, 'threadId'>) => {
+      if (busy || session) throw new Error('Start a new thread to choose another checkout.');
+      const thread = activeThreadRef.current ?? (await createThreadRecord());
+      if (!thread) throw new Error('Choose an assistant before selecting a checkout.');
+      const version = threadLoadVersionRef.current;
+      setBusy(true);
+      try {
+        const result = await window.mezair.chat.selectCheckout({ ...input, threadId: thread.id });
+        await refreshWorkspaces();
+        if (threadLoadVersionRef.current !== version) return;
+        applyThreadState(result.thread);
+        setActiveReposState((current) =>
+          current.map((repo) => (repo.id === input.repoId ? result.repo : repo)),
+        );
+        setActiveRepoState((current) => (current?.id === input.repoId ? result.repo : current));
+      } finally {
+        if (threadLoadVersionRef.current === version) setBusy(false);
+      }
+    },
+    [busy, session, createThreadRecord, refreshWorkspaces, applyThreadState],
+  );
+
   const renameThread = useCallback(
     async (threadId: string, title: string) => {
       const updated = await window.mezair.chat.updateThread(threadId, {
@@ -1328,6 +1354,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const threadRepos = activeThread.repoIds
         .map((repoId) => repos.find((repo) => repo.id === repoId))
         .filter((repo): repo is RepoInfo => Boolean(repo));
+      if (threadRepos.length !== activeThread.repoIds.length) {
+        setActiveReposState([]);
+        setActiveRepoState(null);
+        setError(
+          'A repository for this thread is unavailable. Reconnect its checkout before continuing.',
+        );
+        return;
+      }
       if (threadRepos.length > 0) {
         const nextPrimary =
           threadRepos.find((repo) => repo.id === activeThread.activeRepoId) ??
@@ -4050,6 +4084,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     stopSession: stopSessionLive,
     invalidateThreadAccess: stopThreadLiveSession,
     startNewSession,
+    chooseCheckout,
     ensureChatThread,
     loadHistory: loadHistoryFn,
     clearHistory: clearHistoryFn,

@@ -174,6 +174,10 @@ vi.mock('../llm-gateway-runtime.service.js', () => ({
   writeGatewayCodexCatalog: vi.fn(async () => []),
 }));
 vi.mock('../codex-runtime.service.js', () => ({ resolveCodexRuntime: async () => '/bin/codex' }));
+// Thread checkout binding reads the database; these tests cover session behaviour, not checkouts.
+vi.mock('../thread-checkout.service.js', () => ({
+  validateThreadCheckouts: async () => undefined,
+}));
 
 import { acquireCheckpointPaths, canonicalCheckpointPath } from '../chat-checkpoint-locks.js';
 import { spawn } from 'node:child_process';

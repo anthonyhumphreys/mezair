@@ -8,6 +8,7 @@ import { ChatTranscript } from '../ChatTranscript';
 import { composeChatTurns } from '../chat-turns';
 import { chatAccessOptionsForProvider } from '../thread-access';
 import { ChatInteractionPreview } from './ChatInteractionPreview';
+import { SHOWCASE_EVENTS, SHOWCASE_TASK } from './retry-workflow-fixture';
 
 const providers: AgentProvider[] = ['codex', 'openai', 'azure', 'llmgateway', 'cursor', 'devin'];
 const states = [
@@ -55,59 +56,6 @@ const LIVE_STEPS: LiveStep[] = [
     filePath: 'src/retry.ts',
     diff: '@@ -1 +1 @@\n-export const MAX_ATTEMPTS = 3;\n+export const MAX_ATTEMPTS = 3 as const;',
   }),
-];
-
-const SHOWCASE_TASK =
-  'Checkout retries give up too early on flaky mobile networks. Raise the limit to 5, keep the backoff, and add a test that proves the fifth attempt runs.';
-
-/** A complete, realistic turn for screenshots: reproduce, fix, verify. */
-const SHOWCASE_EVENTS: CodexEvent[] = [
-  {
-    type: 'tool_call',
-    itemId: 'show-read',
-    toolName: 'read_file',
-    toolStatus: 'completed',
-    toolInput: { path: 'src/lib/retry.ts' },
-    toolOutput: "import { sleep } from './time';\n\nexport const MAX_ATTEMPTS = 3;",
-  },
-  {
-    type: 'tool_call',
-    itemId: 'show-search',
-    toolName: 'search',
-    toolStatus: 'completed',
-    toolInput: { query: 'withRetry(' },
-    toolOutput: 'src/checkout/submit.ts:14\nsrc/search/client.ts:9',
-  },
-  {
-    type: 'file_edit',
-    itemId: 'show-test-edit',
-    filePath: 'test/retry.test.ts',
-    diff: "@@ -8,3 +8,12 @@\n   });\n+\n+  it('retries five times before giving up', async () => {\n+    let calls = 0;\n+    const flaky = async () => {\n+      calls += 1;\n+      if (calls < 5) throw new Error('ECONNRESET');\n+      return 'ok';\n+    };\n+    await expect(withRetry(flaky)).resolves.toBe('ok');\n+  });",
-  },
-  {
-    type: 'command_exec',
-    itemId: 'show-red',
-    command: 'pnpm test -- retry',
-    output:
-      ' FAIL  test/retry.test.ts > withRetry > retries five times before giving up\nError: ECONNRESET\n Tests  1 failed | 1 passed (2)',
-    exitCode: 1,
-    toolStatus: 'failed',
-  },
-  {
-    type: 'file_edit',
-    itemId: 'show-fix',
-    filePath: 'src/lib/retry.ts',
-    diff: "@@ -1,4 +1,4 @@\n import { sleep } from './time';\n \n-export const MAX_ATTEMPTS = 3;\n+export const MAX_ATTEMPTS = 5;",
-  },
-  {
-    type: 'command_exec',
-    itemId: 'show-green',
-    command: 'pnpm test',
-    output:
-      ' ✓ test/retry.test.ts (2)\n ✓ test/cart.test.ts (7)\n ✓ test/address.test.ts (5)\n Tests  14 passed (14)',
-    exitCode: 0,
-    toolStatus: 'completed',
-  },
 ];
 
 /** Development-only fixtures rendered with the real Electron shell and preload. */

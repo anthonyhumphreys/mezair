@@ -175,15 +175,7 @@ html:has(.cine) {
   }
 }
 
-/* --- Reel controls ----------------------------------------------------------- */
-
-.cine .reel {
-  margin-top: 1rem;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 0.75rem;
-}
+/* --- Mesh chapter controls --------------------------------------------------- */
 
 .cine .reel-tabs {
   display: grid;
@@ -1086,188 +1078,57 @@ html:has(.cine) {
   line-height: 1.5;
 }
 
-/* The hero reel: real captures crossfading inside one 16:10 frame. */
-.cine .reel-frame {
-  position: relative;
-  aspect-ratio: 16 / 10;
-  overflow: hidden;
-  border: 1px solid oklch(var(--artifact-line) / 0.8);
-  border-radius: 16px;
-  background: oklch(0.155 0.03 266);
-  box-shadow:
-    0 1px 0 oklch(1 0 0 / 0.07) inset,
-    0 70px 140px -50px oklch(0.03 0.02 265 / 0.98),
-    0 30px 50px -30px oklch(0.04 0.02 265 / 0.85);
+/* --- A single request-to-review workflow -------------------------------------------- */
+
+.cine .product-workflow {
+  max-width: 68.75rem;
+  margin-inline: auto;
 }
 
-.cine .reel-slide {
-  position: absolute;
-  inset: 0;
+.cine .workflow-steps {
   display: grid;
-  place-items: center;
-  opacity: 0;
-  transform: scale(1.012);
-  filter: blur(6px);
-  transition:
-    opacity 700ms var(--cine-ease),
-    transform 900ms var(--cine-ease),
-    filter 700ms var(--cine-ease);
+  gap: 1.5rem 2.5rem;
+  margin-bottom: 2rem;
+  text-align: left;
 }
 
-.cine .reel-slide[data-active="true"] {
-  opacity: 1;
-  transform: none;
-  filter: none;
+.cine .workflow-steps li {
+  border-top: 1px solid oklch(var(--border));
+  padding-top: 1rem;
 }
 
-.cine .reel-slide img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top left;
+.cine .workflow-steps h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
-.cine .reel-slide[data-fit="panel"] img {
-  width: auto;
-  max-width: 72%;
-  height: auto;
-  max-height: 84%;
-  object-fit: contain;
-  filter: drop-shadow(0 30px 50px oklch(0.03 0.02 265 / 0.75));
-}
-
-/* Scroll-linked settle: the projected window tilts up into place. */
-@supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) {
-    .cine .cine-tilt {
-      animation: cine-tilt linear both;
-      animation-timeline: view();
-      animation-range: entry 0% cover 42%;
-      transform-origin: 50% 100%;
-    }
-  }
-}
-
-@keyframes cine-tilt {
-  from {
-    transform: perspective(1800px) rotateX(14deg) scale(0.94);
-  }
-  to {
-    transform: none;
-  }
-}
-
-/* --- Use cases: sticky stage with real captures ----------------------------------- */
-
-.cine .uses {
-  display: grid;
-  gap: 3.5rem;
-}
-
-.cine .use {
-  display: grid;
-  gap: 1.25rem;
-}
-
-.cine .use-title {
-  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
-  font-variation-settings: "wdth" 112;
-  font-weight: 700;
-  font-size: clamp(1.5rem, 1.2rem + 1vw, 2.05rem);
-  line-height: 1.08;
-  letter-spacing: -0.022em;
-}
-
-.cine .use-body {
-  margin-top: 0.75rem;
-  max-width: 44ch;
+.cine .workflow-steps p {
+  max-width: 42ch;
+  margin-top: 0.5rem;
   color: oklch(var(--muted-foreground));
-  font-size: 1.0625rem;
+  font-size: 0.9375rem;
   line-height: 1.6;
 }
 
-.cine .use-meta {
-  margin-top: 1rem;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 1rem;
-  font-size: 0.875rem;
-  color: oklch(var(--muted-foreground));
-}
-
-.cine .use-meta code {
-  border: 1px solid oklch(var(--border));
-  border-radius: 6px;
-  background: oklch(var(--artifact-bg));
-  padding: 0.1rem 0.45rem;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.78rem;
-  color: oklch(var(--foreground));
-}
-
-.cine .use-inline-shot {
+.cine .workflow-shot picture {
   display: block;
 }
 
-.cine .uses-stage {
-  display: none;
+.cine .workflow-caption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+  margin-top: 1rem;
+  color: oklch(var(--muted-foreground));
+  font-size: 0.875rem;
+  line-height: 1.6;
 }
 
-@media (min-width: 1024px) {
-  .cine .uses-wrap {
-    display: grid;
-    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-    gap: 4rem;
-  }
-
-  .cine .uses {
-    gap: 0;
-  }
-
-  .cine .use {
-    min-height: 72vh;
-    align-content: center;
-    padding-block: 2rem;
-    opacity: 0.36;
-    transition: opacity 500ms ease;
-  }
-
-  .cine .use[data-active="true"] {
-    opacity: 1;
-  }
-
-  .cine .use-inline-shot {
-    display: none;
-  }
-
-  .cine .uses-stage {
-    position: sticky;
-    top: calc(50vh - min(30vw, 22rem) * 0.5 - 1rem);
-    display: block;
-    height: fit-content;
-    margin-block: 12vh;
-  }
-
-  .cine .uses-stage-frame {
-    position: relative;
-    aspect-ratio: 16 / 11;
-    overflow: hidden;
-    border: 1px solid oklch(var(--artifact-line) / 0.8);
-    border-radius: 16px;
-    background: oklch(0.155 0.03 266);
-    box-shadow:
-      0 1px 0 oklch(1 0 0 / 0.07) inset,
-      0 60px 120px -50px oklch(0.03 0.02 265 / 0.98);
-  }
-
-  .cine .uses-stage .reel-slide img {
-    object-position: top left;
-  }
-
-  .cine .uses-stage .reel-slide[data-fit="panel"] img {
-    max-width: 84%;
-    max-height: 86%;
+@media (min-width: 640px) {
+  .cine .workflow-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -1376,14 +1237,7 @@ html:has(.cine) {
     animation: none;
   }
 
-  .cine .reel-bar,
-  .cine .reel-slide,
-  .cine .use {
+  .cine .reel-bar {
     transition: none;
-  }
-
-  .cine .reel-slide {
-    filter: none;
-    transform: none;
   }
 }

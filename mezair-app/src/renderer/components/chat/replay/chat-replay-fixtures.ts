@@ -5,6 +5,7 @@ import type {
   ChatMessage,
   CodexEvent,
 } from '../../../../shared/types';
+import { RETRY_WORKFLOW_SCENARIO } from './retry-workflow-fixture';
 import { SURFACE_REPLAY_SCENARIOS } from './chat-replay-surface-fixtures';
 
 export const CHAT_REPLAY_PROVENANCE =
@@ -503,6 +504,7 @@ function makeLargeTranscript(): ChatReplayScenario {
 
 export const CHAT_REPLAY_SCENARIOS: ChatReplayScenario[] = [
   streamingScenario,
+  RETRY_WORKFLOW_SCENARIO,
   agentScenario,
   recoveryScenario,
   artifactReviewScenario,

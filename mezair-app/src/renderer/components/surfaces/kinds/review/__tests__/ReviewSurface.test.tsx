@@ -18,7 +18,7 @@ function props(data = reviewData(), streaming = false): SurfaceViewProps {
 describe('Review inline surface', () => {
   const { Inline, Stage } = reviewSurfaceView;
 
-  it('renders the verdict line, risks, chapters, grouped findings and footer', () => {
+  it('leads with verdict and findings, keeping explanation and secondary actions in a closed disclosure', () => {
     const markup = renderToStaticMarkup(<Inline {...props()} />);
     expect(markup).toContain('Ship after 1 fix');
     expect(markup).toContain('Good to merge once the cache write is locked.');
@@ -35,7 +35,16 @@ describe('Review inline surface', () => {
     expect(markup).toContain('Ask agent to fix selected');
     expect(markup).toContain('Accept all');
     expect(markup).toContain('Create work items');
-    expect(markup).toContain('Open stage');
+    expect(markup).toContain('Open review');
+    expect(markup.indexOf('Cache write races the rotation')).toBeLessThan(
+      markup.indexOf('hidden=""'),
+    );
+    const disclosure = markup.slice(markup.indexOf('hidden=""'));
+    expect(markup).toContain('Review details');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(disclosure).toContain('Token refresh moves to the gateway');
+    expect(disclosure).toContain('Accept all');
+    expect(markup).not.toContain('aria-label="Accept f1"');
     expect(markup).not.toContain('Post to PR');
   });
 

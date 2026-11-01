@@ -34,3 +34,16 @@ body:has([data-validation-preview]),
   min-height: 100%;
   overflow: visible;
 }
+
+/* Capture only the production transcript; fixture controls never ship in product images. */
+[data-replay-capture] > header,
+[data-replay-capture] aside,
+[data-replay-capture] [data-replay-composer] {
+  display: none;
+}
+[data-replay-capture] > div {
+  grid-template-columns: minmax(0, 1fr);
+}
+[data-replay-capture] > div > section {
+  border: 0;
+}

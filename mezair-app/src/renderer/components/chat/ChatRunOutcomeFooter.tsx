@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import {
+  ChevronRight,
   AlertTriangle,
   CheckCircle2,
   CircleDashed,
@@ -60,6 +61,29 @@ export function ChatRunOutcomeFooter({
     }));
   }, [preferredRepoId, repos, summary.changes]);
 
+  if (summary.state === 'completed') {
+    const failed = summary.commands.filter(
+      (command) => typeof command.exitCode === 'number' && command.exitCode !== 0,
+    ).length;
+    return (
+      <details
+        className="message-bubble group/command-history text-xs text-text-secondary"
+        aria-label="Observed command results"
+      >
+        <summary className="flex w-fit cursor-pointer list-none items-center gap-2 rounded-sm py-1 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 [&::-webkit-details-marker]:hidden">
+          <ChevronRight
+            size={13}
+            aria-hidden="true"
+            className="transition-transform group-open/command-history:rotate-90 motion-reduce:transition-none"
+          />
+          Command history · {failed} failed command{failed === 1 ? '' : 's'}
+        </summary>
+        <p className="mt-2">{summary.nextAction}</p>
+        <CommandResults commands={summary.commands} />
+      </details>
+    );
+  }
+
   return (
     <section
       data-testid="chat-run-outcome-footer"
@@ -111,38 +135,44 @@ export function ChatRunOutcomeFooter({
               <Terminal size={12} aria-hidden="true" />
               Observed commands ({summary.commands.length})
             </summary>
-            <ul className="mt-2 space-y-2 border-l border-border-subtle pl-3">
-              {summary.commands.map((command, index) => (
-                <li key={`${command.command}-${index}`} className="min-w-0">
-                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <code className="min-w-0 max-w-full break-all font-mono text-xs text-text-secondary">
-                      {command.command}
-                    </code>
-                    <span
-                      className={`shrink-0 text-xs ${
-                        command.exitCode === 0
-                          ? 'text-success'
-                          : typeof command.exitCode === 'number'
-                            ? 'text-error'
-                            : 'text-text-tertiary'
-                      }`}
-                    >
-                      {typeof command.exitCode === 'number'
-                        ? `exit ${command.exitCode}`
-                        : 'no exit code reported'}
-                    </span>
-                  </div>
-                  {command.output && (
-                    <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bg-secondary/55 px-2 py-1.5 font-mono text-xs leading-4 text-text-tertiary">
-                      {command.output}
-                    </pre>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <CommandResults commands={summary.commands} />
           </details>
         )}
       </div>
     </section>
+  );
+}
+
+function CommandResults({ commands }: { commands: ChatRunSummary['commands'] }) {
+  return (
+    <ul className="mt-2 space-y-2 border-l border-border-subtle pl-3">
+      {commands.map((command, index) => (
+        <li key={`${command.command}-${index}`} className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <code className="min-w-0 max-w-full break-all font-mono text-xs text-text-secondary">
+              {command.command}
+            </code>
+            <span
+              className={`shrink-0 text-xs ${
+                command.exitCode === 0
+                  ? 'text-success'
+                  : typeof command.exitCode === 'number'
+                    ? 'text-error'
+                    : 'text-text-tertiary'
+              }`}
+            >
+              {typeof command.exitCode === 'number'
+                ? `exit ${command.exitCode}`
+                : 'no exit code reported'}
+            </span>
+          </div>
+          {command.output && (
+            <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bg-secondary/55 px-2 py-1.5 font-mono text-xs leading-4 text-text-tertiary">
+              {command.output}
+            </pre>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }

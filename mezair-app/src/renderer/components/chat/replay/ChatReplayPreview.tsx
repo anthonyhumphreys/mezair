@@ -123,11 +123,11 @@ function formatMilliseconds(value: number | null): string {
 }
 
 export function ChatReplayPreview() {
-  const [scenarioId, setScenarioId] = useState(CHAT_REPLAY_SCENARIOS[0].id);
-  const [cursor, setCursor] = useState(-1);
-  const [selectedThreadId, setSelectedThreadId] = useState(
-    CHAT_REPLAY_SCENARIOS[0].initialThreadId,
-  );
+  const captureScenario = new URLSearchParams(window.location.search).get('capture');
+  const initialScenario = getChatReplayScenario(captureScenario ?? CHAT_REPLAY_SCENARIOS[0].id);
+  const [scenarioId, setScenarioId] = useState(initialScenario.id);
+  const [cursor, setCursor] = useState(captureScenario ? initialScenario.steps.length - 1 : -1);
+  const [selectedThreadId, setSelectedThreadId] = useState(initialScenario.initialThreadId);
   const [localMessagesByThread, setLocalMessagesByThread] = useState<Record<string, ChatMessage[]>>(
     {},
   );
@@ -485,7 +485,10 @@ export function ChatReplayPreview() {
   const scenarioProgress = `${Math.min(activeStep, scenario.steps.length)} / ${scenario.steps.length}`;
 
   return (
-    <main className="flex h-screen min-h-[640px] flex-col bg-bg-primary text-text-primary">
+    <main
+      data-replay-capture={captureScenario ? true : undefined}
+      className="flex h-screen min-h-[640px] flex-col bg-bg-primary text-text-primary"
+    >
       <header className="flex shrink-0 items-center justify-between gap-4 border-b border-border bg-bg-secondary px-5 py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -599,6 +602,7 @@ export function ChatReplayPreview() {
           </div>
 
           <div
+            data-replay-composer
             onInputCapture={onComposerInputCapture}
             className="shrink-0 border-t border-border bg-bg-secondary px-4 pb-4 pt-3"
           >

@@ -2,9 +2,7 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import { ArrowRight, Download, Github } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { MeshStage } from "@/components/marketing/mesh-stage";
-import { ProductReel } from "@/components/marketing/product-reel";
-import { UseCases, type UseCase } from "@/components/marketing/use-cases";
+import { ProductWorkflow } from "@/components/marketing/product-workflow";
 import { AnimatedMark } from "@/components/site/animated-mark";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
@@ -18,58 +16,6 @@ import {
   latestDesktopDmgUrl,
   releasesUrl
 } from "@/lib/site";
-
-const useCases: UseCase[] = [
-  {
-    id: "bug",
-    title: "Fix a bug while you work on something else",
-    body: "Describe it. The agent writes a failing test, fixes the bug and runs the suite.",
-    shot: "desktop-run-steps",
-    detail: "pnpm test -- retry",
-    link: { label: "Agent workflows", href: "/docs/desktop/agent-workflows" }
-  },
-  {
-    id: "review",
-    title: "Review your changes before you commit",
-    body: "Get a review in the thread, with findings you can send straight back to the agent.",
-    shot: "surface-review",
-    detail: "Review my uncommitted changes.",
-    link: { label: "Change review", href: "/docs/desktop/change-review" }
-  },
-  {
-    id: "audit",
-    title: "Audit a repository you're new to",
-    body: "Security and dependency issues, each with a file and line.",
-    shot: "surface-findings",
-    detail: "Run a security audit of this repo.",
-    link: { label: "Security and review", href: "/docs/desktop/security-and-review" }
-  },
-  {
-    id: "ci",
-    title: "Find out why CI is slow",
-    body: "See the pipeline as a graph, with the slow and failing steps marked.",
-    shot: "surface-pipeline",
-    detail: "Why is CI slow?",
-    link: { label: "Assurance tools", href: "/docs/desktop/assurance-tools" }
-  },
-  {
-    id: "factory",
-    title: "Turn labelled issues into merged pull requests",
-    body: "A software factory works through labelled GitHub issues and stops for approval where you want it to.",
-    shot: "factories-line",
-    status: featureBeta.label,
-    link: { label: "Software factories", href: "/docs/desktop/software-factories" }
-  },
-  {
-    id: "mesh",
-    title: "Run a job on another of your machines",
-    body: "Send a job to your desktop or a server. It runs there and streams back.",
-    shot: "mesh-jobs",
-    fit: "panel",
-    detail: "start-session → studio-mac",
-    link: { label: "Mesh jobs", href: "/docs/sync/mesh-jobs" }
-  }
-];
 
 type Credit = { role: string; value: string; note?: string; href?: string };
 
@@ -190,7 +136,7 @@ export default function HomePage() {
               </p>
             </div>
             <div className="cine-stage">
-              <ProductReel />
+              <ProductWorkflow />
             </div>
           </div>
         </section>
@@ -203,17 +149,6 @@ export default function HomePage() {
                 <li key={provider}>{provider}</li>
               ))}
             </ul>
-          </div>
-        </section>
-
-        <section className="cine-section" aria-labelledby="uses-title">
-          <div className="page-shell">
-            <h2 id="uses-title" className="cine-h2 max-w-[17ch]">
-              What you can ask it to do
-            </h2>
-            <div className="mt-12 lg:mt-4">
-              <UseCases items={useCases} />
-            </div>
           </div>
         </section>
 
@@ -240,9 +175,6 @@ export default function HomePage() {
                   Free to self-host, £8.99 a month hosted. {hostedSignupNotice}
                 </p>
               </div>
-            </div>
-            <div className="cine-stage">
-              <MeshStage compact />
             </div>
           </div>
         </section>

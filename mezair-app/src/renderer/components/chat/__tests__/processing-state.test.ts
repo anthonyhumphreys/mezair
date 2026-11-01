@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { chatMessagesToEntries, upsertCommandEntry } from '../../../contexts/ChatContext';
 import { composeChatTurns, type ChatTurnWorkItem } from '../chat-turns';
 import { TurnWorkMessage } from '../ChatMessage';
+import { ProcessingCard } from '../ProcessingCard';
 import {
   countProcessingActions,
   getOperationStatus,
@@ -35,6 +36,33 @@ describe('processing evidence and rendering', () => {
     expect(getProcessingState({ items, busy: true, outcome: 'interrupted' })).toBe('stopped');
     expect(getProcessingState({ items: [], busy: false, outcome: 'inProgress' })).toBe('ended');
   });
+  it('keeps failed operations in expanded successful history without presenting them as a failed turn', () => {
+    const props = {
+      state: 'completed' as const,
+      detail: 'Completed pnpm test',
+      actions: 6,
+      failed: 1,
+      onToggle: () => undefined,
+      children: 'command history',
+    };
+    const collapsed = renderToStaticMarkup(
+      createElement(ProcessingCard, { ...props, expanded: false }),
+    );
+    expect(collapsed).toContain('Work completed');
+    expect(collapsed).not.toContain('1 failed');
+    const expanded = renderToStaticMarkup(
+      createElement(ProcessingCard, { ...props, expanded: true }),
+    );
+    expect(expanded).toContain('1 failed action during this run');
+    expect(expanded).toContain('command history');
+    for (const state of ['failed', 'ended', 'stopped', 'working', 'answering'] as const) {
+      const unsettled = renderToStaticMarkup(
+        createElement(ProcessingCard, { ...props, state, expanded: false }),
+      );
+      expect(unsettled).toContain('1 failed');
+    }
+  });
+
   it('keeps interleaved commands separate by id and session while preserving output', () => {
     let entries = upsertCommandEntry([], {
       type: 'command_exec',

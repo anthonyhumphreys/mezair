@@ -34,10 +34,12 @@ export function ReviewVerdictLine({
   data,
   streaming,
   compact = false,
+  showFacts = true,
 }: {
   data: ReviewSurfaceData;
   streaming: boolean;
   compact?: boolean;
+  showFacts?: boolean;
 }) {
   const provisional = isProvisionalVerdict(data, streaming);
   const decision = data.verdict.decision;
@@ -74,7 +76,7 @@ export function ReviewVerdictLine({
             </>
           )}
         </p>
-        {compact ? null : <ReviewFacts data={data} className="mt-0.5" />}
+        {compact || !showFacts ? null : <ReviewFacts data={data} className="mt-0.5" />}
       </div>
     </div>
   );

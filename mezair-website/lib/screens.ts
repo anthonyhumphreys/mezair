@@ -15,6 +15,14 @@ type ScreenText = {
 };
 
 const text: Record<ScreenId, ScreenText> = {
+  "retry-workflow": {
+    alt: "A Mezair thread fixing a checkout retry limit: the request, six completed actions, a change from three attempts to five, 14 passing tests and an inline review with no findings. Review details, command history and the two changed files are available to expand.",
+    caption: "A retry fix, test results and review in one thread."
+  },
+  "retry-workflow-mobile": {
+    alt: "The same retry fix and review in Mezair's narrow thread layout: six completed actions, 14 passing tests and no review findings, with command history and changed files available to expand.",
+    caption: "The same workflow in a narrow thread."
+  },
   "desktop-run-complete": {
     alt: "Mezair Desktop in the Acme workspace. A Codex thread asked to raise the checkout retry limit to five. The run finished in six actions; the answer explains the change, notes that the fifth attempt waits 1.6 seconds, reports 14 passing tests and offers Review these changes for two edited files.",
     caption: "A finished run with the agent's answer and the two files it changed."
@@ -52,8 +60,8 @@ const text: Record<ScreenId, ScreenText> = {
     caption: "The connected backend and whether this device runs Mesh jobs."
   },
   "surface-review": {
-    alt: "An inline Review surface in a Mezair thread for a working tree: Blocked, with three risks and eight findings, the change explained in three chapters, and findings grouped by severity with Open actions.",
-    caption: "A review that blocks on three risks and explains the change in sections."
+    alt: "An inline Review surface in a Mezair thread for a working tree: a Blocked verdict followed by findings grouped by severity. Review details is collapsed; it contains the risks, chapter explanations and secondary actions.",
+    caption: "A review that leads with the verdict and findings, with supporting detail available on expansion."
   },
   "surface-findings": {
     alt: "A Findings surface from a security audit: one critical, one high, two medium and one low finding, each with a file and line, plus Ask agent to fix top 5.",

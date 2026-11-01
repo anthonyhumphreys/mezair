@@ -15,18 +15,17 @@ Mode: Persuade. Docs, account, workspace, auth and artifact routes are out of sc
 - Proof: real captures of Mezair Desktop with synthetic fixture content (Electron shell and the mezair-app replay harness; provenance in `public/screens/manifest.json`), plus labelled motion diagrams of Sync & Mesh whose states and ordering follow `cloud/contract`.
 
 ## Direction contract
-THESIS: The product is the projection. Each page opens on a lit, working Desktop capture in a dark room; copy is a title card, not the content. Refuses the long textual hero, the four-screen scroll tutorial and the icon-card feature grid.
+THESIS: Show one complete task clearly. The homepage pairs a short introduction with request → work → review and one readable production transcript capture. Preserve the dark palette, typography and mark; remove the screenshot tour and repeated demonstrations.
 OWN-WORLD: Desktop navy ground (oklch ~0.135 0.03 266), app windows as the only lit objects with a cool key light beneath, orange accent only for live/working state and primary action. Archivo wide heavy display, JetBrains Mono only for commands/paths/states. Credits-roll lists (role | value around a centre gutter) replace feature grids.
-STORY: See an agent take a task, work, get reviewed, and move machines; see what people hand to it; understand how Sync & Mesh behave; believe it runs locally on your accounts with honest limits; download or request beta.
-FIRST VIEWPORT: The painted horse-M, a short H1, a two-sentence lede and Download/Source actions, centred; the capture reel begins within the first viewport at 1440×900 with a four-chapter strip (Watch it work, Read the result, Review the change, Move machines). Do not add screenshot-production captions or links; maintenance instructions stay in the repository.
+STORY: Describe a retry fix, see the completed work and test results, then review the change in the same thread. Explain other capabilities and Sync briefly, with links to their full documentation. Download or request beta with honest limits.
+FIRST VIEWPORT: Painted horse-M, short H1, lede and Download/Source actions. Below them, three short workflow steps lead into one real transcript capture. Use a narrow capture of the same thread on phones so the product text remains readable.
 FORM: Cinematic projection room, selected by the user. Surface seed:9647261274d71f28; the user-pinned cinematic direction governs over generated alternatives.
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance.
 
 ## Signature interactions
 - The mark: one sumi-e entrance painted left to right (ground, one continuous stroke through tail and neck, foreleg as the brush passes the shoulder, drying ink), then a collected rise as one rigid body; replayable on press. A small rigid rise on hover or focus wherever the mark appears in `.mk-hover`.
-- The reel: a keyboard tablist of four real captures that autoplays while on screen with a filling progress line, stops on any user choice, pauses offscreen/hidden tab, and never autoplays under reduced motion. The frame tilts into place on scroll where supported.
-- The Mesh stage: one stage, four stories (Sync, Mesh job, LAN-first routes, Handoff) on a continuous clock with the same gating; each chapter has a text summary, a captioned current beat and the ordered beat list. /sync uses it as the hero; the homepage repeats it in the Sync section.
-- Use cases: a step list beside one sticky capture stage on wide screens; inline captures on narrow screens.
+- Homepage workflow: a static, ordered request → work → review sequence and one responsive capture. No autoplay, screenshot tabs or sticky use-case stage.
+- The Mesh stage remains on /sync, with chapter summaries, text beats, pause and reduced-motion support. The homepage links to it from a concise Sync section.
 
 ## Constraints
 - No drawn or composited product UI. Product images are real captures with fixture data; motion graphics are diagrams and say so.

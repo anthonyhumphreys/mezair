@@ -1,5 +1,5 @@
 import type { MouseEvent } from 'react';
-import { Check, MessageSquarePlus, RotateCcw, Wrench, X } from 'lucide-react';
+import { ChevronRight, Check, MessageSquarePlus, RotateCcw, Wrench, X } from 'lucide-react';
 import { formatFindingLocation } from '../../../../../shared/surfaces/kinds/review/model';
 import type { ReviewFinding } from '../../../../../shared/surfaces/kinds/review/types';
 import { IconButton, cx } from '../../../ui';
@@ -13,6 +13,8 @@ export interface ReviewFindingRowProps {
   /** Fade in as the agent streams findings (opacity only; none under reduced motion). */
   fadeIn?: boolean;
   dense?: boolean;
+  /** The inline severity group owns labels; detailed actions live in the workbench. */
+  grouped?: boolean;
   disabled?: boolean;
   onToggleSelected: (id: string, event: MouseEvent | null) => void;
   onOpen: (id: string, event: MouseEvent) => void;
@@ -26,6 +28,7 @@ export function ReviewFindingRow({
   focused = false,
   fadeIn = false,
   dense = false,
+  grouped = false,
   disabled = false,
   onToggleSelected,
   onOpen,
@@ -59,7 +62,9 @@ export function ReviewFindingRow({
           }
         }}
       />
-      <SeverityBadge severity={finding.severity} className="mt-0.5 w-[4.75rem]" />
+      {grouped ? null : (
+        <SeverityBadge severity={finding.severity} className="mt-0.5 w-[4.75rem]" />
+      )}
       <button
         type="button"
         className="min-w-0 flex-1 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
@@ -68,7 +73,8 @@ export function ReviewFindingRow({
       >
         <span
           className={cx(
-            'block truncate leading-snug',
+            'block leading-snug',
+            grouped ? 'break-words' : 'truncate',
             resolved
               ? 'text-text-tertiary line-through decoration-text-tertiary/60'
               : 'text-text-primary',
@@ -81,50 +87,58 @@ export function ReviewFindingRow({
           {location}
         </span>
       </button>
-      <StatusChip status={finding.status} className="mt-0.5" />
-      <div
-        className={cx(
-          'flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none',
-          focused && 'opacity-100',
-        )}
-      >
-        {finding.status === 'open' || finding.status === 'fix-requested' ? (
+      {grouped && finding.status === 'open' ? (
+        <span className="sr-only">Open</span>
+      ) : (
+        <StatusChip status={finding.status} className="mt-0.5" />
+      )}
+      {grouped ? (
+        <ChevronRight size={14} aria-hidden="true" className="mt-1 shrink-0 text-text-tertiary" />
+      ) : (
+        <div
+          className={cx(
+            'flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none',
+            focused && 'opacity-100',
+          )}
+        >
+          {finding.status === 'open' || finding.status === 'fix-requested' ? (
+            <IconButton
+              icon={Check}
+              label={`Accept ${finding.id}`}
+              disabled={disabled}
+              onClick={() => onAction('accept', [finding.id])}
+            />
+          ) : null}
+          {!resolved ? (
+            <IconButton
+              icon={Wrench}
+              label={`Ask the agent to fix ${finding.id}`}
+              disabled={disabled}
+              onClick={() => onAction('ask_fix', [finding.id])}
+            />
+          ) : null}
+          {finding.status !== 'dismissed' && finding.status !== 'fixed' ? (
+            <IconButton
+              icon={X}
+              label={`Dismiss ${finding.id}`}
+              disabled={disabled}
+              onClick={() => onAction('dismiss', [finding.id])}
+            />
+          ) : (
+            <IconButton
+              icon={RotateCcw}
+              label={`Reopen ${finding.id}`}
+              disabled={disabled}
+              onClick={() => onAction('reopen', [finding.id])}
+            />
+          )}
           <IconButton
-            icon={Check}
-            label={`Accept ${finding.id}`}
-            disabled={disabled}
-            onClick={() => onAction('accept', [finding.id])}
+            icon={MessageSquarePlus}
+            label={`Comment on ${finding.id}`}
+            onClick={() => onComment(finding)}
           />
-        ) : null}
-        {!resolved ? (
-          <IconButton
-            icon={Wrench}
-            label={`Ask the agent to fix ${finding.id}`}
-            disabled={disabled}
-            onClick={() => onAction('ask_fix', [finding.id])}
-          />
-        ) : null}
-        {finding.status !== 'dismissed' && finding.status !== 'fixed' ? (
-          <IconButton
-            icon={X}
-            label={`Dismiss ${finding.id}`}
-            disabled={disabled}
-            onClick={() => onAction('dismiss', [finding.id])}
-          />
-        ) : (
-          <IconButton
-            icon={RotateCcw}
-            label={`Reopen ${finding.id}`}
-            disabled={disabled}
-            onClick={() => onAction('reopen', [finding.id])}
-          />
-        )}
-        <IconButton
-          icon={MessageSquarePlus}
-          label={`Comment on ${finding.id}`}
-          onClick={() => onComment(finding)}
-        />
-      </div>
+        </div>
+      )}
     </li>
   );
 }

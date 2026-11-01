@@ -55,7 +55,7 @@
     "height": 996,
     "source": "replay",
     "route": "?mesh",
-    "fixture": "MeshPreview: Settings → Sync & Mesh, enrolled devices",
+    "fixture": "MeshPreview: Settings \u2192 Sync & Mesh, enrolled devices",
     "appCommit": "1e91d524",
     "capturedAt": "2026-10-31"
   },
@@ -85,7 +85,7 @@
     "height": 525,
     "source": "replay",
     "route": "?mesh",
-    "fixture": "MeshPreview: Settings → Sync & Mesh connection status",
+    "fixture": "MeshPreview: Settings \u2192 Sync & Mesh connection status",
     "appCommit": "1e91d524",
     "capturedAt": "2026-10-31"
   },
@@ -121,12 +121,35 @@
   },
   "surface-review": {
     "file": "/screens/surface-review.webp",
-    "width": 2278,
-    "height": 2024,
+    "width": 1100,
+    "height": 940,
     "source": "replay",
-    "route": "",
-    "fixture": "ChatReplayPreview surface-review-working-tree: Review surface for a working tree",
-    "appCommit": "1e91d524",
-    "capturedAt": "2026-10-31"
+    "route": "?capture=surface-review-working-tree",
+    "fixture": "ChatReplayPreview working tree review: verdict and findings first; risks, chapters and secondary actions under Review details",
+    "appCommit": "8b4f9bd6",
+    "appWorkingTree": true,
+    "capturedAt": "2026-11-01"
+  },
+  "retry-workflow": {
+    "file": "/screens/retry-workflow.webp",
+    "width": 1100,
+    "height": 560,
+    "source": "replay",
+    "route": "?capture=retry-workflow",
+    "fixture": "Retry workflow: production transcript and Review surface with synthetic task, commands, results and diff",
+    "appCommit": "8b4f9bd6",
+    "appWorkingTree": true,
+    "capturedAt": "2026-11-01"
+  },
+  "retry-workflow-mobile": {
+    "file": "/screens/retry-workflow-mobile.webp",
+    "width": 390,
+    "height": 820,
+    "source": "replay",
+    "route": "?capture=retry-workflow",
+    "fixture": "Retry workflow: production transcript and Review surface with synthetic task, commands, results and diff",
+    "appCommit": "8b4f9bd6",
+    "appWorkingTree": true,
+    "capturedAt": "2026-11-01"
   }
 }

@@ -215,7 +215,7 @@ Social cards cannot use the variable font, so `app/_og/fonts/` holds static Arch
 
 The shared shell is centered and capped at 76rem; cinematic stages use an 88rem shell. Both begin with 1.25rem horizontal padding and increase to 2rem at 640px. The spacing primitives above record repeated source distances, rather than implying a new global spacing scale.
 
-Marketing title rows stack, then become an 8:5 grid at 1024px. Stage spacing and section padding are fluid. The homepage opens on a centred title card (painted mark, H1, lede, actions) above a 16:10 reel of real captures; the Sync page and the homepage's Sync section use the Mesh stage; pricing uses one ruled plans board. Use cases pair a step list with one sticky capture stage from 1024px and stack each step with its own capture below it. The homepage credits form a role/value list around a center gutter from 768px; this is a specific authored pattern, not the alignment rule for every page.
+Marketing title rows stack, then become an 8:5 grid at 1024px. Stage spacing and section padding are fluid. The homepage opens on a centred title card (painted mark, H1, lede, actions), followed by three short steps and one real capture of a complete request-to-review workflow; the Sync page uses the Mesh stage; the homepage links to that explanation from a short Sync section; pricing uses one ruled plans board. The workflow steps use three columns from 640px and stack below that. A narrow capture of the same conversation replaces the desktop image below 640px, preserving legibility without a carousel or sticky stage. The homepage credits form a role/value list around a center gutter from 768px; this is a specific authored pattern, not the alignment rule for every page.
 
 The Mesh stage switches from its wide 1000×476 layout to a tall 400×720 layout when its own width drops below 620px, so labels stay legible on phones. Reel and stage chapter tabs are four across, and two by two below 480px. Plans use one column, two from 768px, and four from 1280px. Comparison and billing rows similarly gain columns at 768px.
 
@@ -223,7 +223,7 @@ The naming page uses the shared shell, a 1.2:1 introduction grid, a large center
 
 ## Elevation & Depth
 
-Reading surfaces rely primarily on tone and borders. Bounded artifacts and navigation overlays retain their existing local shadows. Capture frames (`.reel-frame`, `.shot`, the use-case stage) and the Mesh stage add a long, dark, offset shadow and a faint inset highlight; the cool radial key light places them in the room. The plans board uses a related long shadow. A contained surface gradient inside the Mesh stage provides lighting without introducing glass.
+Reading surfaces rely primarily on tone and borders. Bounded artifacts and navigation overlays retain their existing local shadows. Capture frames (`.shot`) and the Mesh stage add a long, dark, offset shadow and a faint inset highlight; the cool radial key light places them in the room. The plans board uses a related long shadow. A contained surface gradient inside the Mesh stage provides lighting without introducing glass.
 
 Exact shadow declarations are in the sidecar’s elevation extensions. Its component specimens carry the complete CSS that the frontmatter’s limited component schema cannot represent.
 
@@ -257,9 +257,9 @@ Setup prompts use a `prompt` fence with an Agent prompt label and a Copy prompt 
 
 Every product image is the production Mezair Desktop UI rendered with synthetic fixture content (the Acme workspace, Dana's devices, example jobs). `scripts/capture-screens.mjs` captures the Electron shell and the `mezair-app` replay harness over the DevTools protocol, writes 2× WebP to `public/screens/` and records each capture's source, fixture, size and app commit in `manifest.json`. `lib/screens.ts` pairs every capture with alt text that describes the screen in words and a short caption. Never draw product UI in the website; add a replay fixture instead. Docs reference captures with `![alt](/screens/id.webp "caption")`, which renders a sized, lazy `.doc-figure`.
 
-### Product reel
+### Homepage workflow
 
-The homepage reel crossfades four real captures (Watch it work, Read the result, Review the change, Move machines) inside one 16:10 frame. Full-window captures cover the frame from the top-left; panel captures sit centred on the window ground. A keyboard tablist with a filling orange line selects chapters; autoplay runs only while on screen, in a visible tab and without reduced motion, and any choice holds that chapter. Slides cross 700ms on opacity, 900ms on scale (1.012 → 1) and 700ms on a 6px blur. Where `animation-timeline: view()` is supported and motion is allowed, the frame tilts up from `rotateX(14deg) scale(0.94)` into place as it scrolls in. The chapter labels explain the sequence; there is no extra caption about the screenshots. Capture instructions belong in `scripts/capture-screens.md`, not the public site.
+The homepage tells one story: describe a retry fix, let the agent work, then review the change. Three concise steps sit above a single production transcript capture with synthetic data. A `picture` source swaps in the narrow production layout on phones; both variants show the same request, completed activity, agent answer and Review surface. A short caption links to agent workflows. There is no autoplay, screenshot tablist, sticky screenshot tour or repeated use-case gallery. Other capabilities remain in the quiet feature list and documentation.
 
 ### Mesh stage
 

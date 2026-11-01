@@ -20,7 +20,7 @@ import type { SurfaceViewProps } from '../../types';
 import { ReviewDiff } from './ReviewDiff';
 import { ReviewFindingRow } from './ReviewFindingRow';
 import { DiffStat, SeverityBadge } from './ReviewGlyphs';
-import { ReviewVerdictLine } from './ReviewVerdict';
+import { ReviewFacts, ReviewVerdictLine } from './ReviewVerdict';
 import {
   chapterAnchor,
   chapterFindings,
@@ -40,7 +40,7 @@ function plural(count: number, word: string): string {
 
 function SectionHeading({ id, children }: { id?: string; children: ReactNode }) {
   return (
-    <h3 id={id} className="text-eyebrow uppercase text-text-tertiary">
+    <h3 id={id} className="text-xs font-medium text-text-secondary">
       {children}
     </h3>
   );
@@ -234,6 +234,7 @@ export function ReviewInline({
   const groups = useMemo(() => groupFindingsBySeverity(data?.findings ?? []), [data]);
   const [collapsed, setCollapsed] = useState<ReviewSeverity[] | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [showDetails, setShowDetails] = useState(false);
   const [openChapters, setOpenChapters] = useState<Set<string>>(() => new Set());
   const [openFiles, setOpenFiles] = useState<Set<string>>(() => new Set());
   const actions = useReviewActions(data, onAction, readOnly);
@@ -270,73 +271,14 @@ export function ReviewInline({
 
   return (
     <section className="space-y-5 text-sm" aria-label={intent.payload.title}>
-      <div className="space-y-1.5">
-        <ReviewVerdictLine data={data} streaming={streaming} />
-        {data.notes?.length ? (
-          <ul className="ml-7 space-y-0.5 text-xs text-text-tertiary">
-            {data.notes.map((note) => (
-              <li key={note}>{note}</li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
-
-      {data.risks.length ? (
-        <ul className="ml-7 flex flex-wrap gap-x-5 gap-y-1.5" aria-label="Top risks">
-          {data.risks.slice(0, 3).map((risk) => {
-            const chapter = data.chapters.find((entry) => entry.id === risk.chapterId);
-            return (
-              <li key={risk.id} className="flex min-w-0 items-center gap-1.5 text-xs">
-                <SeverityBadge severity={risk.severity} compact />
-                <span className="text-text-secondary">{risk.title}</span>
-                {chapter ? (
-                  <button
-                    type="button"
-                    className="whitespace-nowrap text-text-tertiary hover:text-text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                    onClick={() => {
-                      setOpenChapters((current) => new Set(current).add(chapter.id));
-                      document
-                        .getElementById(`${baseId}-chapter-${chapter.id}`)
-                        ?.scrollIntoView({ block: 'nearest' });
-                    }}
-                  >
-                    {`ch. ${chapter.index}`}
-                  </button>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-
-      {data.chapters.length ? (
-        <section aria-labelledby={`${baseId}-chapters`}>
-          <SectionHeading id={`${baseId}-chapters`}>The change</SectionHeading>
-          <ol className="mt-1 divide-y divide-border-subtle">
-            {[...data.chapters]
-              .sort((a, b) => a.index - b.index)
-              .map((chapter) => (
-                <ChapterSection
-                  key={chapter.id}
-                  chapter={chapter}
-                  data={data}
-                  sectionId={`${baseId}-chapter-${chapter.id}`}
-                  expanded={openChapters.has(chapter.id)}
-                  onToggle={() => toggleSet(setOpenChapters, chapter.id)}
-                  openFiles={openFiles}
-                  onToggleFile={(path) => toggleSet(setOpenFiles, path)}
-                  onOpenStage={onOpenStage}
-                  onComment={onComment}
-                />
-              ))}
-          </ol>
-        </section>
-      ) : null}
+      <ReviewVerdictLine data={data} streaming={streaming} showFacts={false} />
 
       <section aria-labelledby={`${baseId}-findings`}>
         <div className="flex items-center gap-3">
           <SectionHeading id={`${baseId}-findings`}>
-            Findings{data.findings.length ? ` · ${data.findings.length}` : ''}
+            {streaming || data.findings.length
+              ? `Findings${data.findings.length ? ` · ${data.findings.length}` : ''}`
+              : 'No findings'}
           </SectionHeading>
           {selectedIds.length ? (
             <span className="text-xs text-text-tertiary">
@@ -356,11 +298,7 @@ export function ReviewInline({
             <div className="mt-2">
               <InlineSkeleton />
             </div>
-          ) : (
-            <p className="mt-1 text-text-secondary">
-              No findings. Nothing in this change needs attention.
-            </p>
-          )
+          ) : null
         ) : (
           <div className="mt-1 space-y-1">
             {groups.map((group) => {
@@ -372,6 +310,7 @@ export function ReviewInline({
                     type="button"
                     className="flex items-center gap-2 rounded-sm py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                     aria-expanded={!isCollapsed}
+                    aria-label={`${SEVERITY_LABEL[group.severity]} findings (${group.findings.length})`}
                     aria-controls={listId}
                     onClick={() =>
                       setCollapsed(
@@ -396,7 +335,6 @@ export function ReviewInline({
                         ? ` · ${group.activeCount} open`
                         : ''}
                     </span>
-                    <span className="sr-only">{SEVERITY_LABEL[group.severity]} findings</span>
                   </button>
                   {isCollapsed ? null : (
                     <ul id={listId} className="ml-1 space-y-0.5">
@@ -404,6 +342,7 @@ export function ReviewInline({
                         <ReviewFindingRow
                           key={finding.id}
                           finding={finding}
+                          grouped
                           selected={selectedIds.includes(finding.id)}
                           fadeIn={streaming}
                           disabled={busy}
@@ -428,51 +367,141 @@ export function ReviewInline({
       </section>
 
       <div className="flex flex-wrap items-center gap-2 border-t border-border-subtle pt-3">
+        {data.findings.some(isActiveFinding) ? (
+          <Button
+            size="sm"
+            disabled={busy || fixable.length === 0}
+            title={fixable.length === 0 ? 'Select findings to ask for fixes' : undefined}
+            onClick={() => run('ask_fix', fixable)}
+          >
+            <Wrench size={13} aria-hidden="true" />
+            {fixable.length
+              ? `Ask agent to fix ${fixable.length} selected`
+              : 'Ask agent to fix selected'}
+          </Button>
+        ) : null}
         <Button
+          variant="ghost"
           size="sm"
-          disabled={busy || fixable.length === 0}
-          title={fixable.length === 0 ? 'Select findings to ask for fixes' : undefined}
-          onClick={() => run('ask_fix', fixable)}
+          aria-expanded={showDetails}
+          aria-controls={`${baseId}-details`}
+          onClick={() => setShowDetails((value) => !value)}
         >
-          <Wrench size={13} aria-hidden="true" />
-          {fixable.length
-            ? `Ask agent to fix ${fixable.length} selected`
-            : 'Ask agent to fix selected'}
+          <ChevronRight
+            size={13}
+            aria-hidden="true"
+            className={cx(
+              'transition-transform motion-reduce:transition-none',
+              showDetails && 'rotate-90',
+            )}
+          />
+          Review details
         </Button>
-        {openIds.length ? (
-          <Button variant="ghost" size="sm" disabled={busy} onClick={() => run('accept', openIds)}>
-            <CheckCheck size={13} aria-hidden="true" />
-            Accept all
-          </Button>
-        ) : null}
-        {data.scope.type === 'pull-request' &&
-        data.scope.pullRequestId &&
-        actions.available('post_to_pr') ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busy}
-            onClick={() => run('post_to_pr', selectedIds)}
-          >
-            <GitPullRequest size={13} aria-hidden="true" />
-            Post to PR
-          </Button>
-        ) : null}
-        {workItemIds.length && actions.available('create_work_items') ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busy}
-            onClick={() => run('create_work_items', workItemIds)}
-          >
-            <ListTodo size={13} aria-hidden="true" />
-            Create work items
-          </Button>
-        ) : null}
-        <Button variant="secondary" size="sm" className="ml-auto" onClick={() => onOpenStage()}>
+        <Button variant="ghost" size="sm" className="ml-auto" onClick={() => onOpenStage()}>
           <Maximize2 size={13} aria-hidden="true" />
-          Open stage
+          Open review
         </Button>
+      </div>
+      <div id={`${baseId}-details`} hidden={!showDetails}>
+        <div className="mt-4 space-y-4">
+          <ReviewFacts data={data} />
+          {data.notes?.length ? (
+            <ul className="space-y-0.5 text-xs text-text-tertiary">
+              {data.notes.map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          ) : null}
+          {data.risks.length ? (
+            <ul className="ml-7 flex flex-wrap gap-x-5 gap-y-1.5" aria-label="Top risks">
+              {data.risks.slice(0, 3).map((risk) => {
+                const chapter = data.chapters.find((entry) => entry.id === risk.chapterId);
+                return (
+                  <li key={risk.id} className="flex min-w-0 items-center gap-1.5 text-xs">
+                    <SeverityBadge severity={risk.severity} compact />
+                    <span className="text-text-secondary">{risk.title}</span>
+                    {chapter ? (
+                      <button
+                        type="button"
+                        className="whitespace-nowrap text-text-tertiary hover:text-text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                        onClick={() => {
+                          setOpenChapters((current) => new Set(current).add(chapter.id));
+                          document
+                            .getElementById(`${baseId}-chapter-${chapter.id}`)
+                            ?.scrollIntoView({ block: 'nearest' });
+                        }}
+                      >
+                        {`ch. ${chapter.index}`}
+                      </button>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+
+          {data.chapters.length ? (
+            <section aria-labelledby={`${baseId}-chapters`}>
+              <SectionHeading id={`${baseId}-chapters`}>The change</SectionHeading>
+              <ol className="mt-1 divide-y divide-border-subtle">
+                {[...data.chapters]
+                  .sort((a, b) => a.index - b.index)
+                  .map((chapter) => (
+                    <ChapterSection
+                      key={chapter.id}
+                      chapter={chapter}
+                      data={data}
+                      sectionId={`${baseId}-chapter-${chapter.id}`}
+                      expanded={openChapters.has(chapter.id)}
+                      onToggle={() => toggleSet(setOpenChapters, chapter.id)}
+                      openFiles={openFiles}
+                      onToggleFile={(path) => toggleSet(setOpenFiles, path)}
+                      onOpenStage={onOpenStage}
+                      onComment={onComment}
+                    />
+                  ))}
+              </ol>
+            </section>
+          ) : null}
+
+          <div className="flex flex-wrap items-center gap-2 border-t border-border-subtle pt-3">
+            {openIds.length ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => run('accept', openIds)}
+              >
+                <CheckCheck size={13} aria-hidden="true" />
+                Accept all
+              </Button>
+            ) : null}
+            {data.scope.type === 'pull-request' &&
+            data.scope.pullRequestId &&
+            actions.available('post_to_pr') ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => run('post_to_pr', selectedIds)}
+              >
+                <GitPullRequest size={13} aria-hidden="true" />
+                Post to PR
+              </Button>
+            ) : null}
+            {workItemIds.length && actions.available('create_work_items') ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => run('create_work_items', workItemIds)}
+              >
+                <ListTodo size={13} aria-hidden="true" />
+                Create work items
+              </Button>
+            ) : null}
+          </div>
+        </div>
       </div>
       <p
         role="status"

@@ -109,6 +109,23 @@
   color: var(--color-text-secondary);
   transition: background-color 140ms ease-out;
 }
+/* Settled work recedes to a single disclosure row; live and failed states retain detail. */
+.processing-card[data-processing-compact] {
+  border-color: transparent;
+  background: transparent;
+}
+.processing-card[data-processing-compact] .processing-card-header {
+  min-height: 36px;
+  gap: 8px;
+  padding: 6px 2px;
+}
+.processing-card[data-processing-compact] .processing-card-header [role='status'] {
+  color: var(--color-text-secondary);
+}
+.processing-card[data-processing-compact][data-processing-expanded] .processing-details {
+  margin-top: 6px;
+}
+
 .processing-card-header:hover {
   background: color-mix(in srgb, var(--color-bg-hover) 45%, transparent);
 }

@@ -49,6 +49,21 @@ const chromePath =
 /** @type {Capture[]} */
 const captures = [
   {
+    id: 'retry-workflow', source: 'replay', route: '?capture=retry-workflow',
+    viewport: [1100, 560], settle: 1500,
+    fixture: 'Retry workflow: production transcript and Review surface with synthetic task, commands, results and diff',
+  },
+  {
+    id: 'retry-workflow-mobile', source: 'replay', route: '?capture=retry-workflow',
+    viewport: [390, 820], settle: 1500,
+    fixture: 'The same retry workflow in the production narrow thread layout',
+  },
+  {
+    id: 'surface-review', source: 'replay', route: '?capture=surface-review-working-tree',
+    viewport: [1100, 940], settle: 1500,
+    fixture: 'Working tree review: verdict and findings first; supporting context under Review details',
+  },
+  {
     id: 'desktop-run-complete',
     source: 'desktop',
     route: '#/_dev/processing?showcase',
@@ -139,7 +154,6 @@ const captures = [
     fixture: 'MeshPreview: Settings → Sync & Mesh connection status',
   },
   ...[
-    ['surface-review', 'surface-review-working-tree', 1300, 'Review surface for a working tree'],
     ['surface-findings', 'surface-findings', 850, 'Findings surface from a security audit'],
     ['surface-pipeline', 'surface-pipeline', 800, 'Pipeline surface for a slow CI run'],
     ['surface-dependencies', 'surface-dependencies', 770, 'Dependencies surface with advisories'],

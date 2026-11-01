@@ -18,6 +18,12 @@ The source code labels all fixture content as synthetic. The Acme workspace, its
 
 `public/screens/manifest.json` records each image's source route, fixture, pixel size, app commit and capture date. The website reads its sizes from there, so images never shift the layout while loading.
 
+## Homepage workflow
+
+The homepage uses one request-to-review example, with desktop and narrow captures of the same production transcript. The development-only `?capture=retry-workflow` route opens the complete fixture and hides the replay controls and composer. It keeps the rendered transcript intact. The fixture shares command events with the Desktop processing preview.
+
+Refresh both variants together with `node scripts/capture-screens.mjs retry-workflow retry-workflow-mobile`. Use `?capture=surface-review-working-tree` to inspect the findings-first Review presentation separately. A manifest entry with `appWorkingTree: true` was captured from uncommitted source on top of `appCommit`; that commit alone does not reproduce the image.
+
 ## Refresh the captures
 
 1. Start the replay harness from `mezair-app`:

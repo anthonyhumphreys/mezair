@@ -69,6 +69,7 @@ describe('synthetic chat replay scenarios', () => {
     expect(CHAT_REPLAY_PROVENANCE).toContain('Synthetic');
     expect(CHAT_REPLAY_SCENARIOS.map(({ id }) => id)).toEqual([
       'streaming-rich-content',
+      'retry-workflow',
       'parallel-agents-status',
       'errors-reconnect-thread-switch',
       'artifact-diff-feedback',

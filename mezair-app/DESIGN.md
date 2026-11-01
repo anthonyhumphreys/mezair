@@ -199,7 +199,11 @@ State vocabulary is fixed and always pairs colour with an icon or word: live wor
 
 ### Activity Group
 
-Agent commands, file edits, reads, approvals, plans, and goals form progressively disclosed activity groups between conversation content. Keep answers, inline results, question receipts and subsequent activity in first-appearance order as text streams. Pending sends retain their place without becoming the owner of the executing turn's output. It may summarize counts and failures, but it must not split assistant prose into sentence fragments.
+Agent commands, file edits, reads, approvals, plans, and goals form progressively disclosed activity groups between conversation content. Keep answers, inline results, question receipts and subsequent activity in first-appearance order as text streams. Pending sends retain their place without becoming the owner of the executing turn's output. Completed activity is one quiet disclosure row with the turn outcome, action count and measured duration. Current work, approvals and failed turns retain their visible detail. A completed turn is not labelled failed because an earlier command exited nonzero; expanded activity and command history preserve every failed operation and its output. Unknown and stopped outcomes still expose failures. The command-evidence footer uses one collapsed history row for completed turns that contain failures; it does not repeat the file list and full run summary.
+
+### Review in the thread
+
+Lead with the verdict and grouped actionable findings. Each inline row shows selection, title and file/line; the group supplies severity once, and an open finding needs no repeated status badge. Opening a finding enters the existing workbench with individual actions, rationale, diffs and comments. Fix selected remains an explicit action. Review details is collapsed by default and retains stats, risks, chapter summaries, file diffs, notes, acceptance, work-item creation and PR publication. Keep the default action row compact, with Review details and Open review together. No-findings and streaming states remain explicit; read-only action boundaries are unchanged.
 
 ## Do's and Don'ts
 

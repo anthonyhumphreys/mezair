@@ -105,6 +105,8 @@ export function ProcessingCard({
   const cardRef = useRef<HTMLDivElement>(null);
   const detailsId = useId();
   const active = state === 'working';
+  const successful = state === 'completed';
+  const compact = successful || state === 'answering' || state === 'ended' || state === 'stopped';
   const [visible, setVisible] = useState(false);
   const [pageVisible, setPageVisible] = useState(true);
   const fallbackStart = useRef<number | null>(null);
@@ -166,6 +168,7 @@ export function ProcessingCard({
           ref={cardRef}
           className="processing-card"
           data-processing-state={state}
+          data-processing-compact={compact ? 'true' : undefined}
           data-processing-motion={active && visible && pageVisible ? 'running' : 'paused'}
           data-processing-settled={settled ? 'true' : undefined}
           data-processing-expanded={expanded ? 'true' : undefined}
@@ -204,9 +207,9 @@ export function ProcessingCard({
                     action{actions === 1 ? '' : 's'}
                   </span>
                 )}
-                {failed > 0 && <span className="text-error">{failed} failed</span>}
+                {failed > 0 && !successful && <span className="text-error">{failed} failed</span>}
               </span>
-              <StepTicker text={detail} />
+              {compact ? <span className="sr-only">{detail}</span> : <StepTicker text={detail} />}
             </span>
             {elapsed !== null && (
               <span className="shrink-0 tabular-nums text-text-secondary" aria-label="Elapsed time">
@@ -216,6 +219,12 @@ export function ProcessingCard({
             <ChevronRight size={13} className="processing-chevron shrink-0" aria-hidden="true" />
           </button>
           <div id={detailsId} className="processing-details">
+            {expanded && failed > 0 && successful ? (
+              <p className="border-t border-border-subtle px-3 py-2 text-xs text-text-secondary">
+                {failed} failed action{failed === 1 ? '' : 's'} during this run. The turn completed;
+                command results are recorded below.
+              </p>
+            ) : null}
             {children}
           </div>
         </div>

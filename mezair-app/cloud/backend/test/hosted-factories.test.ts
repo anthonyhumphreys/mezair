@@ -10,6 +10,7 @@ import {
 } from '../../contract/operations';
 import { isRpcError } from '../../contract/envelope';
 import { postRpc, spikeBearer } from './helpers';
+import issueIdMigration from '../migrations/hosted-billing/0009_factory_issue_ids.sql?raw';
 
 const db = env.HOSTED_DB!;
 const auth: VerifiedAuth = {
@@ -140,6 +141,218 @@ async function addMember(user: string, account: string) {
 }
 
 describe('hosted organisation factories', () => {
+  it('preserves numeric GitHub claims when migrating to provider-native string IDs', async () => {
+    await db.batch([
+      db.prepare('DROP TABLE hosted_factory_issue_claims'),
+      db.prepare(
+        'CREATE TABLE hosted_factory_issue_claims(organization_id TEXT,source TEXT,issue_number INTEGER,factory_id TEXT,run_id TEXT,created_at INTEGER,PRIMARY KEY(organization_id,source,issue_number))',
+      ),
+      db.prepare(
+        "INSERT INTO hosted_factory_issue_claims VALUES('org','github.com/acme/app',7,'factory','run',123)",
+      ),
+    ]);
+    const statements = issueIdMigration
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('--'))
+      .join('\n')
+      .split(';')
+      .map((statement) => statement.trim())
+      .filter(Boolean);
+    await db.batch(statements.map((statement) => db.prepare(statement)));
+    expect(await db.prepare('SELECT * FROM hosted_factory_issue_claims').first()).toMatchObject({
+      organization_id: 'org',
+      source: 'github.com/acme/app',
+      issue_id: '7',
+      factory_id: 'factory',
+      run_id: 'run',
+      created_at: 123,
+    });
+  });
+  it('uses Mezair roles for ADO/Jira factories without requiring viewer provider credentials', async () => {
+    const viewer = 'workos_roles_viewer',
+      viewerAccount = 'sync_roles_viewer';
+    await addMember(viewer, viewerAccount);
+    const ownerPub = Buffer.alloc(32, 7).toString('base64'),
+      viewerPub = Buffer.alloc(32, 9).toString('base64');
+    expect((await call('factory.key.register', { organizationId, publicKey: ownerPub })).ok).toBe(
+      true,
+    );
+    const viewerAuth = { accountId: viewerAccount, enrollmentId: 'device_roles_viewer' };
+    expect(
+      (await call('factory.key.register', { organizationId, publicKey: viewerPub }, viewerAuth)).ok,
+    ).toBe(true);
+    const rolesPolicy = {
+      ...policy,
+      authorization: 'mezair',
+      members: [{ userId: viewer, role: 'viewer' }],
+    };
+    const adoSource = {
+      provider: 'ado',
+      organizationUrl: 'https://dev.azure.com/acme',
+      project: 'App',
+      repo: 'app',
+      workItems: { provider: 'jira', scope: 'https://acme.atlassian.net/APP' },
+    };
+    expect(
+      (
+        await upsert('factory_mezair_roles', {
+          policy: rolesPolicy,
+          source: adoSource,
+          githubToken: undefined,
+          status: 'active',
+          activeRevision: 1,
+          snapshot: sealed({ [userId]: ownerPub, [viewer]: viewerPub }),
+        })
+      ).ok,
+    ).toBe(true);
+    const read = await call(
+      'factory.registry.read',
+      { factoryId: 'factory_mezair_roles' },
+      viewerAuth,
+    );
+    expect(read.ok).toBe(true);
+    expect(read.body.policy).toMatchObject({ authorization: 'mezair' });
+    expect(read.body.role).toBe('viewer');
+    expect((read.body.snapshot as { keys: Record<string, unknown> }).keys).toHaveProperty(viewer);
+    expect(
+      (
+        await call(
+          'factory.registry.authorize',
+          { factoryId: 'factory_mezair_roles', action: 'execute', expectedRegistryVersion: 1 },
+          viewerAuth,
+        )
+      ).ok,
+    ).toBe(false);
+    expect(
+      (
+        await call(
+          'factory.command.send',
+          { factoryId: 'factory_mezair_roles', command: { id: 'viewer_pause', action: 'pause' } },
+          viewerAuth,
+        )
+      ).ok,
+    ).toBe(false);
+    expect(github).not.toHaveBeenCalled();
+    await db
+      .prepare(
+        "UPDATE hosted_organization_memberships SET status='inactive' WHERE organization_id=? AND workos_user_id=?",
+      )
+      .bind(organizationId, viewer)
+      .run();
+    expect(
+      (await call('factory.registry.read', { factoryId: 'factory_mezair_roles' }, viewerAuth)).ok,
+    ).toBe(false);
+  });
+  it('uses the explicit Mezair factory-team roster and rechecks queued operator authority', async () => {
+    const operator = 'workos_roles_operator',
+      account = 'sync_roles_operator';
+    await addMember(operator, account);
+    const ownerPub = Buffer.alloc(32, 7).toString('base64'),
+      operatorPub = Buffer.alloc(32, 9).toString('base64');
+    const operatorAuth = { accountId: account, enrollmentId: 'device_roles_operator' };
+    await call('factory.key.register', { organizationId, publicKey: ownerPub });
+    await call('factory.key.register', { organizationId, publicKey: operatorPub }, operatorAuth);
+    const team = {
+      ...policy,
+      authorization: 'mezair',
+      visibility: 'team',
+      teamId: 'delivery',
+      members: [{ userId: operator, role: 'operator' }],
+    };
+    expect(
+      (
+        await upsert('factory_roles_team', {
+          policy: team,
+          githubToken: undefined,
+          status: 'active',
+          activeRevision: 1,
+          snapshot: sealed({ [userId]: ownerPub, [operator]: operatorPub }),
+        })
+      ).ok,
+    ).toBe(true);
+    expect(
+      (
+        await call(
+          'factory.command.send',
+          {
+            factoryId: 'factory_roles_team',
+            command: { id: 'roles_operator_pause', action: 'pause' },
+          },
+          operatorAuth,
+        )
+      ).ok,
+    ).toBe(true);
+    await db
+      .prepare(
+        "UPDATE hosted_organization_memberships SET status='inactive' WHERE organization_id=? AND workos_user_id=?",
+      )
+      .bind(organizationId, operator)
+      .run();
+    const taken = await call('factory.command.take', { factoryId: 'factory_roles_team' });
+    expect(taken.body.commands).toEqual([]);
+    expect(github).not.toHaveBeenCalled();
+  });
+  it('claims provider-native string IDs without collisions between issue trackers', async () => {
+    const ownerPub = Buffer.alloc(32, 7).toString('base64');
+    await call('factory.key.register', { organizationId, publicKey: ownerPub });
+    const rolesPolicy = { ...policy, authorization: 'mezair' };
+    const adoSource = {
+      provider: 'ado',
+      organizationUrl: 'https://dev.azure.com/acme',
+      project: 'App',
+      repo: 'app',
+      workItems: { provider: 'jira', scope: 'https://acme.atlassian.net/APP' },
+    };
+    for (const factoryId of ['factory_id_one', 'factory_id_two'])
+      expect(
+        (
+          await upsert(factoryId, {
+            policy: rolesPolicy,
+            source: adoSource,
+            githubToken: undefined,
+          })
+        ).ok,
+      ).toBe(true);
+    expect(
+      (
+        await call('factory.issue.claim', {
+          factoryId: 'factory_id_one',
+          issueId: 'APP-7',
+          runId: 'first_run',
+        })
+      ).body.claimed,
+    ).toBe(true);
+    expect(
+      (
+        await call('factory.issue.claim', {
+          factoryId: 'factory_id_two',
+          issueId: 'APP-7',
+          runId: 'second_run',
+        })
+      ).body.claimed,
+    ).toBe(false);
+    expect(
+      (
+        await upsert('factory_id_three', {
+          policy: rolesPolicy,
+          source: {
+            ...adoSource,
+            workItems: { provider: 'linear', scope: 'linear:team:team-one' },
+          },
+          githubToken: undefined,
+        })
+      ).ok,
+    ).toBe(true);
+    expect(
+      (
+        await call('factory.issue.claim', {
+          factoryId: 'factory_id_three',
+          issueId: 'APP-7',
+          runId: 'third_run',
+        })
+      ).body.claimed,
+    ).toBe(true);
+  });
   it('requires current organization membership and keeps recipient keys stable', async () => {
     const publicKey = Buffer.alloc(32, 7).toString('base64');
     expect(
@@ -160,10 +373,21 @@ describe('hosted organisation factories', () => {
         })
       ).ok,
     ).toBe(true);
+    // Registering for Mezair-only viewing must preserve an already verified
+    // GitHub identity used by this member's legacy source-checked factories.
+    expect((await call('factory.key.register', { organizationId, publicKey })).ok).toBe(true);
     const members = await call('factory.members', { organizationId });
     expect((members.body.members as Array<{ userId: string; publicKey: string }>)[0]).toMatchObject(
       { userId, publicKey },
     );
+    expect(
+      await db
+        .prepare(
+          'SELECT github_login FROM hosted_factory_keys WHERE organization_id=? AND user_id=?',
+        )
+        .bind(organizationId, userId)
+        .first(),
+    ).toMatchObject({ github_login: 'factory-owner' });
     const conflict = await call('factory.key.register', {
       organizationId,
       publicKey: Buffer.alloc(32, 8).toString('base64'),

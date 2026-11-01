@@ -14,7 +14,15 @@ import type {
   FactoryRunControlInput,
   FactorySaveInput,
 } from '../../shared/factories.js';
-import { factoryWorkerThreadId } from '../../shared/factories.js';
+import {
+  factoryWorkerThreadId,
+  factoryDeliveryKey,
+  factoryReadyLabel,
+  factoryMatchesRemote,
+  parseFactoryDeliveryRemote,
+} from '../../shared/factories.js';
+import { factoryConnectionSource } from '../../shared/factories.js';
+import { validateFactoryWorkItemConnection } from './factory-workitems.service.js';
 import { getDb } from '../db/database.js';
 import { FactoryStore } from './factory-persistence.service.js';
 import { FactoryRuntime, type FactoryWorker } from './factory-runtime.service.js';
@@ -28,7 +36,6 @@ import {
 import { createChatThread, getChatThread, saveChatEntry } from './chat-persistence.service.js';
 import { getPersonaById } from './persona.service.js';
 import { getSettings } from './settings.service.js';
-import { parseGitHubRemoteUrl } from './code-review-pr.service.js';
 import {
   cancelWorkflowRun,
   getChatWorkflowRunByRequest,
@@ -93,9 +100,8 @@ function sourceMatches(a: FactoryDefinitionInput, b: FactoryDefinitionInput): bo
   return (
     a.repoId === b.repoId &&
     a.workspaceId === b.workspaceId &&
-    a.github.host.toLowerCase() === b.github.host.toLowerCase() &&
-    a.github.owner.toLowerCase() === b.github.owner.toLowerCase() &&
-    a.github.repo.toLowerCase() === b.github.repo.toLowerCase()
+    factoryDeliveryKey(a) === factoryDeliveryKey(b) &&
+    JSON.stringify(a.workItems) === JSON.stringify(b.workItems)
   );
 }
 function validateLocalSource(definition: FactoryDefinitionInput): void {
@@ -104,15 +110,8 @@ function validateLocalSource(definition: FactoryDefinitionInput): void {
   const member = getDb()
     .prepare('SELECT 1 FROM workspace_repos WHERE workspace_id=? AND repo_id=?')
     .get(definition.workspaceId, definition.repoId);
-  const parsed = repo && parseGitHubRemoteUrl(repo.remote_url ?? '');
-  if (
-    !member ||
-    !parsed ||
-    parsed.host.toLowerCase() !== definition.github.host ||
-    parsed.owner.toLowerCase() !== definition.github.owner.toLowerCase() ||
-    parsed.repo.toLowerCase() !== definition.github.repo.toLowerCase()
-  )
-    throw new Error('Choose a repository in this workspace matching the exact GitHub source.');
+  if (!member || !repo || !factoryMatchesRemote(definition, repo.remote_url ?? ''))
+    throw new Error('Choose a repository in this workspace matching the exact delivery source.');
 }
 function validateWorkerAvailability(workflow: FactoryDefinition['workflow']): void {
   validateFactoryWorkflow(workflow);
@@ -167,7 +166,10 @@ export async function previewFactory(
   if (existing) await authorize(existing, 'edit');
   const remote = existing && !localOwner(existing) ? existing : undefined;
   const workflow = revisionWorkflow(definition, existing, Boolean(remote), options);
-  if (!remote) validateLocalSource(definition);
+  if (!remote) {
+    validateLocalSource(definition);
+    validateFactoryWorkItemConnection(definition);
+  }
   return factoryPreview(definition, workflow, remote?.accountScope ?? actor().accountScope);
 }
 export async function draftFactory(
@@ -184,13 +186,24 @@ export async function draftFactory(
   const organizations = await access.listRemoteOrganizations().catch(() => []);
   const response = await callLlm(
     [
-      'Return only strict JSON for a Mezair GitHub software factory. Never activate or execute it. Use exactly these fields: name,workspaceId,repoId,github:{host,owner,repo,label,baseBranch},workflowTemplateId,criteria:string[],checks:string[],postMergeChecks:string[],limits:{repairRounds,maxRunMinutes,maxCommands,maxConcurrentRuns},publication:{enabled,draft},merge:{mode:human-approved|auto-merge,method:squash|merge|rebase,requiredChecks:string[],requireApproval:boolean},access:{kind:private} or {kind:organization,organizationId,visibility:organization|team|restricted,teamId?,members:[{userId,role:viewer|operator|owner}]}. Use only supplied organisation IDs; never invent administrators. Each criterion has one exact reviewed command at same index. At least one postMergeChecks command. Defaults: label ready-for-agent, repairRounds2,maxRunMinutes90,maxCommands40,maxConcurrentRuns1,publication enabled drafttrue,human-approved squash requireApprovaltrue. Only local Codex app-server workflow templates supported. Do not invent repo/template IDs; if missing, explain error in JSON {error:string}.',
+      'Return only strict JSON for a Mezair software factory with GitHub or Azure DevOps PR delivery. Never activate or execute it. Use these fields: name,workspaceId,repoId,delivery:{provider:github,host,owner,repo,baseBranch} or {provider:ado,organizationUrl,project,repo,baseBranch},readyLabel:string,workItems?:{provider:github|ado|jira|linear,connectionId,scope},includeExisting:boolean,workflowTemplateId,criteria:string[],checks:string[],postMergeChecks:string[],limits:{repairRounds,maxRunMinutes,maxCommands,maxConcurrentRuns},publication:{enabled,draft},merge:{mode:human-approved|auto-merge,method:squash|merge|rebase,requiredChecks:string[],requireApproval:boolean},access:{kind:private} or {kind:organization,authorization:mezair,organizationId,visibility:organization|team|restricted,teamId?,members:[{userId,role:viewer|operator|owner}]}. Copy workItems exactly from one supplied workItemSources entry, or omit only for GitHub delivery to read its issues using gh. Azure DevOps delivery requires a work item source connection. Use canonical https://dev.azure.com/organisation URLs for Azure DevOps. readyLabel is the optional ready label for ANY intake provider: empty string admits all labels. Default label empty and includeExisting false; enable existing backlog only when requested. For new organisation factories use authorization mezair: viewing follows Mezair roles and only the executor needs provider credentials. Use only supplied organisation IDs; never invent administrators. Each criterion has one exact reviewed command at same index. At least one postMergeChecks command. Defaults: repairRounds2,maxRunMinutes90,maxCommands40,maxConcurrentRuns1,publication enabled drafttrue,human-approved squash requireApprovaltrue. Only local Codex app-server workflow templates supported. Do not invent repo/template/connection IDs; if missing, explain error in JSON {error:string}.',
       JSON.stringify({
         request,
         workspaceId,
-        repositories: repos,
+        repositories: (repos as { id: string; name: string; remote_url: string }[]).map((repo) => ({
+          id: repo.id,
+          name: repo.name,
+          delivery: parseFactoryDeliveryRemote(repo.remote_url ?? ''),
+        })),
         workflows: templates,
         organizations,
+        workItemSources: (getSettings().workItemConnections ?? []).flatMap((connection) => {
+          try {
+            return [{ name: connection.name, ...factoryConnectionSource(connection) }];
+          } catch {
+            return [];
+          }
+        }),
       }),
     ].join('\n\n'),
     6000,
@@ -223,7 +236,10 @@ export async function saveFactory(input: FactorySaveInput): Promise<FactoryDefin
   }
   const remote = current !== null && !localOwner(current);
   const workflow = revisionWorkflow(definition, current, remote, input);
-  if (!remote) validateLocalSource(definition);
+  if (!remote) {
+    validateLocalSource(definition);
+    validateFactoryWorkItemConnection(definition);
+  }
   const who = actor(),
     preview = factoryPreview(definition, workflow, current?.accountScope ?? who.accountScope);
   if (input.confirmation !== preview.confirmation)
@@ -271,6 +287,7 @@ export async function activateFactory(input: FactoryActivateInput): Promise<Fact
     throw new Error('Review the exact current revision before activation.');
   if (localOwner(factory)) {
     validateLocalSource(factory.definition);
+    validateFactoryWorkItemConnection(factory.definition);
     validateWorkerAvailability(factory.workflow);
   }
   if (!factory.definition.publication.enabled)
@@ -281,7 +298,14 @@ export async function activateFactory(input: FactoryActivateInput): Promise<Fact
       (other) =>
         other.id !== factory.id &&
         other.status === 'active' &&
-        JSON.stringify(other.definition.github) === JSON.stringify(factory.definition.github),
+        JSON.stringify([
+          other.definition.workItems ?? factoryDeliveryKey(other.definition),
+          factoryReadyLabel(other.definition),
+        ]) ===
+          JSON.stringify([
+            factory.definition.workItems ?? factoryDeliveryKey(factory.definition),
+            factoryReadyLabel(factory.definition),
+          ]),
     );
   if (conflict) throw new Error('Another active factory already watches this exact trigger.');
   const next = {
@@ -530,6 +554,7 @@ function engine(): FactoryRuntime {
     async authorize(factory, action) {
       if (!localOwner(factory))
         throw new Error('Only the designated execution identity can run this factory.');
+      if (action !== 'cancel') validateFactoryWorkItemConnection(factory.definition);
       await authorize(
         factory,
         action === 'merge' ? 'merge' : action === 'cancel' ? 'cancel' : 'execute',

@@ -165,6 +165,9 @@ function mapIssueToWorkItem(issue: JiraIssue): WorkItem {
 
   return {
     id: issue.key,
+    createdAt: fields.created,
+    updatedAt: fields.updated,
+    closed: fields.status?.statusCategory ? fields.status.statusCategory.key === 'done' : undefined,
     title: fields.summary ?? '',
     type: mapWorkItemType(originalType),
     state: fields.status?.name ?? '',
@@ -198,8 +201,10 @@ interface JiraIssue {
   fields: {
     [key: string]: unknown;
     summary?: string;
+    created?: string;
+    updated?: string;
     issuetype?: { name: string };
-    status?: { name: string };
+    status?: { name: string; statusCategory?: { key: string } };
     priority?: { id: string; name: string };
     assignee?: { displayName: string; emailAddress?: string };
     description?: unknown;
@@ -228,14 +233,14 @@ async function listItems(filters?: WorkItemFilters): Promise<WorkItem[]> {
   const apiVersion = getApiVersion();
 
   // Build JQL
-  let jql = `project = "${project}" AND status != Done`;
+  let jql = `project = ${JSON.stringify(project)} AND statusCategory != Done`;
 
   if (filters?.iterationIds && filters.iterationIds.length > 0) {
     const sprintClauses = filters.iterationIds.map((id) => `sprint = ${id}`).join(' OR ');
     jql += ` AND (${sprintClauses})`;
   }
 
-  const searchUrl = `${baseUrl}/rest/api/${apiVersion}/search`;
+  const searchUrl = `${baseUrl}/rest/api/${apiVersion}/search${filters?.factoryIntake && apiVersion === '3' ? '/jql' : ''}`;
   const body = {
     jql,
     maxResults: 200,
@@ -244,6 +249,8 @@ async function listItems(filters?: WorkItemFilters): Promise<WorkItem[]> {
         ? [getSettings().jiraAcceptanceCriteriaField!]
         : []),
       'summary',
+      'created',
+      'updated',
       'issuetype',
       'status',
       'priority',
@@ -257,18 +264,43 @@ async function listItems(filters?: WorkItemFilters): Promise<WorkItem[]> {
     ],
   };
 
-  const res = await fetch(searchUrl, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    throw new Error(`JIRA search failed: ${res.status} ${res.statusText}`);
+  const workItems: WorkItem[] = [];
+  let nextPageToken: string | undefined;
+  let startAt = 0;
+  for (let page = 0; page < 20; page++) {
+    const res = await fetch(searchUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        ...body,
+        ...(apiVersion === '3' && filters?.factoryIntake ? { nextPageToken } : { startAt }),
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) throw new Error(`JIRA search failed: ${res.status} ${res.statusText}`);
+    const data = (await res.json()) as {
+      issues: JiraIssue[];
+      nextPageToken?: string;
+      isLast?: boolean;
+      total?: number;
+    };
+    const batch = data.issues ?? [];
+    workItems.push(...batch.map(mapIssueToWorkItem));
+    if (!filters?.factoryIntake) break;
+    if (apiVersion === '3') {
+      if (data.isLast === true) break;
+      if (!data.nextPageToken)
+        throw new Error('Jira did not establish complete factory intake pagination.');
+      if (data.nextPageToken === nextPageToken)
+        throw new Error('Jira returned a repeated intake cursor.');
+      nextPageToken = data.nextPageToken;
+    } else {
+      startAt += batch.length;
+      if (!batch.length || (data.total !== undefined && startAt >= data.total)) break;
+    }
+    if (page === 19)
+      throw new Error('Jira factory intake exceeded its page limit. Narrow the connection scope.');
   }
-
-  const data = (await res.json()) as { issues: JiraIssue[] };
-  const workItems = (data.issues ?? []).map(mapIssueToWorkItem);
 
   // Cache results
   if (!filters?.iterationIds?.length) cacheWorkItems(workItems);

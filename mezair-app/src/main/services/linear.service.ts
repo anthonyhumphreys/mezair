@@ -37,6 +37,7 @@ async function graphql<T>(query: string, variables?: Record<string, unknown>): P
     method: 'POST',
     headers,
     body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(20_000),
   });
 
   if (!res.ok) {
@@ -71,12 +72,14 @@ function mapWorkItemType(label: string): WorkItem['type'] {
 
 interface LinearIssue {
   id: string;
+  createdAt?: string;
+  updatedAt?: string;
   identifier: string;
   title: string;
   description?: string;
   priority: number;
   url: string;
-  state: { name: string };
+  state: { name: string; type?: string };
   assignee?: { name: string };
   labels: { nodes: Array<{ name: string }> };
   estimate?: number;
@@ -99,6 +102,11 @@ function issueToWorkItem(issue: LinearIssue): WorkItem {
 
   return {
     id: issue.identifier,
+    createdAt: issue.createdAt,
+    updatedAt: issue.updatedAt,
+    closed: issue.state?.type
+      ? ['completed', 'canceled', 'duplicate'].includes(issue.state.type)
+      : undefined,
     title: issue.title,
     type: mapWorkItemType(originalType),
     state: issue.state?.name ?? '',
@@ -128,11 +136,13 @@ function issueToWorkItem(issue: LinearIssue): WorkItem {
 const ISSUE_FRAGMENT = `
   id
   identifier
+  createdAt
+  updatedAt
   title
   description
   priority
   url
-  state { name }
+  state { name type }
   assignee { name }
   labels { nodes { name } }
   estimate
@@ -169,8 +179,9 @@ async function listItems(filters?: WorkItemFilters): Promise<WorkItem[]> {
   }
 
   const query = `
-    query ListIssues($filter: IssueFilter) {
-      issues(filter: $filter, first: 200, orderBy: updatedAt) {
+    query ListIssues($filter: IssueFilter, $after: String) {
+      issues(filter: $filter, first: 200, after: $after, orderBy: updatedAt) {
+        pageInfo { hasNextPage endCursor }
         nodes {
           ${ISSUE_FRAGMENT}
         }
@@ -179,11 +190,24 @@ async function listItems(filters?: WorkItemFilters): Promise<WorkItem[]> {
   `;
 
   interface ListResult {
-    issues: { nodes: LinearIssue[] };
+    issues: { nodes: LinearIssue[]; pageInfo?: { hasNextPage: boolean; endCursor: string } };
   }
 
-  const data = await graphql<ListResult>(query, { filter: issueFilter });
-  const workItems = data.issues.nodes.map(issueToWorkItem);
+  const workItems: WorkItem[] = [];
+  let after: string | undefined;
+  for (let page = 0; page < 20; page++) {
+    const data = await graphql<ListResult>(query, { filter: issueFilter, after });
+    if (filters?.factoryIntake && !data.issues.pageInfo)
+      throw new Error('Linear did not establish complete factory intake pagination.');
+    workItems.push(...data.issues.nodes.map(issueToWorkItem));
+    if (!filters?.factoryIntake || !data.issues.pageInfo?.hasNextPage) break;
+    const next = data.issues.pageInfo.endCursor;
+    if (!next || next === after || page === 19)
+      throw new Error(
+        'Linear factory intake exceeded its page limit. Narrow the connection scope.',
+      );
+    after = next;
+  }
 
   // Cache results
   if (!filters?.iterationIds?.length) cacheWorkItems(workItems);

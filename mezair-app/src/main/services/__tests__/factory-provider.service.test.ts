@@ -153,6 +153,44 @@ function apiEndpoint(args: string[]): string {
 }
 
 describe('GitHub factory provider', () => {
+  it('omits the GitHub label query when intake is unfiltered and excludes PRs', async () => {
+    const command = vi.fn<FactoryProviderDependencies['command']>(async () =>
+      output([
+        {
+          number: 17,
+          title: 'Fix',
+          body: '',
+          state: 'open',
+          labels: [],
+          html_url: 'https://github.com/acme/demo/issues/17',
+          created_at: '',
+          updated_at: '',
+        },
+        { number: 18, title: 'PR', body: '', state: 'open', labels: [], pull_request: {} },
+      ]),
+    );
+    const factory = definition();
+    factory.definition.github!.label = '';
+    expect(await provider(command).listIssues(factory)).toMatchObject([{ number: 17, labels: [] }]);
+    expect(apiEndpoint(command.mock.calls[0][1])).not.toContain('labels=');
+  });
+  it('routes configured work item intake without changing the GitHub delivery adapter', async () => {
+    const factory = definition({
+      workItems: {
+        provider: 'jira',
+        connectionId: 'jira',
+        scope: 'https://acme.atlassian.net/APP',
+      },
+    });
+    const issue = { ...run().issue, number: 'APP-17' };
+    const intake = { listIssues: vi.fn(async () => [issue]), readIssue: vi.fn(async () => issue) };
+    const command = vi.fn(async () => '');
+    const io = provider(command, { intake });
+    expect(await io.listIssues(factory, 'cursor')).toEqual([issue]);
+    expect(await io.readIssue(factory, 'APP-17')).toEqual(issue);
+    expect(intake.readIssue).toHaveBeenCalledWith(factory, 'APP-17');
+    expect(command).not.toHaveBeenCalled();
+  });
   it('reconciles a PR created before a lost response without creating a duplicate', async () => {
     const calls: Array<{ executable: string; args: string[] }> = [];
     const existing = pull();

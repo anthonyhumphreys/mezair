@@ -14,6 +14,11 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   factoryWorkflowDrift,
   factoryWorkflowIssues,
+  factoryConnectionSource,
+  FACTORY_WORK_ITEM_PROVIDERS,
+  factoryDelivery,
+  factoryDeliveryLabel,
+  factoryReadyLabel,
   type FactoryDefinition,
   type FactoryDefinitionInput,
   type FactoryOrganizationMember,
@@ -21,7 +26,7 @@ import {
   type FactoryPreview,
   type FactoryRole,
 } from '../../../shared/factories';
-import type { RepoInfo, WorkflowTemplate } from '../../../shared/types';
+import type { RepoInfo, WorkflowTemplate, WorkItemConnection } from '../../../shared/types';
 import { Button } from '../ui/Button';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import { cx } from '../ui/cx';
@@ -452,6 +457,7 @@ export function FactoryEditor({
   editing,
   templates,
   repos,
+  connections = [],
   organizations,
   preview,
   busy,
@@ -472,6 +478,7 @@ export function FactoryEditor({
   editing: FactoryDefinition | null;
   templates: WorkflowTemplate[];
   repos: RepoInfo[];
+  connections?: WorkItemConnection[];
   organizations: FactoryOrganizationOption[];
   preview: FactoryPreview | null;
   busy: boolean;
@@ -516,6 +523,13 @@ export function FactoryEditor({
       : (selectedTemplate ?? null);
   const orgAccess = draft.access.kind === 'organization' ? draft.access : null;
   const sourceLocked = editing !== null;
+  const sources = connections.flatMap((connection) => {
+    try {
+      return [{ name: connection.name, source: factoryConnectionSource(connection) }];
+    } catch {
+      return [];
+    }
+  });
   const reserved = normalized.checks.length + normalized.postMergeChecks.length + 1;
 
   return (
@@ -595,7 +609,7 @@ export function FactoryEditor({
           id="station-intake"
           title="Intake"
           description="Which issues start a run."
-          issues={issuesFor('name', 'repo', 'label', 'baseBranch')}
+          issues={issuesFor('name', 'repo', 'source', 'label', 'baseBranch')}
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Factory name">
@@ -608,12 +622,14 @@ export function FactoryEditor({
               />
             </Field>
             <Field
-              label="Repository"
+              label="Delivery repository"
               group={sourceLocked}
               hint={
                 sourceLocked
                   ? 'The source repository is fixed for a factory. Create a new factory to watch another.'
-                  : undefined
+                  : factoryDelivery(draft).provider === 'ado'
+                    ? 'Uses Git Credential Manager or Azure CLI authentication on the executor.'
+                    : undefined
               }
             >
               {sourceLocked ? (
@@ -622,9 +638,7 @@ export function FactoryEditor({
                   aria-readonly="true"
                 >
                   <Lock size={13} aria-hidden="true" className="shrink-0 text-text-tertiary" />
-                  <Mono>
-                    {draft.github.owner}/{draft.github.repo}
-                  </Mono>
+                  <Mono>{factoryDeliveryLabel(draft)}</Mono>
                 </div>
               ) : (
                 <select
@@ -632,7 +646,7 @@ export function FactoryEditor({
                   value={draft.repoId}
                   onChange={(event) => onRepo(event.target.value)}
                 >
-                  <option value="">Choose a GitHub repository</option>
+                  <option value="">Choose a GitHub or Azure DevOps repository</option>
                   {repos.map((repo) => (
                     <option key={repo.id} value={repo.id}>
                       {repo.name}
@@ -641,15 +655,62 @@ export function FactoryEditor({
                 </select>
               )}
             </Field>
-            <Field label="Issue label" hint="Only open issues carrying this label are eligible.">
+            <Field
+              label="Work item source"
+              className="sm:col-span-2"
+              hint={
+                sourceLocked
+                  ? 'The intake source is fixed for this factory.'
+                  : 'Uses the selected connection’s repository, project or team.'
+              }
+            >
+              <select
+                className={inputClass()}
+                disabled={sourceLocked}
+                value={draft.workItems?.connectionId ?? ''}
+                onChange={(event) =>
+                  onDefinition((current) => ({
+                    ...current,
+                    workItems: sources.find(
+                      (item) => item.source.connectionId === event.target.value,
+                    )?.source,
+                  }))
+                }
+              >
+                <option value="">
+                  {factoryDelivery(draft).provider === 'github'
+                    ? 'GitHub issues in the delivery repository'
+                    : 'Choose a work item connection'}
+                </option>
+                {draft.workItems &&
+                  !sources.some(
+                    (item) => item.source.connectionId === draft.workItems!.connectionId,
+                  ) && (
+                    <option value={draft.workItems.connectionId}>
+                      {FACTORY_WORK_ITEM_PROVIDERS[draft.workItems.provider]} ·{' '}
+                      {draft.workItems.scope}
+                    </option>
+                  )}
+                {sources.map(({ name, source }) => (
+                  <option key={source.connectionId} value={source.connectionId}>
+                    {FACTORY_WORK_ITEM_PROVIDERS[source.provider]} · {name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field
+              label="Ready label (optional)"
+              hint="Leave blank to process open work items with any label. Azure DevOps uses tags."
+            >
               <input
                 className={inputClass('font-mono text-xs')}
-                value={draft.github.label}
+                value={draft.readyLabel ?? draft.github?.label ?? ''}
+                placeholder="Any label"
                 spellCheck={false}
                 onChange={(event) =>
                   onDefinition((current) => ({
                     ...current,
-                    github: { ...current.github, label: event.target.value },
+                    readyLabel: event.target.value,
                   }))
                 }
               />
@@ -657,16 +718,35 @@ export function FactoryEditor({
             <Field label="Base branch">
               <input
                 className={inputClass('font-mono text-xs')}
-                value={draft.github.baseBranch}
+                value={factoryDelivery(draft).baseBranch}
                 spellCheck={false}
                 onChange={(event) =>
                   onDefinition((current) => ({
                     ...current,
-                    github: { ...current.github, baseBranch: event.target.value },
+                    github: undefined,
+                    readyLabel: factoryReadyLabel(current),
+                    delivery: { ...factoryDelivery(current), baseBranch: event.target.value },
                   }))
                 }
               />
             </Field>
+            <label className="flex items-start gap-2.5 text-sm text-text-primary sm:col-span-2">
+              <input
+                type="checkbox"
+                className="mt-1 accent-[var(--color-accent)]"
+                checked={draft.includeExisting === true}
+                onChange={(event) =>
+                  onDefinition((current) => ({ ...current, includeExisting: event.target.checked }))
+                }
+              />
+              <span>
+                Include existing open work items
+                <span className="block text-xs text-text-tertiary">
+                  When off, only items created after first activation are eligible. Each item is
+                  processed once.
+                </span>
+              </span>
+            </label>
           </div>
         </EditorStation>
 
@@ -852,7 +932,7 @@ export function FactoryEditor({
           <Field
             label="Required CI checks"
             group
-            hint="Exact GitHub check names that must pass at the current head."
+            hint="Exact provider check names that must pass at the current head."
           >
             <CommandRows
               label="Required check"
@@ -883,6 +963,8 @@ export function FactoryEditor({
               Require a human review approval
               <span className="block text-xs text-text-tertiary">
                 A factory-authored review never satisfies a required approval.
+                {factoryDelivery(draft).provider === 'ado' &&
+                  ' Azure DevOps needs a blocking reviewer policy that requires fresh approval after new pushes and excludes the PR author.'}
               </span>
             </span>
           </label>
@@ -984,6 +1066,32 @@ export function FactoryEditor({
             )}
           {orgAccess && (
             <>
+              <label className="flex items-start gap-2.5 text-sm text-text-primary">
+                <input
+                  type="checkbox"
+                  className="mt-1 accent-[var(--color-accent)]"
+                  checked={orgAccess.authorization === 'mezair'}
+                  onChange={(event) =>
+                    onDefinition((current) => ({
+                      ...current,
+                      access:
+                        current.access.kind === 'organization'
+                          ? {
+                              ...current.access,
+                              authorization: event.target.checked ? 'mezair' : 'source',
+                            }
+                          : current.access,
+                    }))
+                  }
+                />
+                <span>
+                  Use Mezair roles for viewing
+                  <span className="block text-xs text-text-tertiary">
+                    Viewers need membership and a factory role. Provider credentials stay with the
+                    executor. Changes apply after reviewing and saving this revision.
+                  </span>
+                </span>
+              </label>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Organization">
                   <select
@@ -1025,15 +1133,27 @@ export function FactoryEditor({
                       }))
                     }
                   >
-                    <option value="team">A GitHub team</option>
+                    <option value="team">
+                      {orgAccess.authorization === 'mezair'
+                        ? 'Selected factory team'
+                        : 'A GitHub team'}
+                    </option>
                     <option value="organization">Everyone in the organization</option>
                     <option value="restricted">Named members only</option>
                   </select>
                 </Field>
                 {orgAccess.visibility === 'team' && (
                   <Field
-                    label="GitHub team slug"
-                    hint="Membership is checked on every read and control."
+                    label={
+                      orgAccess.authorization === 'mezair'
+                        ? 'Factory team name'
+                        : 'GitHub team slug'
+                    }
+                    hint={
+                      orgAccess.authorization === 'mezair'
+                        ? 'Choose the team members and their roles below.'
+                        : 'Membership is checked on every read and control.'
+                    }
                   >
                     <input
                       className={inputClass('font-mono text-xs')}

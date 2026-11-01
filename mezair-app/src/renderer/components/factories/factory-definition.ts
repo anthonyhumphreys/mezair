@@ -1,4 +1,5 @@
 import type { FactoryAccess, FactoryDefinitionInput } from '../../../shared/factories';
+import { parseFactoryDeliveryRemote } from '../../../shared/factories';
 import type { RepoInfo } from '../../../shared/types';
 
 export const DEFAULT_LIMITS: FactoryDefinitionInput['limits'] = {
@@ -8,22 +9,19 @@ export const DEFAULT_LIMITS: FactoryDefinitionInput['limits'] = {
   maxConcurrentRuns: 2,
 };
 
-export function githubIdentity(repo: RepoInfo): FactoryDefinitionInput['github'] {
-  const remote = repo.remoteUrl ?? '';
-  const match =
-    remote.match(/^(?:https?:\/\/|ssh:\/\/git@)([^/:]+)[/:]([^/]+)\/([^/#]+?)(?:\.git)?$/i) ??
-    remote.match(/^git@([^:]+):([^/]+)\/([^/#]+?)(?:\.git)?$/i);
-  return {
-    host: match?.[1] ?? 'github.com',
-    owner: match?.[2] ?? '',
-    repo: match?.[3] ?? repo.name,
-    label: 'ready-for-agent',
-    baseBranch: repo.defaultBranch || 'main',
-  };
+export function deliveryIdentity(repo: RepoInfo) {
+  return (
+    parseFactoryDeliveryRemote(repo.remoteUrl ?? '', repo.defaultBranch || 'main') ?? {
+      provider: 'github' as const,
+      host: 'github.com',
+      owner: '',
+      repo: repo.name,
+      baseBranch: repo.defaultBranch || 'main',
+    }
+  );
 }
-
-export function isGithubRepo(repo: RepoInfo): boolean {
-  return /github\.com|github/i.test(repo.remoteUrl ?? '');
+export function isFactoryRepo(repo: RepoInfo): boolean {
+  return parseFactoryDeliveryRemote(repo.remoteUrl ?? '') !== null;
 }
 
 export function newDefinition(
@@ -31,14 +29,16 @@ export function newDefinition(
   repo?: RepoInfo,
   workflowTemplateId = '',
 ): FactoryDefinitionInput {
-  const github = repo
-    ? githubIdentity(repo)
-    : { host: 'github.com', owner: '', repo: '', label: 'ready-for-agent', baseBranch: 'main' };
+  const delivery = repo
+    ? deliveryIdentity(repo)
+    : { provider: 'github' as const, host: 'github.com', owner: '', repo: '', baseBranch: 'main' };
   return {
     name: 'Issue to reviewed PR',
     workspaceId,
     repoId: repo?.id ?? '',
-    github,
+    delivery,
+    readyLabel: '',
+    includeExisting: false,
     workflowTemplateId,
     criteria: ['The configured pre-PR check command exits successfully.'],
     checks: ['pnpm test'],
@@ -56,11 +56,22 @@ export function withAccess(
 ): FactoryAccess {
   if (kind === 'private') return { kind: 'private' };
   if (current.kind === 'organization') return current;
-  return { kind: 'organization', organizationId: '', visibility: 'team', teamId: '', members: [] };
+  return {
+    kind: 'organization',
+    authorization: 'mezair',
+    organizationId: '',
+    visibility: 'restricted',
+    members: [],
+  };
 }
 
 /** Starting points for the conversational draft; each is a complete, reviewable request. */
 export const DRAFT_EXAMPLES: Array<{ label: string; request: string }> = [
+  {
+    label: 'All open work items',
+    request:
+      'Process all open work items from my configured work item connection, including the existing backlog, without requiring a ready label. Implement and verify each change, open a PR and ask me to approve each merge.',
+  },
   {
     label: 'Human-approved merge',
     request:

@@ -12,6 +12,8 @@ import {
 
 interface GitHubIssue {
   number: number;
+  created_at?: string;
+  updated_at?: string;
   title: string;
   body?: string | null;
   state: string;
@@ -101,6 +103,9 @@ function toWorkItem(issue: GitHubIssue): WorkItem {
     ?.toLowerCase();
   return {
     id: `${target.repositoryUrl}/issues/${issue.number}`,
+    createdAt: issue.created_at,
+    updatedAt: issue.updated_at,
+    closed: issue.state !== 'open',
     title: issue.title,
     description: issue.body ?? undefined,
     acceptanceCriteria: extractAcceptanceCriteria({ description: issue.body ?? undefined }),

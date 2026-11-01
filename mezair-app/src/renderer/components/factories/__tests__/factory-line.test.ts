@@ -60,7 +60,27 @@ const snapshot = (overrides: Partial<FactoryDefinitionInput> = {}): FactoryDefin
 });
 
 const NOW = Date.parse('2026-10-27T12:00:00Z');
+
+it('accepts optional labels with either backlog policy and any configured work item provider', () => {
+  for (const provider of ['github', 'ado', 'jira', 'linear'] as const)
+    for (const includeExisting of [false, true])
+      expect(
+        definitionIssues({
+          ...definition,
+          github: { ...definition.github!, label: '' },
+          workItems: { provider, connectionId: provider, scope: 'source' },
+          includeExisting,
+        }),
+      ).toEqual([]);
+});
 const minutesAgo = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
+
+it('does not consume the execution time budget while queued', () => {
+  const queued = run({ stage: 'received', createdAt: minutesAgo(120) });
+  expect(runBudgets(queued, NOW).find((budget) => budget.id === 'time')?.used).toBe(0);
+  const started = { ...queued, stage: 'implementing' as const, startedAt: minutesAgo(10) };
+  expect(runBudgets(started, NOW).find((budget) => budget.id === 'time')?.used).toBe(10 * 60000);
+});
 
 function run(overrides: Partial<FactoryRun> = {}, definitionOverrides = {}): FactoryRun {
   return {

@@ -49,6 +49,74 @@ const workflow = {
   updatedAt: '',
 } as WorkflowTemplate;
 describe('factory definition review contract', () => {
+  it('reviews Azure DevOps delivery independently of every work item provider', () => {
+    for (const provider of ['github', 'ado', 'jira', 'linear']) {
+      const parsed = validateFactoryDefinition({
+        ...definition,
+        github: undefined,
+        delivery: {
+          provider: 'ado',
+          organizationUrl: 'https://dev.azure.com/acme',
+          project: 'App',
+          repo: 'app',
+          baseBranch: 'main',
+        },
+        readyLabel: '',
+        workItems: { provider, connectionId: provider, scope: 'source' },
+        access: {
+          kind: 'organization',
+          authorization: 'mezair',
+          organizationId: 'org',
+          visibility: 'organization',
+          members: [],
+        },
+      });
+      expect(parsed.github).toBeUndefined();
+      expect(parsed.delivery?.provider).toBe('ado');
+      expect(factoryPreview(parsed, workflow, 'scope').summary.join(' ')).toContain('acme/App/app');
+    }
+  });
+  it('reviews optional labels, backlog intake and every work item provider', () => {
+    for (const provider of ['github', 'ado', 'jira', 'linear']) {
+      const value = {
+        ...definition,
+        github: { ...definition.github!, label: '  ' },
+        workItems: { provider, connectionId: 'connection', scope: 'source' },
+        includeExisting: true,
+      };
+      const parsed = validateFactoryDefinition(value);
+      expect(parsed.github!.label).toBe('');
+      expect(parsed.workItems?.provider).toBe(provider);
+      expect(factoryPreview(parsed, workflow, 'scope').summary[0]).toContain('with any label');
+      expect(factoryPreview(parsed, workflow, 'scope').confirmation).not.toBe(
+        factoryPreview({ ...parsed, includeExisting: false }, workflow, 'scope').confirmation,
+      );
+    }
+    expect(() =>
+      validateFactoryDefinition({
+        ...definition,
+        workItems: { provider: 'other', connectionId: 'id', scope: 'source' },
+      }),
+    ).toThrow('Unsupported');
+    expect(() => validateFactoryDefinition({ ...definition, includeExisting: 'yes' })).toThrow(
+      'existing work item',
+    );
+  });
+  it('allows external work item sources with Mezair organisation roles', () => {
+    expect(
+      validateFactoryDefinition({
+        ...definition,
+        workItems: { provider: 'jira', connectionId: 'id', scope: 'source' },
+        access: {
+          kind: 'organization',
+          authorization: 'mezair',
+          organizationId: 'org',
+          visibility: 'organization',
+          members: [],
+        },
+      }).access,
+    ).toMatchObject({ kind: 'organization', authorization: 'mezair' });
+  });
   it('binds every criterion to one reviewed check and requires post-merge verification', () => {
     expect(validateFactoryDefinition(definition)).toEqual(definition);
     expect(() => validateFactoryDefinition({ ...definition, checks: [] })).toThrow();
@@ -59,8 +127,8 @@ describe('factory definition review contract', () => {
   });
   it('rejects invalid roles, sources and unbounded limits', () => {
     for (const change of [
-      { github: { ...definition.github, host: 'file:///local' } },
-      { github: { ...definition.github, repo: '../outside' } },
+      { github: { ...definition.github!, host: 'file:///local' } },
+      { github: { ...definition.github!, repo: '../outside' } },
       { limits: { ...definition.limits, repairRounds: 99 } },
       {
         access: {

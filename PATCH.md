@@ -457,20 +457,22 @@ run desktop typechecks, lint and tests. Live provider publication is separate
 acceptance evidence. Full factory intake, durable PR lifecycle control and
 policy-based merging remain planned in `mezair-app/docs/plans/software-factories.md`.
 
-### C8: Reviewed software factories and typed GitHub delivery
+### C8: Reviewed software factories and typed source control delivery
 
-Status: implemented; automated verification passed
+Status: implemented; current verification and baseline test failure documented below
 Owner project: `mezair-app`
 
 A factory is a reviewed typed definition and immutable workflow revision. Saving
 or drafting does not activate it. Activation grants standing authority for its
-specified source, label, verification commands, publication and merge policy;
+specified source, optional ready label, backlog policy, verification commands,
+publication and merge policy;
 never derive those permissions from an issue, comment, model output or operator
 retry. Source repository identity is immutable. Workflow revisions and expanded
 grants apply to future intake; current pauses, account/source revocations and
 reductions in merge authority fence active effects. Visibility changes apply to
-existing history and require current membership, source permission and role on
-all discovery, detail and control paths. Organisation membership alone grants no
+existing history and require current Mezair membership and factory roles on
+all discovery, detail and control paths. Legacy source-checked policies retain
+their extra GitHub source permission gate until an owner reviews a migration. Organisation membership alone grants no
 repository access or execution identity. Backend WorkOS users, sync accounts and
 designated executor enrollments are distinct identity domains.
 
@@ -490,8 +492,56 @@ merged outcome requiring post-merge verification. Takeover claims/stops the run
 before creating a fresh private recipient chat; remote claim correlation never
 reuses the executor's private thread ID or local repository IDs as authority.
 
-The first execution slice supports GitHub and local Codex app-server workflow
-nodes only. Reject unsupported provider, remote node or privileged inline
+Factory intake supports GitHub, Azure DevOps, Jira and Linear through a pinned,
+credential-free Work Item connection identity and repository/project/team scope.
+Legacy definitions continue to read GitHub issues from the delivery repository
+using the GitHub CLI. Ready labels/tags are optional: blank means no label gate.
+An independent, reviewed `includeExisting` option admits the open backlog; absent
+or false preserves intake of items created after first activation. Reconcile
+complete bounded connector lists, normalize provider lifecycle states and dates,
+and fail rather than advance a cursor over truncated or uncertain results.
+The execution clock starts when an item leaves the concurrency queue, is
+persisted once and is never renewed by retries. Refresh its issue content and
+eligibility before starting the worker.
+Deduplicate provider/scope/item identity across connections and retain legacy
+GitHub issue keys. Recheck pinned connection scope before and after provider
+reads and before current execution effects; changing the UI's active connection
+must never redirect a factory. External work item links must never become
+unrelated GitHub issue-closing references in PRs.
+
+Delivery supports GitHub and Azure DevOps independently of the work item source.
+Canonical `delivery` and `readyLabel` fields replace the GitHub-specific input;
+legacy reviewed GitHub records retain their wire shape and fingerprints. Both
+adapters share checkout isolation, sealing, secret scanning and verification.
+Azure DevOps completion pins `lastMergeSourceCommit`, never bypasses policies,
+observes current-iteration checks and required policies, and confirms the merge
+commit before post-merge verification. An accepted completion still in progress
+cannot be reported as cancelled or completed without provider observation.
+Required review approval needs a blocking minimum-reviewer policy that excludes
+the PR author and resets approvals on source pushes or requires votes on the
+latest/every iteration. Retained PR votes alone do not establish current-head
+approval. Reject API continuation pages rather than accepting partial evidence.
+
+Use Git Credential Manager directly for Azure DevOps Git operations when
+available. GCM OAuth or Azure CLI sign-in supplies API tokens transiently; no PAT
+is required in a factory definition. Disable unattended prompts and credential
+traces, pass credential lookup requests over stdin, and keep returned tokens out
+of definitions, prompts, argv, receipts, logs and worker environments. Existing
+vault-backed PAT connections remain compatible, with GCM/Azure CLI preferred.
+Fence network effects again after credential acquisition, immediately before
+publication/completion. Repository remote credentials never enter draft prompts.
+
+New organisation factories use explicit `authorization: mezair`: viewing follows
+current Mezair organisation membership and factory roles, including an explicit
+roster for team/restricted audiences. Provider access belongs to the executor;
+viewers need no GitHub/ADO/Jira/Linear credentials. Saving a reviewed policy
+revision is the only way to migrate a legacy source-checked factory. Do not
+silently widen its historical audience. Registry source identities include
+credential-free intake scope; hosted claims use provider-native string IDs and
+migration 0009 preserves the pre-existing numeric GitHub claims.
+
+Worker graphs still use isolated local Codex app-server nodes only. Reject
+unsupported model provider, remote node or privileged inline
 validation configurations before activation. Isolate HOME/CODEX_HOME, retain
 only model authentication, disable inherited MCP tools and provider-native
 subagents, clamp to the originating/current sandbox and explicitly disable tool
@@ -529,7 +579,8 @@ Organisation definitions and runs use recipient-encrypted snapshots. Authorise
 and CAS registry metadata separately from encrypted payload claims; only the
 designated executor may claim jobs, publish runs or consume commands. Verified
 owners/admins revise and activate policies through the authoritative registry.
-Current policy/source gates and recipient enrollment govern history rewrap;
+Current membership/policy gates (plus source gates on legacy policies) and
+recipient enrollment govern history rewrap;
 never reuse another member's account encryption key. Keep remote source identity
 separate from recipient workspace/repository mapping and maintain idempotent,
 leased control receipts on both server and executor.
@@ -545,6 +596,27 @@ The workflow re-pin and renderer change re-ran the desktop suite (362 files,
 3,335 tests; 4 files and 12 tests skipped), both TypeScript checks, lint and the
 production build. Its layouts were checked against the synthetic `?factories`
 replay fixture only, not a live factory.
+
+The multi-provider intake and optional-filter change passed the desktop suite
+(3,402 tests passed, 12 skipped), both TypeScript checks, lint, production build
+and `git diff --check`. The synthetic factory editor was exercised with all four
+provider selections, no ready label, backlog on/off and reviewed authority at
+desktop and compact widths. Connector pagination/lifecycle, connection scope
+changes, cross-source dedupe, overlapping claims, refreshed issue content and
+queue-started execution budgets have focused coverage. No live provider write
+was performed.
+
+The dual-provider delivery and Mezair role change passed the full desktop suite
+(3,417 passed, 12 skipped), then 70 focused tests after the final current-head
+review and continuation guards. Node/web/backend TypeScript checks, lint,
+production build and `git diff --check` passed. All 18 hosted factory tests
+passed, including migration preservation, role-only access, membership/control
+revocation and native issue claim IDs. The full backend suite had 506 passes
+and one device-enrollment rate-limit failure in `auth.test.ts`; the same failure
+was reproduced in an unchanged HEAD checkout. Synthetic browser checks covered
+ADO delivery with Jira intake, no label gate, backlog selection and Mezair
+organisation viewing at desktop/compact widths. No live credential exchange,
+provider write, production migration or deployment was performed.
 
 ### C9: GitHub Work Item connection identity
 

@@ -1,4 +1,194 @@
-import type { WorkflowTemplate } from './types.js';
+import type { WorkflowTemplate, WorkItemConnection, WorkItemProvider } from './types.js';
+
+export const FACTORY_WORK_ITEM_PROVIDERS: Record<WorkItemProvider, string> = {
+  github: 'GitHub',
+  ado: 'Azure DevOps',
+  jira: 'Jira',
+  linear: 'Linear',
+};
+/** Credential-free, pinned intake scope. Delivery continues to use the GitHub repository. */
+export interface FactoryWorkItemSource {
+  provider: WorkItemProvider;
+  connectionId: string;
+  scope: string;
+}
+
+export type FactoryDelivery =
+  | { provider: 'github'; host: string; owner: string; repo: string; baseBranch: string }
+  | { provider: 'ado'; organizationUrl: string; project: string; repo: string; baseBranch: string };
+
+/** Legacy reviewed GitHub snapshots retain their original wire shape and fingerprint. */
+export function factoryDelivery(definition: FactoryDefinitionInput): FactoryDelivery {
+  if (definition.delivery) return definition.delivery;
+  if (definition.github) {
+    const { host, owner, repo, baseBranch } = definition.github;
+    return { provider: 'github', host, owner, repo, baseBranch };
+  }
+  throw new Error('Choose a GitHub or Azure DevOps delivery repository.');
+}
+export function factoryReadyLabel(definition: FactoryDefinitionInput): string {
+  return (definition.readyLabel ?? definition.github?.label ?? '').trim();
+}
+export function factoryDeliveryLabel(definition: FactoryDefinitionInput): string {
+  const source = factoryDelivery(definition);
+  return source.provider === 'github'
+    ? `${source.owner}/${source.repo}`
+    : `${source.organizationUrl.split('/').at(-1)}/${source.project}/${source.repo}`;
+}
+export function factoryDeliveryKey(definition: FactoryDefinitionInput): string {
+  const source = factoryDelivery(definition);
+  return JSON.stringify(
+    source.provider === 'github'
+      ? ['github', source.host.toLowerCase(), source.owner.toLowerCase(), source.repo.toLowerCase()]
+      : [
+          'ado',
+          source.organizationUrl.toLowerCase(),
+          source.project.toLowerCase(),
+          source.repo.toLowerCase(),
+        ],
+  );
+}
+export function parseFactoryDeliveryRemote(
+  remote: string,
+  baseBranch = 'main',
+): FactoryDelivery | null {
+  const adoSsh = remote.match(
+    /^(?:ssh:\/\/)?git@ssh\.dev\.azure\.com[:/]v3\/([^/]+)\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i,
+  );
+  if (adoSsh)
+    return {
+      provider: 'ado',
+      organizationUrl: `https://dev.azure.com/${decodeURIComponent(adoSsh[1])}`,
+      project: decodeURIComponent(adoSsh[2]),
+      repo: decodeURIComponent(adoSsh[3]),
+      baseBranch,
+    };
+  const gitSsh = remote.match(/^(?:ssh:\/\/)?git@([^:/]+)[:/]([^/]+)\/([^/]+?)(?:\.git)?\/?$/i);
+  try {
+    const url = gitSsh
+      ? new URL(`https://${gitSsh[1]}/${gitSsh[2]}/${gitSsh[3]}`)
+      : new URL(remote);
+    const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    const host = url.hostname.toLowerCase();
+    if (url.password || url.search || url.hash || url.protocol !== 'https:') return null;
+    if (host === 'dev.azure.com' && parts.length === 4 && parts[2] === '_git')
+      return {
+        provider: 'ado',
+        organizationUrl: `https://dev.azure.com/${parts[0]}`,
+        project: parts[1],
+        repo: parts[3].replace(/\.git$/i, ''),
+        baseBranch,
+      };
+    if (/^[a-z0-9-]+\.visualstudio\.com$/i.test(host) && parts.length === 3 && parts[1] === '_git')
+      return {
+        provider: 'ado',
+        organizationUrl: `https://dev.azure.com/${host.split('.')[0]}`,
+        project: parts[0],
+        repo: parts[2].replace(/\.git$/i, ''),
+        baseBranch,
+      };
+    if (
+      (host === 'github.com' ||
+        host.endsWith('.github.com') ||
+        host.startsWith('github.') ||
+        host.includes('.github.')) &&
+      parts.length === 2
+    )
+      return {
+        provider: 'github',
+        host,
+        owner: parts[0],
+        repo: parts[1].replace(/\.git$/i, ''),
+        baseBranch,
+      };
+    return null;
+  } catch {
+    return null;
+  }
+}
+export function factoryMatchesRemote(definition: FactoryDefinitionInput, remote: string): boolean {
+  const delivery = parseFactoryDeliveryRemote(remote);
+  return (
+    delivery !== null &&
+    factoryDeliveryKey({ ...definition, delivery }) === factoryDeliveryKey(definition)
+  );
+}
+
+export function factoryConnectionSource(connection: WorkItemConnection): FactoryWorkItemSource {
+  const required = (value: string | undefined) => {
+    if (!value?.trim())
+      throw new Error('Configure the Work Item connection project or team first.');
+    return value.trim();
+  };
+  const origin = (value: string | undefined) => {
+    const raw = required(value);
+    const url = new URL(raw.includes('://') ? raw : `https://${raw}`);
+    if (
+      !['https:', 'http:'].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    )
+      throw new Error('Invalid Work Item connection URL.');
+    return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
+  };
+  let scope: string;
+  switch (connection.provider) {
+    case 'github':
+      scope = `${origin(connection.githubHost || 'https://github.com')}/${encodeURIComponent(required(connection.githubOwner).toLowerCase())}/${encodeURIComponent(required(connection.githubRepo).toLowerCase())}`;
+      break;
+    case 'ado':
+      scope = `${origin(connection.adoOrganizationUrl)}/${encodeURIComponent(required(connection.adoProject))}`;
+      break;
+    case 'jira':
+      scope = `${origin(connection.jiraHost)}/${encodeURIComponent(required(connection.jiraProject))}`;
+      break;
+    case 'linear':
+      scope = `linear:team:${required(connection.linearTeamId)}`;
+      break;
+    default:
+      throw new Error('Unsupported factory Work Item provider.');
+  }
+  return { provider: connection.provider, connectionId: connection.id, scope };
+}
+
+export function factoryIntakeDescription(definition: FactoryDefinitionInput): string {
+  const source = definition.workItems;
+  const scope = source
+    ? `${FACTORY_WORK_ITEM_PROVIDERS[source.provider]} · ${source.scope}`
+    : factoryDeliveryLabel(definition);
+  const label = factoryReadyLabel(definition);
+  return `${definition.includeExisting ? 'Open work items' : 'New open work items'}${label ? ` labelled ${label}` : ' with any label'} in ${scope}`;
+}
+
+export function factoryIssueKey(definition: FactoryDefinitionInput, issue: FactoryIssue): string {
+  if (definition.workItems) {
+    const { provider, scope } = definition.workItems;
+    // Match the legacy key for GitHub so a connection-backed factory cannot reclaim an issue.
+    if (provider === 'github') {
+      const target = new URL(scope);
+      return (
+        `${target.host}${target.pathname}`.toLowerCase() +
+        `#${String(issue.number).split('/').at(-1)}`
+      );
+    }
+    return JSON.stringify([
+      provider,
+      provider === 'linear' ? scope : scope.toLowerCase(),
+      provider === 'jira' ? String(issue.number).toUpperCase() : String(issue.number),
+    ]);
+  }
+  const delivery = factoryDelivery(definition);
+  if (delivery.provider !== 'github')
+    throw new Error('Choose a Work Item connection for Azure DevOps delivery.');
+  return `${delivery.host}/${delivery.owner}/${delivery.repo}`.toLowerCase() + `#${issue.number}`;
+}
+
+export function factoryIssueLabel(issue: FactoryIssue): string {
+  const value = String(issue.number).split('/').at(-1) ?? String(issue.number);
+  return /^\d+$/.test(value) ? `#${value}` : value;
+}
 
 export type FactoryRole = 'viewer' | 'operator' | 'owner';
 export interface FactoryOrganizationOption {
@@ -10,6 +200,7 @@ export interface FactoryOrganizationMember {
   role: string;
 }
 export interface FactoryDirectoryPolicy {
+  authorization?: 'mezair' | 'source';
   organizationId: string;
   visibility: 'organization' | 'team' | 'restricted';
   teamId?: string;
@@ -33,6 +224,7 @@ export type FactoryAccess =
   | { kind: 'private' }
   | {
       kind: 'organization';
+      authorization?: 'mezair' | 'source';
       organizationId: string;
       visibility: 'organization' | 'team' | 'restricted';
       teamId?: string;
@@ -42,7 +234,13 @@ export interface FactoryDefinitionInput {
   name: string;
   workspaceId: string;
   repoId: string;
-  github: { host: string; owner: string; repo: string; label: string; baseBranch: string };
+  /** Kept only for compatibility with previously reviewed definitions. */
+  github?: { host: string; owner: string; repo: string; label: string; baseBranch: string };
+  delivery?: FactoryDelivery;
+  readyLabel?: string;
+  workItems?: FactoryWorkItemSource;
+  /** Explicitly reviewed backlog intake; absent on legacy definitions. */
+  includeExisting?: boolean;
   workflowTemplateId: string;
   criteria: string[];
   checks: string[];
@@ -98,7 +296,7 @@ export interface FactoryDefinition {
   redacted?: boolean;
 }
 export interface FactoryIssue {
-  number: number;
+  number: number | string;
   title: string;
   body: string;
   url: string;
@@ -137,6 +335,7 @@ export interface FactoryEvidence {
   checkedAt: string;
 }
 export interface FactoryPullRequest {
+  repositoryId?: string;
   number: number;
   url: string;
   headSha: string;
@@ -189,6 +388,8 @@ export interface FactoryRun {
   repairRounds: number;
   commandsUsed: number;
   createdAt: string;
+  /** Execution budget starts when dequeued, not while waiting for a concurrency slot. */
+  startedAt?: string;
   updatedAt: string;
   deadlineAt: string;
   nextPollAt?: string;
@@ -249,7 +450,7 @@ export interface FactoryRunControlInput {
 /** Desktop/provider boundary: all writes have a durable, stable intent key. */
 export interface FactoryProvider {
   listIssues(factory: FactoryDefinition, since?: string): Promise<FactoryIssue[]>;
-  readIssue(factory: FactoryDefinition, number: number): Promise<FactoryIssue>;
+  readIssue(factory: FactoryDefinition, number: number | string): Promise<FactoryIssue>;
   prepareCheckout(
     factory: FactoryDefinition,
     run: FactoryRun,

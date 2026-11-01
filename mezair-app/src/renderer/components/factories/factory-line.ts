@@ -1,5 +1,8 @@
 import {
   FACTORY_TERMINAL_STAGES,
+  factoryDelivery,
+  factoryDeliveryLabel,
+  factoryReadyLabel,
   type FactoryDefinitionInput,
   type FactoryRun,
   type FactoryRunStage,
@@ -70,7 +73,7 @@ export const STAGE_LABELS: Record<FactoryRunStage, string> = {
 
 /**
  * - `live`: the factory is doing work right now
- * - `waiting`: waiting on GitHub (CI, reviews, a queued merge) or an auto-merge gate
+ * - `waiting`: waiting on the provider (CI, reviews, a queued merge) or an auto-merge gate
  * - `needs-you`: a person must approve the current head
  * - `blocked`: stopped with an error; retry after reconciling
  */
@@ -269,7 +272,8 @@ export function nextStep(run: FactoryRun): NextStep {
     case 'received':
       return {
         title: 'Claiming the issue',
-        detail: 'Confirming it is still open and labelled, then preparing an isolated checkout.',
+        detail:
+          'Confirming it is still open and matches intake, then preparing an isolated checkout.',
       };
     case 'implementing':
       return {
@@ -291,7 +295,7 @@ export function nextStep(run: FactoryRun): NextStep {
     case 'publishing':
       return {
         title: definition.publication.draft ? 'Opening a draft PR' : 'Opening a PR',
-        detail: `Pushing the verified commit to ${definition.github.owner}/${definition.github.repo}.`,
+        detail: `Pushing the verified commit to ${factoryDeliveryLabel(definition)}.`,
       };
     case 'waiting-checks':
       return {
@@ -315,7 +319,8 @@ export function nextStep(run: FactoryRun): NextStep {
     case 'merging':
       return {
         title: run.mergeReceipt?.state === 'queued' ? 'Merge queued' : 'Merge requested',
-        detail: 'GitHub accepted the request. The run completes only after the merge is observed.',
+        detail:
+          'The provider accepted the request. The run completes only after the merge is observed.',
       };
     case 'verifying-merge':
       return {
@@ -347,7 +352,7 @@ export function nextStep(run: FactoryRun): NextStep {
     case 'cancelling':
       return {
         title: 'Cancellation pending',
-        detail: 'Waiting for GitHub to confirm that queued or automatic merge work is clear.',
+        detail: 'Waiting for the provider to confirm that queued or automatic merge work is clear.',
       };
     case 'cancelled':
       return { title: 'Cancelled', detail: `Stopped at ${where}. No further work will run.` };
@@ -388,7 +393,7 @@ export function formatDuration(ms: number): string {
 /** Consumption against the run's own pinned limits; the clock stops when the run ends. */
 export function runBudgets(run: FactoryRun, now: number): RunBudget[] {
   const limits = run.snapshot.definition.limits;
-  const started = Date.parse(run.createdAt);
+  const started = Date.parse(run.startedAt ?? (run.stage === 'received' ? '' : run.createdAt));
   const end = isTerminal(run) || run.stage === 'blocked' ? Date.parse(run.updatedAt) : now;
   const elapsed = Number.isFinite(started) ? Math.max(0, end - started) : 0;
   const minuteLimit = limits.maxRunMinutes * 60_000;
@@ -464,6 +469,7 @@ export interface DefinitionIssue {
   field:
     | 'name'
     | 'repo'
+    | 'source'
     | 'label'
     | 'baseBranch'
     | 'workflow'
@@ -482,11 +488,17 @@ export function definitionIssues(
 ): DefinitionIssue[] {
   const issues: DefinitionIssue[] = [];
   if (!definition.name.trim()) issues.push({ field: 'name', message: 'Name the factory.' });
-  if (!definition.repoId) issues.push({ field: 'repo', message: 'Choose a GitHub repository.' });
-  if (!definition.github.label.trim())
-    issues.push({ field: 'label', message: 'Choose the issue label that triggers a run.' });
-  if (!definition.github.baseBranch.trim())
+  if (!definition.repoId)
+    issues.push({ field: 'repo', message: 'Choose a GitHub or Azure DevOps repository.' });
+  if (factoryReadyLabel(definition).length > 100)
+    issues.push({ field: 'label', message: 'Keep the ready label within 100 characters.' });
+  if (!factoryDelivery(definition).baseBranch.trim())
     issues.push({ field: 'baseBranch', message: 'Choose a base branch.' });
+  if (factoryDelivery(definition).provider === 'ado' && !definition.workItems)
+    issues.push({
+      field: 'source',
+      message: 'Choose a Work Item connection for Azure DevOps delivery.',
+    });
   if (!definition.workflowTemplateId)
     issues.push({
       field: 'workflow',
@@ -530,7 +542,13 @@ export function definitionIssues(
     if (!definition.access.organizationId)
       issues.push({ field: 'access', message: 'Choose the organization to share with.' });
     else if (definition.access.visibility === 'team' && !definition.access.teamId?.trim())
-      issues.push({ field: 'access', message: 'Choose a GitHub team for team visibility.' });
+      issues.push({
+        field: 'access',
+        message:
+          definition.access.authorization === 'mezair'
+            ? 'Name the factory team and choose its members.'
+            : 'Choose a GitHub team for team visibility.',
+      });
   }
   return issues;
 }
@@ -543,11 +561,21 @@ export function normalizeDefinition(definition: FactoryDefinitionInput): Factory
   return {
     ...definition,
     name: definition.name.trim(),
-    github: {
-      ...definition.github,
-      label: definition.github.label.trim(),
-      baseBranch: definition.github.baseBranch.trim(),
-    },
+    ...(definition.delivery
+      ? {
+          delivery: {
+            ...definition.delivery,
+            baseBranch: factoryDelivery(definition).baseBranch.trim(),
+          },
+          readyLabel: factoryReadyLabel(definition),
+        }
+      : {
+          github: {
+            ...definition.github!,
+            label: factoryReadyLabel(definition),
+            baseBranch: factoryDelivery(definition).baseBranch.trim(),
+          },
+        }),
     criteria: pairs.map(([criterion]) => criterion),
     checks: pairs.map(([, check]) => check),
     postMergeChecks: definition.postMergeChecks.map((check) => check.trim()).filter(Boolean),

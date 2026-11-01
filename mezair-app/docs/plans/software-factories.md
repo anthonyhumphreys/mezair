@@ -1,6 +1,6 @@
 # Software Factories Plan
 
-Status: first GitHub/Codex implementation complete; automated verification passed
+Status: GitHub and Azure DevOps delivery; multi-provider intake, optional filters and Mezair organisation roles
 
 Owner: Mezair Desktop
 
@@ -15,7 +15,7 @@ Example conversation: “For new `ready-for-agent` issues in the Mezair project,
 ## Implemented first slice
 
 The working implementation now has immutable definitions and pinned graphs, a
-SQLite lifecycle/receipt engine, exact-head typed GitHub delivery, manual and
+SQLite lifecycle/receipt engine, exact-head typed GitHub/Azure DevOps delivery, manual and
 standing automatic merge policies, confirmed merge/post-merge verification,
 organisation access controls, and conversational/UI configuration. PATCH C8 is
 the current owned behavior guide.
@@ -44,6 +44,89 @@ Source identity is immutable per factory. Remote owner/admin revisions retain
 the existing pinned workflow; graph/provider changes are prepared on the
 executor. Role/source/visibility checks remain authoritative in the backend;
 remote owner-local IDs never supply recipient repository authority.
+
+## Work item intake
+
+Factories can read GitHub Issues, Azure DevOps work items, Jira issues and Linear
+issues through a configured Work Item connection. The selected repository,
+project or Linear team is pinned separately from the GitHub or Azure DevOps repository that
+receives pull requests. Configure the project/team on the connection first.
+Changing the app's active connection does not change a factory's intake;
+removing or redirecting its pinned connection stops execution.
+
+The ready label is optional (an Azure DevOps tag). Leaving it blank admits open
+items regardless of labels, including unlabelled items. **Include existing open
+work items** is a separate choice: enabled admits the existing open backlog;
+disabled only admits items created after the factory's first activation. Both
+choices appear in the reviewed definition and activation authority. Existing
+definitions keep their prior label and new-items-only behavior. Each source item
+keeps one durable lifecycle across polling, restarts and connection aliases.
+Queued items do not consume their execution time budget until dequeued. The
+clock is persisted once and retries do not reset it. Workers receive refreshed
+issue content after the final eligibility check.
+
+Connector intake checks provider lifecycle categories, creation/update timestamps
+and project/team membership. It reconciles complete bounded results rather than
+silently taking a connector's first page; exceeding the result/page limit or
+missing lifecycle metadata stops intake and leaves its cursor unchanged. Current
+limits are 4,000 items for connection-backed intake (20 pages for Linear/Jira),
+and 20 pages of 100 issues for legacy GitHub CLI intake.
+
+## PR delivery and credentials
+
+Delivery supports GitHub and Azure DevOps, independently of which work item
+provider supplies the issue. Choose a local repository with a supported remote;
+ADO HTTPS, `ssh.dev.azure.com` and legacy `visualstudio.com` URLs are recognized.
+The typed definition records `delivery` (provider, repository and base branch)
+and a provider-independent `readyLabel`. Previously reviewed `github` records
+keep their original snapshot and confirmation until revised.
+
+For Azure DevOps Git operations, Git Credential Manager is preferred and owns
+credential storage/refresh. The controller requests GCM OAuth credentials for PR
+APIs; an Azure CLI sign-in (`az login`) is also supported. No PAT belongs in a
+factory definition, command argument, prompt or receipt, and none is required
+for PR delivery. Pre-existing vault-backed PAT connections remain compatible.
+Credential lookups use stdin, returned tokens stay transient, credential traces
+are disabled and credentials are never inherited by factory workers. Sign in on
+the designated executor first; unattended runs do not open authentication prompts.
+Work item connector authentication remains configured separately.
+
+Both delivery adapters seal and secret-scan the candidate, verify the exact
+commit/tree, reconcile lost PR responses, enforce merge policy and observe
+post-merge checks. Azure DevOps observes current-iteration statuses and blocking
+policies, submits the verified source commit on completion, and sets
+`bypassPolicy: false`. Completion requests that remain in progress stay pending
+until the provider confirms their outcome. External work items are linked in
+the PR without creating issue-closing references against an unrelated tracker.
+When human review approval is required, configure a blocking minimum-reviewer
+policy that excludes the PR author and either resets approvals after pushes or
+requires approval on the last/every iteration. Retained votes alone cannot prove
+review of the current commit. See [Azure DevOps reviewer policies](https://learn.microsoft.com/en-us/azure/devops/repos/git/branch-policies?view=azure-devops#require_reviewers).
+
+## Organisation viewing
+
+New shared factories use Mezair organisation membership and factory roles for
+viewing (`authorization: mezair`). Organisation visibility includes members;
+team/restricted visibility uses the explicit factory roster and roles. Current
+membership is rechecked on reads, key wrapping and queued control claims.
+Provider credentials belong to the executor; viewers do not need accounts in
+the issue tracker or source control service. Viewing a shared snapshot grants no
+external repository access or permission to execute a job.
+
+Legacy source-checked factories retain their extra GitHub permission checks.
+An owner can select **Use Mezair roles for viewing** in a reviewed revision to
+migrate one; history visibility never widens silently. Backend migration 0009
+preserves old issue claims while adding provider-native string issue IDs. Apply
+the matching backend before activating the new delivery/access contracts.
+
+Current verification: 3,417 desktop tests passed (12 skipped), followed by 70
+focused tests after the final approval/continuation guards. All 18 hosted
+factory tests, Node/web/backend TypeScript checks, lint and production build
+passed. The full backend suite had 506 passes and one existing device-enrollment
+rate-limit failure, also reproduced in an unchanged HEAD checkout. Synthetic
+browser checks exercised all four intake sources, ADO delivery with Jira intake,
+optional labels, backlog selection and Mezair organisation viewing at
+desktop/compact widths. No live credential exchange or provider write was tested.
 
 ## Factories and workflows
 
@@ -79,9 +162,11 @@ in the standalone replay; see `src/renderer/components/chat/replay/README.md`.
    hosted factory migration before enabling organisation factories. Deploy the
    matching backend with factory registry/access RPC support; older backends fail
    closed. No production migration or deployment is performed by this change.
-2. Sign in to Codex and connect GitHub with repository access. Save a local Codex
+2. Sign in to Codex and authenticate the executor for GitHub (`gh`) or Azure
+   DevOps (Git Credential Manager or Azure CLI). Save a local Codex
    workflow, then describe the factory in chat or open Factories. Choose the
-   exact source/label/base, ordered criterion/check bindings, post-merge checks,
+   delivery repository/base, work item connection, optional ready label and
+   backlog policy, ordered criterion/check bindings, post-merge checks,
    budgets, audience and merge mode. Review the concrete preview before saving
    and explicitly activating the saved revision.
 3. Activation prepares the existing automation daemon on supported macOS/Linux
@@ -90,13 +175,14 @@ in the standalone replay; see `src/renderer/components/chat/replay/README.md`.
    not confirmed a safe merge cancellation. A merged PR is verified before the
    lifecycle reports completion.
 4. Organisation recipients enrol their account encryption key and need current
-   GitHub source access plus the configured audience/role. Operators control
+   Mezair membership plus the configured factory audience/role. Operators control
    existing runs through the designated executor. Owners/admins review policy
    revisions remotely; source identity remains immutable. Pick up a confirmed
    remote claim into a recipient workspace/agent, explicitly mapping any local
-   repository by canonical GitHub identity.
+   repository by canonical source control identity.
 
-Known limits: one GitHub source per factory; isolated local Codex workers only;
+Known limits: one work item source and one GitHub or Azure DevOps delivery repository per factory;
+isolated local Codex workers only;
 no standalone server deployment, spend ceiling, general shell pre-execution
 allowlist, or automatic resolution of ambiguous direct asynchronous merge
 requests. Required provider reviews and branch protections remain authoritative.

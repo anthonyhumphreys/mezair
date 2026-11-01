@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { factoryIssueKey } from '../../shared/factories.js';
 import type Database from 'better-sqlite3';
 import type {
   FactoryDefinition,
@@ -6,6 +7,12 @@ import type {
   FactoryReceipt,
   FactoryRun,
 } from '../../shared/factories.js';
+
+export class FactoryIssueClaimConflict extends Error {
+  constructor() {
+    super('Issue is already claimed by another factory. Inspect the existing lifecycle.');
+  }
+}
 
 /** No Electron/provider dependency: this store also runs in a plain Node daemon. */
 export class FactoryStore {
@@ -69,15 +76,12 @@ export class FactoryStore {
     ).map((row) => this.getRun(row.id)!);
   }
   intake(factory: FactoryDefinition, issue: FactoryIssue, now: Date): FactoryRun {
-    const key = `${factory.definition.github.host.toLowerCase()}/${factory.definition.github.owner.toLowerCase()}/${factory.definition.github.repo.toLowerCase()}#${issue.number}`;
+    const key = factoryIssueKey(factory.definition, issue);
     const existing = this.db
       .prepare('SELECT id,factory_id FROM factory_runs WHERE issue_key=?')
       .get(key) as { id: string; factory_id: string } | undefined;
     if (existing) {
-      if (existing.factory_id !== factory.id)
-        throw new Error(
-          'Issue is already claimed by another factory. Inspect the existing lifecycle.',
-        );
+      if (existing.factory_id !== factory.id) throw new FactoryIssueClaimConflict();
       return this.getRun(existing.id)!;
     }
     const at = now.toISOString();
@@ -107,7 +111,7 @@ export class FactoryStore {
     const row = this.db
       .prepare('SELECT id,factory_id FROM factory_runs WHERE issue_key=?')
       .get(key) as { id: string; factory_id: string };
-    if (row.factory_id !== factory.id) throw new Error('Issue was claimed by another factory.');
+    if (row.factory_id !== factory.id) throw new FactoryIssueClaimConflict();
     return this.getRun(row.id)!;
   }
   updateRun(run: FactoryRun, expectedVersion = run.version): FactoryRun {

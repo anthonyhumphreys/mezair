@@ -13,6 +13,11 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { FactoryDefinitionInput, FactoryPreview } from '../../../shared/factories';
+import {
+  factoryIntakeDescription,
+  factoryDelivery,
+  factoryDeliveryLabel,
+} from '../../../shared/factories';
 import type { WorkflowTemplate } from '../../../shared/types';
 import { cx } from '../ui/cx';
 import { Disclosure, Mono } from './FactoryPrimitives';
@@ -60,14 +65,18 @@ function audience(access: FactoryDefinitionInput['access']): ReactNode {
       <>Everyone in {access.organizationId}</>
     ) : access.visibility === 'team' ? (
       <>
-        GitHub team <Mono>{access.teamId}</Mono> in {access.organizationId}
+        {access.authorization === 'mezair' ? 'Factory team' : 'GitHub team'}{' '}
+        <Mono>{access.teamId}</Mono> in {access.organizationId}
       </>
     ) : (
       <>Named members of {access.organizationId} only</>
     );
   return (
     <>
-      {scope}.{members} Source repository permissions still apply to details and evidence.
+      {scope}.{members}{' '}
+      {access.authorization === 'mezair'
+        ? 'Mezair roles control viewing. Only the executor needs source-provider credentials.'
+        : 'Source repository permissions still apply to details and evidence.'}
     </>
   );
 }
@@ -94,11 +103,9 @@ export function AuthorityRows({
     <>
       <dl>
         <Row icon={Inbox} label="Watches">
-          Open issues labelled <Mono>{definition.github.label}</Mono> in{' '}
-          <Mono>
-            {definition.github.owner}/{definition.github.repo}
-          </Mono>
-          , branching from <Mono>{definition.github.baseBranch}</Mono>
+          {factoryIntakeDescription(definition)}, delivering to{' '}
+          <Mono>{factoryDeliveryLabel(definition)}</Mono> from{' '}
+          <Mono>{factoryDelivery(definition).baseBranch}</Mono>
         </Row>
         <Row icon={Hammer} label="Builds with">
           {workflow ? (
@@ -186,8 +193,8 @@ export function AuthorityRows({
       {auto && (
         <div className="mb-1 flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/[0.06] px-3 py-2.5 text-xs leading-5 text-text-secondary">
           <TriangleAlert size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-warning" />
-          Branch protections and required human reviews on GitHub stay authoritative. An agent’s own
-          review never satisfies a required approval.
+          Branch protections and required human reviews in your source control provider stay
+          authoritative. An agent’s own review never satisfies a required approval.
         </div>
       )}
     </>

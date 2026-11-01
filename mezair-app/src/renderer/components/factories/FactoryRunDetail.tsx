@@ -51,7 +51,11 @@ import {
   TextAction,
   inputClass,
 } from './FactoryPrimitives';
-import { githubIdentity } from './factory-definition';
+import {
+  factoryIssueLabel,
+  factoryMatchesRemote,
+  factoryDeliveryLabel,
+} from '../../../shared/factories';
 
 type RunAction = FactoryRunControlInput['action'];
 export type TakeoverContext = NonNullable<FactoryRunControlInput['takeoverContext']>;
@@ -384,7 +388,7 @@ function PullRequestStatus({ run, now }: { run: FactoryRun; now: number }) {
               <span className="line-clamp-3 break-words">{item.body}</span>
               {item.url && (
                 <span className="mt-1 block">
-                  <ExternalAnchor href={item.url}>View on GitHub</ExternalAnchor>
+                  <ExternalAnchor href={item.url}>View comment</ExternalAnchor>
                 </span>
               )}
             </li>
@@ -448,19 +452,14 @@ function PickupPanel({
       current = false;
     };
   }, [workspaceId]);
-  const source = run.snapshot.definition.github;
   const matching = useMemo<RepoInfo[]>(
     () =>
-      (workspace?.repos ?? []).filter((repo) => {
-        const local = githubIdentity(repo);
-        return (
-          local.host.toLowerCase() === source.host.toLowerCase() &&
-          local.owner.toLowerCase() === source.owner.toLowerCase() &&
-          local.repo.toLowerCase() === source.repo.toLowerCase()
-        );
-      }),
-    [workspace, source],
+      (workspace?.repos ?? []).filter((repo) =>
+        factoryMatchesRemote(run.snapshot.definition, repo.remoteUrl ?? ''),
+      ),
+    [workspace, run.snapshot.definition],
   );
+
   return (
     <section
       aria-label="Pick up issue run"
@@ -506,7 +505,7 @@ function PickupPanel({
       </div>
       <Field
         label="Local checkout"
-        hint={`Only a checkout of ${source.owner}/${source.repo} can be attached for code context.`}
+        hint={`Only a checkout of ${factoryDeliveryLabel(run.snapshot.definition)} can be attached for code context.`}
       >
         <select
           className={inputClass()}
@@ -529,8 +528,9 @@ function PickupPanel({
       )}
       {workspaceId && !loading && !loadError && matching.length === 0 && (
         <Notice tone="warning" icon={TriangleAlert}>
-          {workspace?.name ?? 'This workspace'} has no checkout of {source.owner}/{source.repo}. The
-          chat gets the shared snapshot but cannot run commands against the code.
+          {workspace?.name ?? 'This workspace'} has no checkout of{' '}
+          {factoryDeliveryLabel(run.snapshot.definition)}. The chat gets the shared snapshot but
+          cannot run commands against the code.
         </Notice>
       )}
       <div className="flex flex-wrap justify-end gap-2">
@@ -620,10 +620,11 @@ export function FactoryRunDetail({
             <RunStateIcon state={position.state} size={13} />
             {RUN_STATE_META[position.state].label}
           </span>
-          {sourceAccess && <span className="font-mono">#{run.issue.number}</span>}
+          {sourceAccess && <span className="font-mono">{factoryIssueLabel(run.issue)}</span>}
           <span>Revision {run.revision}</span>
-          <span title={absoluteTime(run.createdAt)}>
-            Started {relativeTime(run.createdAt, now)}
+          <span title={absoluteTime(run.startedAt ?? run.createdAt)}>
+            {run.stage === 'received' && !run.startedAt ? 'Queued' : 'Started'}{' '}
+            {relativeTime(run.startedAt ?? run.createdAt, now)}
           </span>
         </div>
         <h2 className="text-base font-semibold leading-snug text-balance text-text-primary">
@@ -633,7 +634,7 @@ export function FactoryRunDetail({
           <div className="flex flex-wrap gap-x-4 gap-y-1.5">
             {run.issue.url && (
               <ExternalAnchor href={run.issue.url} icon={ExternalLink}>
-                Issue #{run.issue.number}
+                Work item {factoryIssueLabel(run.issue)}
               </ExternalAnchor>
             )}
             {run.pullRequest && (
@@ -670,8 +671,8 @@ export function FactoryRunDetail({
 
       {run.pendingControl === 'cancel' && (
         <Notice tone="warning" icon={LoaderCircle}>
-          Cancellation waits for GitHub to confirm that queued or automatic merge work is clear. The
-          run is not cancelled until then.
+          Cancellation waits for the provider to confirm that queued or automatic merge work is
+          clear. The run is not cancelled until then.
         </Notice>
       )}
       {run.pendingControl === 'takeover' && !run.takeoverThreadId && (
@@ -839,7 +840,7 @@ export function FactoryRunDetail({
         title="Cancel this issue run?"
         description={
           run.mergeReceipt
-            ? 'A merge request is outstanding. Cancellation stays pending until GitHub confirms the merge work is clear; a merge that already won stays merged.'
+            ? 'A merge request is outstanding. Cancellation stays pending until the provider confirms the merge work is clear; a merge that already won stays merged.'
             : 'The worker stops and the run will not publish or merge. Its branch and evidence remain for review.'
         }
         confirmLabel="Cancel run"

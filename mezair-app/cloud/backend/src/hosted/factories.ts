@@ -1,3 +1,4 @@
+import { factorySourceKey } from '../../../contract/factory-access.js';
 import type { VerifiedAuth } from '../auth';
 import { isRecord, rpcErrorResponse } from '../rpc';
 import type {
@@ -65,27 +66,94 @@ function policy(value: unknown): value is OrganizationFactoryPolicy {
     return false;
   if (
     value.visibility === 'team' &&
-    (typeof value.teamId !== 'string' || !/^[a-z0-9-]{1,100}$/i.test(value.teamId))
+    (typeof value.teamId !== 'string' ||
+      (value.authorization === 'mezair'
+        ? !value.teamId.trim() || value.teamId.length > 100 || /[\x00-\x1f]/.test(value.teamId)
+        : !/^[a-z0-9-]{1,100}$/i.test(value.teamId)))
   )
     return false;
   return (
+    (value.authorization === undefined ||
+      ['mezair', 'source'].includes(String(value.authorization))) &&
     value.members.every((x) => isRecord(x) && id(x.userId) && roles.includes(String(x.role))) &&
     new Set(value.members.map((x) => (x as { userId: string }).userId)).size ===
       value.members.length
   );
 }
 function source(value: unknown): value is FactorySource {
+  if (
+    !isRecord(value) ||
+    typeof value.repo !== 'string' ||
+    !value.repo.trim() ||
+    value.repo.length > 200 ||
+    /[/\\?#\x00-\x1f]/.test(value.repo) ||
+    ['.', '..'].includes(value.repo)
+  )
+    return false;
+  const delivery =
+    value.provider === 'ado'
+      ? typeof value.organizationUrl === 'string' &&
+        /^https:\/\/dev\.azure\.com\/[a-z0-9-]+$/i.test(value.organizationUrl) &&
+        typeof value.project === 'string' &&
+        value.project.trim().length > 0 &&
+        value.project.length <= 200 &&
+        !/[/\\?#\x00-\x1f]/.test(value.project)
+      : (value.provider === undefined || value.provider === 'github') &&
+        typeof value.host === 'string' &&
+        /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i.test(value.host) &&
+        typeof value.owner === 'string' &&
+        /^[a-z0-9_.-]{1,100}$/i.test(value.owner);
+  if (!delivery) return false;
+  if (value.workItems === undefined) return true;
+  const validIntake =
+    isRecord(value.workItems) &&
+    ['github', 'ado', 'jira', 'linear'].includes(String(value.workItems.provider)) &&
+    typeof value.workItems.scope === 'string' &&
+    value.workItems.scope.length > 0 &&
+    value.workItems.scope.length <= 2000 &&
+    !/[\x00-\x1f]/.test(value.workItems.scope);
+  if (!validIntake || !isRecord(value.workItems) || typeof value.workItems.scope !== 'string')
+    return false;
+  if (value.workItems.provider === 'linear')
+    return /^linear:team:[^\s]{1,200}$/.test(value.workItems.scope);
+  try {
+    const url = new URL(value.workItems.scope);
+    return (
+      ['https:', 'http:'].includes(url.protocol) &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      (value.workItems.provider !== 'github' ||
+        (url.protocol === 'https:' && url.pathname.split('/').filter(Boolean).length === 2))
+    );
+  } catch {
+    return false;
+  }
+}
+function normalizedSource(value: FactorySource): FactorySource {
+  const intake = value.workItems
+    ? { workItems: { provider: value.workItems.provider, scope: value.workItems.scope } }
+    : {};
+  return value.provider === 'ado'
+    ? {
+        provider: 'ado',
+        organizationUrl: value.organizationUrl,
+        project: value.project,
+        repo: value.repo,
+        ...intake,
+      }
+    : { host: value.host, owner: value.owner, repo: value.repo, ...intake };
+}
+function rosterOnly(access: OrganizationFactoryPolicy): boolean {
   return (
-    isRecord(value) &&
-    value.host === 'github.com' &&
-    typeof value.owner === 'string' &&
-    /^[a-z0-9_.-]{1,100}$/i.test(value.owner) &&
-    typeof value.repo === 'string' &&
-    /^[a-z0-9_.-]{1,100}$/i.test(value.repo)
+    access.visibility === 'restricted' ||
+    (access.authorization === 'mezair' && access.visibility === 'team')
   );
 }
 /** No provider credential is ever persisted, included in a receipt, or returned. */
 async function sourceAccess(src: FactorySource, token: unknown, team?: string): Promise<boolean> {
+  if (src.provider === 'ado' || src.host !== 'github.com') return false;
   if (typeof token !== 'string' || token.length < 10 || token.length > 4096 || /\s/.test(token))
     return false;
   const get = async (path: string) =>
@@ -154,6 +222,7 @@ async function actorSourceAccess(
   login: unknown,
   team?: string,
 ): Promise<boolean> {
+  if (src.provider === 'ado' || src.host !== 'github.com') return false;
   if (typeof login !== 'string' || !/^[a-z0-9-]{1,100}$/i.test(login)) return false;
   const repo = await githubRead(token, `/repos/${src.owner}/${src.repo}`);
   if (!repo) return false;
@@ -182,7 +251,7 @@ function roleFor(row: Row, m: Member): OrganizationFactoryRole | null {
   if (m.role === 'owner' || row.owner_id === m.userId) return 'owner';
   const assigned = access.members.find((x) => x.userId === m.userId)?.role;
   if (assigned) return assigned;
-  return access.visibility === 'restricted' ? null : 'viewer';
+  return rosterOnly(access) ? null : 'viewer';
 }
 function permitted(role: OrganizationFactoryRole, action: string) {
   return (
@@ -270,7 +339,6 @@ export async function handleFactoryOperation(
       if (typeof input.publicKey !== 'string' || !/^[A-Za-z0-9+/]{43}=$/.test(input.publicKey))
         return malformed();
       const login = await githubLogin(input.githubToken);
-      if (!login) return deny();
       const previous = await db
         .prepare('SELECT public_key FROM hosted_factory_keys WHERE organization_id=? AND user_id=?')
         .bind(input.organizationId, m.userId)
@@ -282,7 +350,7 @@ export async function handleFactoryOperation(
 
       await db
         .prepare(
-          'INSERT INTO hosted_factory_keys(organization_id,user_id,account_id,enrollment_id,public_key,github_login,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(organization_id,user_id) DO UPDATE SET account_id=excluded.account_id,enrollment_id=excluded.enrollment_id,public_key=excluded.public_key,github_login=excluded.github_login,updated_at=excluded.updated_at',
+          'INSERT INTO hosted_factory_keys(organization_id,user_id,account_id,enrollment_id,public_key,github_login,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(organization_id,user_id) DO UPDATE SET account_id=excluded.account_id,enrollment_id=excluded.enrollment_id,public_key=excluded.public_key,github_login=COALESCE(excluded.github_login,hosted_factory_keys.github_login),updated_at=excluded.updated_at',
         )
         .bind(
           input.organizationId,
@@ -336,11 +404,7 @@ export async function handleFactoryOperation(
           recipient.userId === factory?.owner_id ||
           recipient.accountId === factory?.executor_account_id ||
           recipient.accountId === auth.accountId;
-        if (
-          p.visibility === 'restricted' &&
-          !p.members.some((x) => x.userId === recipient.userId) &&
-          !privileged
-        )
+        if (rosterOnly(p) && !p.members.some((x) => x.userId === recipient.userId) && !privileged)
           continue;
         const team =
           p.visibility === 'team' &&
@@ -349,6 +413,7 @@ export async function handleFactoryOperation(
             ? p.teamId
             : undefined;
         if (
+          p.authorization !== 'mezair' &&
           !(await actorSourceAccess(
             input.source as FactorySource,
             input.githubToken,
@@ -389,6 +454,7 @@ export async function handleFactoryOperation(
       const role = roleFor(row, m);
       if (!role) continue;
       if (
+        access.authorization !== 'mezair' &&
         !(await sourceAccess(
           JSON.parse(row.source_json) as FactorySource,
           input.githubToken,
@@ -463,16 +529,13 @@ export async function handleFactoryOperation(
     )
       return malformed();
     const access: OrganizationFactoryPolicy = {
+        ...(input.policy.authorization ? { authorization: input.policy.authorization } : {}),
         organizationId: input.policy.organizationId,
         visibility: input.policy.visibility,
         ...(input.policy.teamId ? { teamId: input.policy.teamId } : {}),
         members: input.policy.members.map((x) => ({ userId: x.userId, role: x.role })),
       },
-      canonicalSource: FactorySource = {
-        host: input.source.host,
-        owner: input.source.owner,
-        repo: input.source.repo,
-      },
+      canonicalSource = normalizedSource(input.source),
       m = await member(db, auth.accountId, access.organizationId);
     if (!m) return deny();
     const existing = await db
@@ -491,7 +554,11 @@ export async function handleFactoryOperation(
       JSON.stringify(JSON.parse(existing.source_json)) !== JSON.stringify(canonicalSource)
     )
       return rpcErrorResponse(undefined, 'conflict', { reason: 'factory-source-immutable' });
-    if (!(await sourceAccess(canonicalSource, input.githubToken))) return deny();
+    if (
+      access.authorization !== 'mezair' &&
+      !(await sourceAccess(canonicalSource, input.githubToken))
+    )
+      return deny();
     if (existing && input.expectedRevision !== existing.revision)
       return rpcErrorResponse(undefined, 'conflict');
     if (
@@ -551,10 +618,11 @@ export async function handleFactoryOperation(
           userId === ownerId ||
           recipient.account_id === auth.accountId ||
           existing?.executor_account_id === recipient.account_id;
-      if (access.visibility === 'restricted' && !explicit && !privileged) return deny();
+      if (rosterOnly(access) && !explicit && !privileged) return deny();
       const team =
         access.visibility === 'team' && !explicit && !privileged ? access.teamId : undefined;
       if (
+        access.authorization !== 'mezair' &&
         !(await actorSourceAccess(canonicalSource, input.githubToken, recipient.github_login, team))
       )
         return deny();
@@ -618,7 +686,11 @@ export async function handleFactoryOperation(
       source(input.source)
     ) {
       const creator = await member(db, auth.accountId, input.policy.organizationId);
-      if (creator && (await sourceAccess(input.source, input.githubToken)))
+      if (
+        creator &&
+        (input.policy.authorization === 'mezair' ||
+          (await sourceAccess(input.source, input.githubToken)))
+      )
         return response({
           role: 'owner',
           userId: creator.userId,
@@ -635,6 +707,7 @@ export async function handleFactoryOperation(
   if (!role) return deny();
   const src = JSON.parse(row.source_json) as FactorySource;
   if (
+    access.authorization !== 'mezair' &&
     !(await sourceAccess(
       src,
       input.githubToken,
@@ -731,12 +804,15 @@ export async function handleFactoryOperation(
           recipient?.account_id === row.executor_account_id;
       if (
         recipient?.public_key !== wrap.publicKey ||
-        (access.visibility === 'restricted' && !explicit && !privileged)
+        (rosterOnly(access) && !explicit && !privileged)
       )
         return deny();
       const team =
         access.visibility === 'team' && !explicit && !privileged ? access.teamId : undefined;
-      if (!(await actorSourceAccess(src, input.githubToken, recipient.github_login, team)))
+      if (
+        access.authorization !== 'mezair' &&
+        !(await actorSourceAccess(src, input.githubToken, recipient.github_login, team))
+      )
         return deny();
     }
     const changed = await db
@@ -778,12 +854,15 @@ export async function handleFactoryOperation(
           recipient?.account_id === row.executor_account_id;
       if (
         recipient?.public_key !== wrap.publicKey ||
-        (access.visibility === 'restricted' && !explicit && !privileged)
+        (rosterOnly(access) && !explicit && !privileged)
       )
         return deny();
       const team =
         access.visibility === 'team' && !explicit && !privileged ? access.teamId : undefined;
-      if (!(await actorSourceAccess(src, input.githubToken, recipient.github_login, team)))
+      if (
+        access.authorization !== 'mezair' &&
+        !(await actorSourceAccess(src, input.githubToken, recipient.github_login, team))
+      )
         return deny();
     }
     let written;
@@ -838,26 +917,33 @@ export async function handleFactoryOperation(
   const isExecutor =
     auth.accountId === row.executor_account_id && auth.enrollmentId === row.executor_enrollment_id;
   if (operation === 'factory.issue.claim') {
+    const issueId =
+      typeof input.issueId === 'string'
+        ? input.issueId
+        : Number.isSafeInteger(input.issueNumber) && Number(input.issueNumber) > 0
+          ? String(input.issueNumber)
+          : '';
     if (
       !isExecutor ||
       role !== 'owner' ||
-      !Number.isSafeInteger(input.issueNumber) ||
-      Number(input.issueNumber) < 1 ||
+      !issueId ||
+      issueId.length > 500 ||
+      /[\x00-\x1f]/.test(issueId) ||
       !id(input.runId)
     )
       return deny();
-    const sourceKey = `${src.host}/${src.owner}/${src.repo}`.toLowerCase();
+    const sourceKey = factorySourceKey(src);
     await db
       .prepare(
-        'INSERT OR IGNORE INTO hosted_factory_issue_claims(organization_id,source,issue_number,factory_id,run_id,created_at) VALUES(?,?,?,?,?,?)',
+        'INSERT OR IGNORE INTO hosted_factory_issue_claims(organization_id,source,issue_id,factory_id,run_id,created_at) VALUES(?,?,?,?,?,?)',
       )
-      .bind(row.organization_id, sourceKey, input.issueNumber, row.id, input.runId, Date.now())
+      .bind(row.organization_id, sourceKey, issueId, row.id, input.runId, Date.now())
       .run();
     const claim = await db
       .prepare(
-        'SELECT factory_id,run_id FROM hosted_factory_issue_claims WHERE organization_id=? AND source=? AND issue_number=?',
+        'SELECT factory_id,run_id FROM hosted_factory_issue_claims WHERE organization_id=? AND source=? AND issue_id=?',
       )
-      .bind(row.organization_id, sourceKey, input.issueNumber)
+      .bind(row.organization_id, sourceKey, issueId)
       .first<{ factory_id: string; run_id: string }>();
     return response({ claimed: claim?.factory_id === row.id && claim.run_id === input.runId });
   }
@@ -905,7 +991,7 @@ export async function handleFactoryOperation(
       if (command.action === 'approve-merge' && !command.expectedHeadSha) return malformed();
     }
     const actorGithubLogin = await githubLogin(input.githubToken);
-    if (!actorGithubLogin) return deny();
+    if (access.authorization !== 'mezair' && !actorGithubLogin) return deny();
     const payload = {
       id: command.id,
       factoryId: row.id,
@@ -984,7 +1070,8 @@ export async function handleFactoryOperation(
           (row.status !== 'active' ||
             row.active_revision === null ||
             payload.expectedRegistryVersion !== row.registry_version)) ||
-        !(await actorSourceAccess(src, input.githubToken, payload.actorGithubLogin, team))
+        (access.authorization !== 'mezair' &&
+          !(await actorSourceAccess(src, input.githubToken, payload.actorGithubLogin, team)))
       ) {
         await db
           .prepare("UPDATE hosted_factory_commands SET state='revoked',completed_at=? WHERE id=?")

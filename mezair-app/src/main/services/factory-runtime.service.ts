@@ -8,8 +8,12 @@ import type {
   FactoryRunControlInput,
   FactoryRunStage,
 } from '../../shared/factories.js';
-import { FACTORY_TERMINAL_STAGES } from '../../shared/factories.js';
-import { FactoryStore } from './factory-persistence.service.js';
+import {
+  FACTORY_TERMINAL_STAGES,
+  factoryDelivery,
+  factoryReadyLabel,
+} from '../../shared/factories.js';
+import { FactoryStore, FactoryIssueClaimConflict } from './factory-persistence.service.js';
 
 export interface FactoryWorker {
   start(run: FactoryRun, key: string, prompt: string): Promise<{ id: string; threadId?: string }>;
@@ -61,7 +65,12 @@ export class FactoryRuntime {
   private assertScope(run: FactoryRun, current: FactoryDefinition): void {
     const a = run.snapshot.definition,
       b = current.definition;
-    if (a.repoId !== b.repoId || JSON.stringify(a.github) !== JSON.stringify(b.github))
+    if (
+      a.repoId !== b.repoId ||
+      JSON.stringify(factoryDelivery(a)) !== JSON.stringify(factoryDelivery(b)) ||
+      factoryReadyLabel(a) !== factoryReadyLabel(b) ||
+      JSON.stringify(a.workItems) !== JSON.stringify(b.workItems)
+    )
       throw new Error(
         'Factory repository, trigger or target scope changed; inspect this pinned run.',
       );
@@ -198,17 +207,28 @@ export class FactoryRuntime {
           const started = this.now().toISOString();
           const issues = await this.options.provider.listIssues(
             factory,
-            this.store.cursor(factory.id) ?? current.activatedAt,
+            factory.definition.includeExisting
+              ? undefined
+              : (this.store.cursor(factory.id) ?? current.activatedAt),
           );
           // Queue before cursor advancement; UNIQUE(factory,provider/repo/issue) makes retries safe.
           for (const issue of issues) {
             if (
               issue.state !== 'open' ||
-              !issue.labels.includes(factory.definition.github.label) ||
-              Date.parse(issue.createdAt) < Date.parse(current.activatedAt ?? factory.createdAt)
+              (factoryReadyLabel(factory.definition) &&
+                !issue.labels.includes(factoryReadyLabel(factory.definition))) ||
+              (!factory.definition.includeExisting &&
+                Date.parse(issue.createdAt) < Date.parse(current.activatedAt ?? factory.createdAt))
             )
               continue;
-            this.store.intake(factory, issue, this.now());
+            try {
+              this.store.intake(factory, issue, this.now());
+            } catch (error) {
+              if (!(error instanceof FactoryIssueClaimConflict)) throw error;
+              this.store.audit(factory.id, factory.ownerId, 'intake-conflict', {
+                issue: issue.number,
+              });
+            }
           }
           this.store.saveCursor(factory.id, started);
         } catch (error) {
@@ -290,6 +310,17 @@ export class FactoryRuntime {
         await this.settleControl(run);
         return;
       }
+      if (run.stage === 'received' && !run.startedAt) {
+        const startedAt = run.receipts.length ? run.createdAt : this.now().toISOString();
+        run = this.update(run, {
+          startedAt,
+          deadlineAt: run.receipts.length
+            ? run.deadlineAt
+            : new Date(
+                Date.parse(startedAt) + run.snapshot.definition.limits.maxRunMinutes * 60000,
+              ).toISOString(),
+        });
+      }
       if (this.now().getTime() > Date.parse(run.deadlineAt))
         throw new Error('Run wall-clock budget exhausted.');
       if (
@@ -302,8 +333,13 @@ export class FactoryRuntime {
           throw new Error('Another factory executor already owns this issue lifecycle.');
         const issue = await this.options.provider.readIssue(run.snapshot, run.issue.number);
         await this.guard(run, 'checkout');
-        if (issue.state !== 'open' || !issue.labels.includes(run.snapshot.definition.github.label))
+        if (
+          issue.state !== 'open' ||
+          (factoryReadyLabel(run.snapshot.definition) &&
+            !issue.labels.includes(factoryReadyLabel(run.snapshot.definition)))
+        )
           throw new Error('Issue is no longer eligible.');
+        run = this.update(run, { issue });
         const checkout = await this.effect(run, 'checkout', 'initial', (key, guard) =>
           this.options.provider.prepareCheckout(run!.snapshot, run!, key, guard),
         );

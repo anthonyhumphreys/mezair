@@ -8,7 +8,11 @@ import type {
   FactoryRun,
   FactoryRunStage,
 } from '../../../../shared/factories';
-import { factoryWorkerThreadId } from '../../../../shared/factories';
+import {
+  factoryWorkerThreadId,
+  factoryIntakeDescription,
+  factoryDelivery,
+} from '../../../../shared/factories';
 import type {
   Persona,
   PublicWorkflowRun,
@@ -57,6 +61,17 @@ const repos: RepoInfo[] = [
     status: 'indexed',
     fileCount: 320,
     branchCount: 3,
+  },
+  {
+    id: 'repo-ado',
+    name: 'App (Azure DevOps)',
+    path: '/Users/demo/code/app-ado',
+    remoteUrl: 'https://dev.azure.com/acme/App/_git/app',
+    defaultBranch: 'main',
+    languages: [],
+    status: 'indexed',
+    fileCount: 0,
+    branchCount: 1,
   },
 ];
 
@@ -727,7 +742,7 @@ const directory: FactoryDirectoryItem[] = [
 
 function summarize(definition: FactoryDefinitionInput, workflow: WorkflowTemplate): string[] {
   return [
-    `${definition.github.host}/${definition.github.owner}/${definition.github.repo}: new issues labelled ${definition.github.label}; base ${definition.github.baseBranch}`,
+    `${factoryIntakeDescription(definition)}; base ${factoryDelivery(definition).baseBranch}`,
     `Pinned graph ${workflow.name}; ${workflow.nodes.length} steps; models ${[...new Set(workflow.nodes.map((n) => n.model))].join(', ')}`,
     'Each ordered criterion is bound to the verification command at the same index; subjective acceptance requires human review.',
     `${definition.criteria.length} acceptance checks; ${definition.postMergeChecks.length} post-merge checks; ${definition.limits.maxCommands} observed shell commands; ${definition.limits.maxRunMinutes} wall-clock minutes; ${definition.limits.repairRounds} repair rounds.`,
@@ -738,7 +753,7 @@ function summarize(definition: FactoryDefinitionInput, workflow: WorkflowTemplat
       ? 'Standing automatic merge authority when exact-head acceptance, required checks and human review conditions pass.'
       : 'An authorised person must approve the current verified head before each merge.',
     `Visibility: ${definition.access.kind === 'private' ? 'private' : definition.access.visibility}. Existing run history follows current visibility and source permissions.`,
-    'Activation applies to future issues. Existing runs retain their graph and original grants; pauses, revoked access and reductions in merge authority apply immediately.',
+    `${definition.includeExisting ? 'Activation includes the existing open backlog.' : 'Activation applies only to issues created after first activation.'} Existing runs retain their graph and original grants; pauses, revoked access and reductions in merge authority apply immediately.`,
   ];
 }
 
@@ -808,6 +823,30 @@ export function installFactoriesPreviewBridge(): void {
       activeWorkspaceId: workspace.id,
       llmProvider: 'codex',
       enabledLlmProviders: ['codex'],
+      workItemConnections: [
+        {
+          id: 'github',
+          name: 'Storefront',
+          provider: 'github',
+          githubOwner: 'acme',
+          githubRepo: 'storefront',
+        },
+        {
+          id: 'ado',
+          name: 'App project',
+          provider: 'ado',
+          adoOrganizationUrl: 'https://dev.azure.com/acme',
+          adoProject: 'App',
+        },
+        {
+          id: 'jira',
+          name: 'App project',
+          provider: 'jira',
+          jiraHost: 'https://acme.atlassian.net',
+          jiraProject: 'APP',
+        },
+        { id: 'linear', name: 'Product team', provider: 'linear', linearTeamId: 'demo-team' },
+      ],
       openaiModel: 'gpt-6.1-sol',
     }),
     update: async () => undefined,

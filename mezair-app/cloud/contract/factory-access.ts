@@ -1,15 +1,35 @@
 /** Server-authorized organisation discovery and recipient-bound encrypted snapshots. */
 export type OrganizationFactoryRole = 'viewer' | 'operator' | 'owner';
 export interface OrganizationFactoryPolicy {
+  /** Absent on legacy policies that additionally require GitHub source access. */
+  authorization?: 'mezair' | 'source';
   organizationId: string;
   visibility: 'organization' | 'team' | 'restricted';
   teamId?: string;
   members: Array<{ userId: string; role: OrganizationFactoryRole }>;
 }
-export interface FactorySource {
-  host: 'github.com';
-  owner: string;
-  repo: string;
+export type FactorySource = (
+  | { provider?: 'github'; host: string; owner: string; repo: string }
+  | { provider: 'ado'; organizationUrl: string; project: string; repo: string }
+) & { workItems?: { provider: 'github' | 'ado' | 'jira' | 'linear'; scope: string } };
+
+export function factorySourceKey(source: FactorySource): string {
+  if (source.workItems) {
+    const { provider, scope } = source.workItems;
+    if (provider === 'github') {
+      const url = new URL(scope);
+      return `${url.host}${url.pathname}`.toLowerCase();
+    }
+    return JSON.stringify([provider, provider === 'linear' ? scope : scope.toLowerCase()]);
+  }
+  return source.provider === 'ado'
+    ? JSON.stringify([
+        'ado',
+        source.organizationUrl.toLowerCase(),
+        source.project.toLowerCase(),
+        source.repo.toLowerCase(),
+      ])
+    : `${source.host}/${source.owner}/${source.repo}`.toLowerCase();
 }
 export interface FactoryKeyWrap {
   ephemeral: string;

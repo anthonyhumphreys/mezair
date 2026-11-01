@@ -375,6 +375,10 @@ export interface DocsRequestContext {
 
 export interface WorkItem {
   id: string;
+  createdAt?: string;
+  updatedAt?: string;
+  /** Provider-normalized lifecycle, independent of user-customized status names. */
+  closed?: boolean;
   title: string;
   type: 'Bug' | 'User Story' | 'Feature' | 'Task' | 'Epic';
   state: string;
@@ -449,6 +453,8 @@ export interface BaRepoLink {
 }
 
 export interface WorkItemFilters {
+  /** Fresh, bounded complete intake for background factories. Never cache partial results. */
+  factoryIntake?: boolean;
   state?: string;
   type?: string;
   assignee?: string;

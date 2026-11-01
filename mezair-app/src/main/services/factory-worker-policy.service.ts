@@ -4,6 +4,8 @@ import { app } from 'electron';
 import { getDb } from '../db/database.js';
 import { getSettings } from './settings.service.js';
 import { FactoryStore } from './factory-persistence.service.js';
+import { validateFactoryWorkItemConnection } from './factory-workitems.service.js';
+import { factoryDelivery, factoryReadyLabel } from '../../shared/factories.js';
 import type { CodexEvent } from '../../shared/types.js';
 import { createHash } from 'node:crypto';
 import { getFactoryActor } from './factory-access.service.js';
@@ -46,11 +48,16 @@ export function assertFactoryWorkerActive(runId: string): void {
     throw new Error('The factory execution account changed.');
   if (
     factory.definition.repoId !== run.snapshot.definition.repoId ||
-    JSON.stringify(factory.definition.github) !== JSON.stringify(run.snapshot.definition.github)
+    JSON.stringify(factoryDelivery(factory.definition)) !==
+      JSON.stringify(factoryDelivery(run.snapshot.definition)) ||
+    factoryReadyLabel(factory.definition) !== factoryReadyLabel(run.snapshot.definition) ||
+    JSON.stringify(factory.definition.workItems) !==
+      JSON.stringify(run.snapshot.definition.workItems)
   )
     throw new Error('The factory source scope changed.');
   if ((getSettings().codexMode ?? 'on-request') === 'read-only')
     throw new Error('Current access is read-only.');
+  validateFactoryWorkItemConnection(factory.definition);
   if (Date.now() > Date.parse(run.deadlineAt))
     throw new Error('Factory wall-clock budget exhausted.');
   const used = getDb()

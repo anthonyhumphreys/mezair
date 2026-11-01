@@ -52,7 +52,7 @@ export async function listWorkItems(filters?: WorkItemFilters): Promise<WorkItem
   const baseUrl = getBaseUrl();
 
   // WIQL query for active work items — optionally scoped to iterations
-  let whereClause = `[System.TeamProject] = '${project}' AND [System.State] <> 'Closed' AND [System.State] <> 'Removed'`;
+  let whereClause = `[System.TeamProject] = '${project.replace(/'/g, "''")}' AND [System.State] <> 'Closed' AND [System.State] <> 'Removed'`;
 
   if (filters?.iterationIds && filters.iterationIds.length > 0) {
     const iterClauses = filters.iterationIds
@@ -69,6 +69,7 @@ export async function listWorkItems(filters?: WorkItemFilters): Promise<WorkItem
     method: 'POST',
     headers,
     body: JSON.stringify(wiql),
+    signal: AbortSignal.timeout(20_000),
   });
 
   if (!wiqlRes.ok) {
@@ -81,9 +82,15 @@ export async function listWorkItems(filters?: WorkItemFilters): Promise<WorkItem
   }
 
   // Fetch details in batches of 200
-  const ids = wiqlData.workItems.map((wi) => wi.id).slice(0, 200);
+  if (filters?.factoryIntake && wiqlData.workItems.length > 4000)
+    throw new Error(
+      'Azure DevOps factory intake exceeded 4000 items. Narrow the connection scope.',
+    );
+  const ids = wiqlData.workItems.map((wi) => wi.id).slice(0, filters?.factoryIntake ? 4000 : 200);
   const fields = [
     'System.Id',
+    'System.CreatedDate',
+    'System.ChangedDate',
     'System.Title',
     'System.WorkItemType',
     'System.State',
@@ -95,26 +102,25 @@ export async function listWorkItems(filters?: WorkItemFilters): Promise<WorkItem
     'System.IterationPath',
   ];
 
-  const detailRes = await fetch(
-    `${baseUrl}/${project}/_apis/wit/workitems?ids=${ids.join(',')}&fields=${fields.join(',')}&api-version=7.1`,
-    { headers },
-  );
-
-  if (!detailRes.ok) {
-    throw new Error(`ADO work item fetch failed: ${detailRes.status}`);
-  }
-
-  const detailData = (await detailRes.json()) as {
-    value: Array<{
-      id: number;
-      fields: Record<string, unknown>;
-    }>;
+  const detailData: { value: Array<{ id: number; fields: Record<string, unknown> }> } = {
+    value: [],
   };
+  for (let offset = 0; offset < ids.length; offset += 200) {
+    const detailRes = await fetch(
+      `${baseUrl}/${project}/_apis/wit/workitems?ids=${ids.slice(offset, offset + 200).join(',')}&fields=${fields.join(',')}&api-version=7.1`,
+      { headers, signal: AbortSignal.timeout(20_000) },
+    );
+    if (!detailRes.ok) throw new Error(`ADO work item fetch failed: ${detailRes.status}`);
+    const batch = (await detailRes.json()) as typeof detailData;
+    detailData.value.push(...batch.value);
+  }
 
   let workItems: WorkItem[] = detailData.value.map((wi) => {
     const adoType = wi.fields['System.WorkItemType'] as string;
     return {
       id: String(wi.id),
+      createdAt: wi.fields['System.CreatedDate'] as string | undefined,
+      updatedAt: wi.fields['System.ChangedDate'] as string | undefined,
       title: (wi.fields['System.Title'] as string) ?? '',
       type: mapWorkItemType(adoType),
       state: (wi.fields['System.State'] as string) ?? '',
@@ -137,7 +143,28 @@ export async function listWorkItems(filters?: WorkItemFilters): Promise<WorkItem
   });
 
   // Fetch hierarchy (parent links) via relations expand
-  const parentMap = await fetchWorkItemHierarchy(ids, baseUrl, project, headers);
+  if (filters?.factoryIntake) {
+    for (const type of new Set(
+      detailData.value.map((wi) => String(wi.fields['System.WorkItemType'])),
+    )) {
+      const response = await fetch(
+        `${baseUrl}/${encodeURIComponent(project)}/_apis/wit/workitemtypes/${encodeURIComponent(type)}/states?api-version=7.1`,
+        { headers, signal: AbortSignal.timeout(20_000) },
+      );
+      if (!response.ok) throw new Error('Unable to establish Azure DevOps lifecycle states.');
+      const states = (await response.json()) as {
+        value: Array<{ name: string; category: string }>;
+      };
+      for (const item of workItems.filter((wi) => wi.extras?.originalType === type)) {
+        const state = states.value.find((state) => state.name === item.state);
+        if (!state) throw new Error('Unknown Azure DevOps lifecycle state.');
+        item.closed = ['Completed', 'Removed'].includes(state.category);
+      }
+    }
+  }
+  const parentMap = filters?.factoryIntake
+    ? new Map<number, number>()
+    : await fetchWorkItemHierarchy(ids, baseUrl, project, headers);
   for (const wi of workItems) {
     const parentId = parentMap.get(Number(wi.id));
     if (parentId) wi.parentId = String(parentId);
@@ -175,6 +202,8 @@ export async function getWorkItem(id: string): Promise<WorkItem> {
   const adoType = data.fields['System.WorkItemType'] as string;
   const wi: WorkItem = {
     id: String(data.id),
+    createdAt: data.fields['System.CreatedDate'] as string | undefined,
+    updatedAt: data.fields['System.ChangedDate'] as string | undefined,
     title: (data.fields['System.Title'] as string) ?? '',
     type: mapWorkItemType(adoType),
     state: (data.fields['System.State'] as string) ?? '',

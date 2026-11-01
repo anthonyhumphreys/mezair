@@ -4,8 +4,50 @@ import {
   factoryWorkerThreadId,
   factoryWorkflowDrift,
   factoryWorkflowIssues,
+  parseFactoryDeliveryRemote,
+  factoryDeliveryKey,
+  factoryMatchesRemote,
 } from '../factories';
 import type { WorkflowTemplate } from '../types';
+import type { FactoryDefinitionInput } from '../factories';
+
+describe('factory source control identity', () => {
+  it.each([
+    'https://dev.azure.com/acme/App/_git/repo',
+    'git@ssh.dev.azure.com:v3/acme/App/repo',
+    'ssh://git@ssh.dev.azure.com/v3/acme/App/repo',
+    'https://acme.visualstudio.com/App/_git/repo',
+  ])('recognises and canonicalises Azure DevOps remote %s', (remote) => {
+    expect(parseFactoryDeliveryRemote(remote)).toEqual({
+      provider: 'ado',
+      organizationUrl: 'https://dev.azure.com/acme',
+      project: 'App',
+      repo: 'repo',
+      baseBranch: 'main',
+    });
+  });
+  it('keeps legacy reviewed GitHub identity compatible with the canonical contract', () => {
+    const legacy = {
+      github: {
+        host: 'github.com',
+        owner: 'Acme',
+        repo: 'repo',
+        label: 'ready',
+        baseBranch: 'main',
+      },
+    } as FactoryDefinitionInput;
+    const current = {
+      delivery: parseFactoryDeliveryRemote('git@github.com:acme/repo.git')!,
+    } as FactoryDefinitionInput;
+    expect(factoryDeliveryKey(legacy)).toBe(factoryDeliveryKey(current));
+    expect(factoryMatchesRemote(legacy, 'https://github.com/acme/repo.git')).toBe(true);
+    expect(factoryMatchesRemote(legacy, 'https://github.com/acme/other.git')).toBe(false);
+    expect(
+      parseFactoryDeliveryRemote('https://user:private-secret@dev.azure.com/acme/App/_git/repo'),
+    ).toBeNull();
+    expect(parseFactoryDeliveryRemote('https://gitlab.com/acme/repo')).toBeNull();
+  });
+});
 
 const template: WorkflowTemplate = {
   id: 'tpl',

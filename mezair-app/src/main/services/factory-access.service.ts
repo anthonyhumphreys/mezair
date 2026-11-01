@@ -9,6 +9,7 @@ import {
   createPublicKey,
   randomBytes,
 } from 'node:crypto';
+import { factoryDelivery } from '../../shared/factories.js';
 import type { FactoryDefinition, FactoryRun, FactoryAction } from '../../shared/factories.js';
 import type {
   FactoryDirectoryEntry,
@@ -63,6 +64,18 @@ async function token(): Promise<string> {
     /* Source checks fail closed when GitHub CLI is not authenticated. */
   }
   throw new Error('Connect GitHub to verify current repository access.');
+}
+async function optionalToken(factory?: FactoryDefinition): Promise<string | undefined> {
+  if (
+    factory?.definition.access.kind === 'organization' &&
+    factory.definition.access.authorization === 'mezair'
+  )
+    return undefined;
+  try {
+    return await token();
+  } catch {
+    return undefined;
+  }
 }
 const rpc = <T>(op: string, params: Record<string, unknown>) => factoryAccountRpc<T>(op, params);
 const members = async (organizationId: string) =>
@@ -227,12 +240,15 @@ function registeredKey(organizationId: string) {
   if (!value) throw new Error('Factory recipient key has not been registered.');
   return value;
 }
-export async function registerRemoteFactoryKey(organizationId: string): Promise<string> {
+export async function registerRemoteFactoryKey(
+  organizationId: string,
+  requireSourceIdentity = false,
+): Promise<string> {
   const key = keyForOrg(organizationId),
     result = await rpc<{ userId: string }>('factory.key.register', {
       organizationId,
       publicKey: key.publicKey,
-      githubToken: await token(),
+      githubToken: requireSourceIdentity ? await optionalToken() : undefined,
     });
   registered.set(registrationCacheKey(organizationId), {
     userId: result.userId,
@@ -246,11 +262,17 @@ async function registeredMembers(
   policy: OrganizationFactoryPolicy,
   source: FactorySource,
 ) {
-  await registerRemoteFactoryKey(organizationId);
+  await registerRemoteFactoryKey(organizationId, policy.authorization !== 'mezair');
   return (
     await rpc<{ members: Array<{ userId: string; role: string; publicKey?: string }> }>(
       'factory.members',
-      { organizationId, factoryId, policy, source, githubToken: await token() },
+      {
+        organizationId,
+        factoryId,
+        policy,
+        source,
+        githubToken: policy.authorization === 'mezair' ? undefined : await optionalToken(),
+      },
     )
   ).members;
 }
@@ -275,7 +297,7 @@ export async function validateRemoteFactoryTeam(
       organizationId,
       source,
       teamId,
-      githubToken: await token(),
+      githubToken: await optionalToken(),
     })
   ).allowed;
 }
@@ -288,6 +310,7 @@ function policyOf(factory: FactoryDefinition): OrganizationFactoryPolicy {
   const access = factory.definition.access;
   if (access.kind !== 'organization') throw new Error('Factory is not organisation shared.');
   return {
+    ...(access.authorization ? { authorization: access.authorization } : {}),
     organizationId: access.organizationId,
     visibility: access.visibility,
     ...(access.teamId ? { teamId: access.teamId } : {}),
@@ -295,11 +318,31 @@ function policyOf(factory: FactoryDefinition): OrganizationFactoryPolicy {
   };
 }
 function sourceOf(factory: FactoryDefinition): FactorySource {
-  const g = factory.definition.github;
-  if (g.host !== 'github.com')
-    throw new Error('Organisation factory access supports github.com only.');
-  return { host: 'github.com', owner: g.owner, repo: g.repo };
+  const delivery = factoryDelivery(factory.definition),
+    access = factory.definition.access;
+  const source: FactorySource =
+    delivery.provider === 'ado'
+      ? {
+          provider: 'ado',
+          organizationUrl: delivery.organizationUrl,
+          project: delivery.project,
+          repo: delivery.repo,
+        }
+      : { host: delivery.host, owner: delivery.owner, repo: delivery.repo };
+  if (
+    access.kind === 'organization' &&
+    access.authorization !== 'mezair' &&
+    (delivery.provider !== 'github' || delivery.host !== 'github.com')
+  )
+    throw new Error(
+      'Review a revision using Mezair organisation roles for this delivery provider.',
+    );
+  const intake = factory.definition.workItems;
+  return intake
+    ? { ...source, workItems: { provider: intake.provider, scope: intake.scope } }
+    : source;
 }
+
 function definitionDigest(factory: FactoryDefinition): string {
   return createHash('sha256')
     .update(
@@ -326,7 +369,7 @@ export async function authorizeFactoryAccess(
     factoryId: factory.id,
     action: backendAction,
     expectedRegistryVersion: factory.registryVersion,
-    githubToken: await token(),
+    githubToken: await optionalToken(factory),
   });
   return { ...result, executionOwner: result.executionOwner ?? result.executor === true };
 }
@@ -334,6 +377,14 @@ function enrichDefinition(
   value: FactoryDefinition,
   entry: FactoryDirectoryEntry,
 ): FactoryDefinition {
+  if (
+    value.definition.access.kind === 'organization' &&
+    value.definition.access.authorization === 'mezair' &&
+    entry.policy.authorization !== 'mezair'
+  )
+    throw new Error(
+      'The connected backend does not support Mezair factory visibility roles. Upgrade it before activating this definition.',
+    );
   return {
     ...value,
     revision: entry.revision,
@@ -351,11 +402,15 @@ function enrichDefinition(
 }
 export async function listRemoteFactories(_organizationId?: string): Promise<FactoryDefinition[]> {
   const first = await rpc<{ factories: FactoryDirectoryEntry[] }>('factory.registry.list', {
-    githubToken: await token(),
+    githubToken: await optionalToken(),
   });
-  for (const entry of first.factories) await registerRemoteFactoryKey(entry.policy.organizationId);
+  for (const entry of first.factories)
+    await registerRemoteFactoryKey(
+      entry.policy.organizationId,
+      entry.policy.authorization !== 'mezair',
+    );
   const result = await rpc<{ factories: FactoryDirectoryEntry[] }>('factory.registry.list', {
-    githubToken: await token(),
+    githubToken: await optionalToken(),
   });
   return result.factories.flatMap((entry) => {
     if (!entry.snapshot || !entry.definitionDigest) return [];
@@ -383,7 +438,7 @@ export async function listRemoteFactoryDirectory(
 ): Promise<Array<Omit<FactoryDirectoryEntry, 'snapshot'> & { accessPending: boolean }>> {
   const result = await rpc<{ factories: FactoryDirectoryEntry[] }>('factory.registry.list', {
     organizationId,
-    githubToken: await token(),
+    githubToken: await optionalToken(),
   });
   return result.factories
     .filter(
@@ -394,13 +449,16 @@ export async function listRemoteFactoryDirectory(
 export async function getRemoteFactory(id: string): Promise<FactoryDefinition | null> {
   let result = await rpc<FactoryDirectoryEntry>('factory.registry.read', {
     factoryId: id,
-    githubToken: await token(),
+    githubToken: await optionalToken(),
   });
-  await registerRemoteFactoryKey(result.policy.organizationId);
+  await registerRemoteFactoryKey(
+    result.policy.organizationId,
+    result.policy.authorization !== 'mezair',
+  );
   if (!result.snapshot)
     result = await rpc<FactoryDirectoryEntry>('factory.registry.read', {
       factoryId: id,
-      githubToken: await token(),
+      githubToken: await optionalToken(),
     });
   if (!result.snapshot) return null;
   const value = open<FactoryDefinition>(
@@ -423,7 +481,7 @@ export async function listRemoteFactoryRuns(factoryId: string): Promise<FactoryR
   if (!factory) return [];
   const result = await rpc<{
     runs: Array<{ id: string; version: number; snapshot: SealedFactorySnapshot | null }>;
-  }>('factory.run.list', { factoryId, githubToken: await token() });
+  }>('factory.run.list', { factoryId, githubToken: await optionalToken() });
   return result.runs.flatMap((item) => {
     if (!item.snapshot) return [];
     try {
@@ -460,7 +518,7 @@ export async function sendOrganizationFactoryCommand(
   await rpc('factory.command.send', {
     factoryId: factory.id,
     command: { ...command, id: commandId, factoryId: factory.id },
-    githubToken: await token(),
+    githubToken: await optionalToken(factory),
   });
   return { id: commandId };
 }
@@ -470,7 +528,7 @@ export async function takeOrganizationFactoryCommands(
   return (
     await rpc<{ commands: unknown[] }>('factory.command.take', {
       factoryId: factory.id,
-      githubToken: await token(),
+      githubToken: await optionalToken(factory),
     })
   ).commands;
 }
@@ -487,20 +545,23 @@ export async function completeOrganizationFactoryCommand(
     commandId: id,
     leaseToken: item.leaseToken,
     ok: !error,
-    githubToken: await token(),
+    githubToken: await optionalToken(factory),
   });
 }
 export async function claimOrganizationFactoryIssue(
   factory: FactoryDefinition,
-  issueNumber: number,
+  issueNumber: number | string,
   runId: string,
 ): Promise<boolean> {
   return (
     await rpc<{ claimed: boolean }>('factory.issue.claim', {
       factoryId: factory.id,
-      issueNumber,
+      issueId:
+        !factory.definition.workItems || factory.definition.workItems.provider === 'github'
+          ? String(issueNumber).split('/').at(-1)
+          : String(issueNumber),
       runId,
-      githubToken: await token(),
+      githubToken: await optionalToken(factory),
     })
   ).claimed;
 }
@@ -541,7 +602,7 @@ export async function publishFactorySnapshot(
     version: run.version,
     payloadDigest,
     snapshot,
-    githubToken: await token(),
+    githubToken: await optionalToken(factory),
   });
 }
 export async function republishFactorySnapshots(
@@ -567,7 +628,7 @@ export async function republishFactorySnapshots(
     registryVersion: factory.registryVersion,
     definitionDigest: definitionDigest(factory),
     snapshot,
-    githubToken: await token(),
+    githubToken: await optionalToken(factory),
   });
   for (const run of runs) await publishFactorySnapshot(factory, run);
 }
@@ -595,7 +656,7 @@ export async function upsertRemoteFactory(
     try {
       const current = await rpc<{ revision: number; registryVersion: number }>(
         'factory.registry.read',
-        { factoryId: factory.id, githubToken: await token() },
+        { factoryId: factory.id, githubToken: await optionalToken(factory) },
       );
       currentRevision ??= current.revision;
       currentRegistryVersion ??= current.registryVersion;
@@ -617,6 +678,6 @@ export async function upsertRemoteFactory(
     activeRevision: factory.activeRevision ?? null,
     activatedAt: factory.activatedAt ?? null,
     snapshot,
-    githubToken: await token(),
+    githubToken: await optionalToken(factory),
   });
 }

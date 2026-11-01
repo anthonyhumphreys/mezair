@@ -6,7 +6,8 @@ import type {
   FactoryDefinitionInput,
   FactoryRun,
 } from '../../../shared/factories.js';
-import type { WorkflowTemplate } from '../../../shared/types.js';
+import type { WorkflowTemplate, WorkItemConnection } from '../../../shared/types.js';
+import { factoryConnectionSource } from '../../../shared/factories.js';
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database.Database,
   actor: null as { id: string; accountScope: string } | null,
@@ -15,6 +16,7 @@ const state = vi.hoisted(() => ({
   role: 'owner',
   executor: false,
   daemon: true,
+  connections: [] as WorkItemConnection[],
 }));
 state.db = new Database(':memory:');
 state.db.exec(SCHEMA_SQL);
@@ -60,6 +62,7 @@ vi.mock('../settings.service.js', () => ({
     llmProvider: 'codex',
     enabledLlmProviders: ['codex'],
     codexMode: 'workspace-auto',
+    workItemConnections: state.connections,
   }),
 }));
 vi.mock('../code-review-pr.service.js', () => ({
@@ -141,6 +144,7 @@ beforeEach(() => {
   state.role = 'owner';
   state.executor = false;
   state.daemon = true;
+  state.connections = [];
   state.db.exec(
     'DELETE FROM factory_takeovers;DELETE FROM factory_receipts;DELETE FROM factory_runs;DELETE FROM factory_revisions;DELETE FROM factory_definitions;DELETE FROM workspace_repos;DELETE FROM workspaces;DELETE FROM repos;',
   );
@@ -190,6 +194,39 @@ function remoteFactory(): FactoryDefinition {
   };
 }
 describe('factory service reviewed activation and remote projections', () => {
+  it('pins work item scope at review, save and activation without using the active connection', async () => {
+    const connection: WorkItemConnection = {
+      id: 'jira',
+      name: 'Jira',
+      provider: 'jira',
+      jiraHost: 'https://acme.atlassian.net',
+      jiraProject: 'APP',
+    };
+    state.connections = [connection];
+    const input = {
+      ...definition,
+      github: { ...definition.github!, label: '' },
+      workItems: factoryConnectionSource(connection),
+      includeExisting: true,
+    };
+    const preview = await previewFactory(input);
+    const factory = await saveFactory({ definition: input, confirmation: preview.confirmation });
+    expect(factory.definition.workItems).toEqual(input.workItems);
+    state.connections = [{ ...connection, jiraProject: 'OTHER' }];
+    await expect(
+      activateFactory({ factoryId: factory.id, revision: 1, confirmation: factory.confirmation }),
+    ).rejects.toThrow('pinned source');
+    await expect(previewFactory(input, factory.id)).rejects.toThrow('pinned source');
+    const changed = { ...input, workItems: factoryConnectionSource(state.connections[0]) };
+    await expect(
+      saveFactory({
+        id: factory.id,
+        expectedRevision: 1,
+        definition: changed,
+        confirmation: factory.confirmation,
+      }),
+    ).rejects.toThrow('immutable');
+  });
   it('saves reviewed immutable revisions and explicitly activates the pinned graph', async () => {
     const factory = await saved();
     expect(factory.status).toBe('draft');

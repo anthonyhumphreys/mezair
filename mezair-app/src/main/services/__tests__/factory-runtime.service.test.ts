@@ -183,6 +183,104 @@ afterEach(() => {
 });
 
 describe('durable factory lifecycle', () => {
+  it('refreshes queued issue content before starting the worker', async () => {
+    const received = store.intake(factory, issue, now);
+    vi.mocked(provider.readIssue).mockResolvedValueOnce({
+      ...issue,
+      body: 'Updated acceptance criteria',
+    });
+    await runtime.advance(received.id);
+    expect(run().issue.body).toBe('Updated acceptance criteria');
+    expect(worker.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        issue: expect.objectContaining({ body: 'Updated acceptance criteria' }),
+      }),
+      expect.any(String),
+      expect.stringContaining('Updated acceptance criteria'),
+    );
+  });
+  it('starts the time budget when dequeued and does not reset it on later attempts', async () => {
+    const received = store.intake(factory, issue, now);
+    now = new Date(now.getTime() + 2 * 60 * 60000);
+    await runtime.advance(received.id);
+    expect(run().stage).toBe('merging');
+    expect(run().startedAt).toBe(now.toISOString());
+    const deadline = run().deadlineAt;
+    now = new Date(now.getTime() + 2 * 60 * 60000);
+    await runtime.advance(received.id);
+    expect(run().stage).toBe('paused');
+    expect(run().error).toContain('wall-clock budget');
+    expect(run().deadlineAt).toBe(deadline);
+  });
+  it.each([false, true])(
+    'allows any label and makes backlog intake explicit (%s)',
+    async (includeExisting) => {
+      factory = {
+        ...factory,
+        revision: 2,
+        activeRevision: 2,
+        definition: {
+          ...factory.definition,
+          github: { ...factory.definition.github!, label: '' },
+          includeExisting,
+        },
+      };
+      store.saveRevision(factory, 1);
+      issue.labels = [];
+      issue.createdAt = '2026-10-01T00:00:00Z';
+      store.saveCursor(factory.id, '2026-10-30T00:00:00Z');
+      await runtime.tick();
+      expect(store.listRuns(factory.id)).toHaveLength(includeExisting ? 1 : 0);
+      expect(provider.listIssues).toHaveBeenCalledWith(
+        expect.anything(),
+        includeExisting ? undefined : '2026-10-30T00:00:00Z',
+      );
+      if (includeExisting) {
+        expect(run().stage).toBe('merging');
+        await runtime.tick();
+        expect(store.listRuns(factory.id)).toHaveLength(1);
+      } else {
+        issue.createdAt = now.toISOString();
+        await runtime.tick();
+        expect(run().stage).toBe('merging');
+      }
+    },
+  );
+  it('retains the ready-label gate when configured, including on backlog intake', async () => {
+    factory = {
+      ...factory,
+      revision: 2,
+      activeRevision: 2,
+      definition: { ...factory.definition, includeExisting: true },
+    };
+    store.saveRevision(factory, 1);
+    issue.labels = ['unrelated'];
+    await runtime.tick();
+    expect(store.listRuns(factory.id)).toHaveLength(0);
+  });
+  it('keeps non-numeric identities distinct across provider sources', () => {
+    factory.definition.workItems = {
+      provider: 'jira',
+      connectionId: 'jira',
+      scope: 'https://acme.atlassian.net/APP',
+    };
+    const first = store.intake(factory, { ...issue, number: 'APP-7' }, now);
+    expect(store.intake(factory, { ...issue, number: 'APP-7' }, now).id).toBe(first.id);
+    const other = {
+      ...factory,
+      id: 'other',
+      definition: {
+        ...factory.definition,
+        workItems: {
+          provider: 'linear' as const,
+          connectionId: 'linear',
+          scope: 'linear:team:team',
+        },
+      },
+    };
+    store.saveRevision(other);
+    expect(store.intake(other, { ...issue, number: 'APP-7' }, now).id).not.toBe(first.id);
+  });
   it('deduplicates intake and waits for confirmed merge plus post-merge checks', async () => {
     await runtime.tick();
     expect(run().stage).toBe('merging');
@@ -203,6 +301,17 @@ describe('durable factory lifecycle', () => {
     store.saveRevision(other);
     store.intake(factory, issue, now);
     expect(() => store.intake(other, issue, now)).toThrow('already claimed');
+  });
+  it('continues backlog intake when another factory already owns one matching item', async () => {
+    const other = { ...factory, id: 'other', status: 'inactive' as const };
+    store.saveRevision(other);
+    store.intake(other, issue, now);
+    vi.mocked(provider.listIssues).mockResolvedValue([issue, { ...issue, number: 8 }]);
+    vi.mocked(provider.readIssue).mockResolvedValue({ ...issue, number: 8 });
+    await runtime.tick();
+    expect(store.listRuns(factory.id)).toHaveLength(1);
+    expect(run().issue.number).toBe(8);
+    expect(store.cursor(factory.id)).toBe(now.toISOString());
   });
   it('two runtimes produce one worker, PR and merge effect for duplicate issue deliveries', async () => {
     const second = new FactoryRuntime({

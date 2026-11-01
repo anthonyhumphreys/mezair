@@ -16,6 +16,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   factoryWorkflowDrift,
+  factoryIntakeDescription,
+  factoryIssueLabel,
+  factoryDelivery,
+  factoryDeliveryLabel,
+  factoryReadyLabel,
   type FactoryDefinition,
   type FactoryDefinitionInput,
   type FactoryDirectoryItem,
@@ -24,7 +29,7 @@ import {
   type FactoryRun,
   type FactoryRunControlInput,
 } from '../../../shared/factories';
-import type { Persona, WorkflowTemplate } from '../../../shared/types';
+import type { Persona, WorkflowTemplate, WorkItemConnection } from '../../../shared/types';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { Button } from '../ui/Button';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
@@ -40,7 +45,12 @@ import {
   effectiveFactoryRole,
 } from './factory-ui-policy';
 import { recipientPickupThread, takeoverControlInput } from './factory-pickup';
-import { DRAFT_EXAMPLES, githubIdentity, isGithubRepo, newDefinition } from './factory-definition';
+import {
+  DRAFT_EXAMPLES,
+  deliveryIdentity,
+  isFactoryRepo,
+  newDefinition,
+} from './factory-definition';
 import {
   FACTORY_STATIONS,
   groupRuns,
@@ -94,6 +104,7 @@ export function FactoriesView() {
   const [runs, setRuns] = useState<FactoryRun[]>([]);
   const [runSummaries, setRunSummaries] = useState<Record<string, FactoryRunSummary>>({});
   const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
+  const [connections, setConnections] = useState<WorkItemConnection[]>([]);
   const [selectedFactoryId, setSelectedFactoryId] = useState<string | null>(
     searchParams.get('factory'),
   );
@@ -140,9 +151,13 @@ export function FactoriesView() {
   const selectedFactory = factories.find((item) => item.id === selectedFactoryId) ?? null;
   const factoryRuns = runsFactoryId === selectedFactoryId ? runs : [];
   const selectedRun = factoryRuns.find((item) => item.id === selectedRunId) ?? null;
-  const githubRepos = useMemo(() => repos.filter(isGithubRepo), [repos]);
+  const deliveryRepos = useMemo(() => repos.filter(isFactoryRepo), [repos]);
 
   useEffect(() => {
+    window.mezair.settings
+      .get()
+      .then((settings) => setConnections(settings.workItemConnections ?? []))
+      .catch(() => setConnections([]));
     window.mezair.chat
       .getPersonas()
       .then(setPersonas)
@@ -332,7 +347,7 @@ export function FactoriesView() {
       setSelectedFactoryId(null);
       setSelectedRunId(null);
       setEditingFactoryId(null);
-      setDraft(newDefinition(activeWorkspace.id, githubRepos[0] ?? repos[0], workflowTemplateId));
+      setDraft(newDefinition(activeWorkspace.id, deliveryRepos[0] ?? repos[0], workflowTemplateId));
       setPreview(null);
       setRepinWorkflow(false);
       setDraftedFromRequest(false);
@@ -342,7 +357,7 @@ export function FactoriesView() {
       setSearchParams({}, { replace: true });
       setBanner(null);
     },
-    [activeWorkspace?.id, githubRepos, repos, setSearchParams],
+    [activeWorkspace?.id, deliveryRepos, repos, setSearchParams],
   );
 
   useEffect(() => {
@@ -449,7 +464,9 @@ export function FactoriesView() {
     setDefinition((current) => ({
       ...current,
       repoId,
-      github: { ...githubIdentity(repo), label: current.github.label },
+      github: undefined,
+      delivery: deliveryIdentity(repo),
+      readyLabel: factoryReadyLabel(current),
     }));
   };
 
@@ -457,12 +474,19 @@ export function FactoriesView() {
     setSaving(true);
     setBanner(null);
     try {
-      if (definition.access.kind === 'organization' && definition.access.visibility === 'team') {
+      if (
+        definition.access.kind === 'organization' &&
+        definition.access.authorization !== 'mezair' &&
+        definition.access.visibility === 'team'
+      ) {
         if (!definition.access.teamId?.trim())
           throw new Error('Choose a GitHub team slug for team visibility.');
+        const delivery = factoryDelivery(definition);
+        if (delivery.provider !== 'github' || delivery.host !== 'github.com')
+          throw new Error('Use Mezair roles for factory visibility with this provider.');
         const valid = await window.mezair.factories.validateOrganizationTeam(
           definition.access.organizationId,
-          { host: 'github.com', owner: definition.github.owner, repo: definition.github.repo },
+          { host: 'github.com', owner: delivery.owner, repo: delivery.repo },
           definition.access.teamId.trim(),
         );
         if (!valid)
@@ -730,7 +754,8 @@ export function FactoriesView() {
               draft={draft}
               editing={editingFactory}
               templates={templates}
-              repos={githubRepos.length ? githubRepos : repos}
+              repos={deliveryRepos.length ? deliveryRepos : repos}
+              connections={connections}
               organizations={organizations}
               preview={preview}
               busy={saving}
@@ -877,7 +902,7 @@ function FactoryRail({
             const summary = summaries[factory.id];
             const selected = selectedId === factory.id;
             const source = canReadFactorySource(factory)
-              ? `${factory.definition.github.owner}/${factory.definition.github.repo}`
+              ? factoryDeliveryLabel(factory.definition)
               : 'Source hidden';
             return (
               <li key={factory.id}>
@@ -1098,13 +1123,11 @@ function FactoryFloor({
               {sourceVisible ? (
                 <>
                   <Mono className="text-text-secondary">
-                    {factory.definition.github.owner}/{factory.definition.github.repo}
+                    {factoryDeliveryLabel(factory.definition)}
                   </Mono>
+                  <span>{factoryIntakeDescription(factory.definition)}</span>
                   <span>
-                    issues labelled <Mono>{factory.definition.github.label}</Mono>
-                  </span>
-                  <span>
-                    into <Mono>{factory.definition.github.baseBranch}</Mono>
+                    into <Mono>{factoryDelivery(factory.definition).baseBranch}</Mono>
                   </span>
                 </>
               ) : (
@@ -1403,13 +1426,7 @@ function RunList({
         <p className="text-sm font-medium text-text-primary">No issues on the line yet</p>
         <p className="mt-1 max-w-prose text-xs leading-5 text-text-tertiary">
           {factory.status === 'active' ? (
-            <>
-              Label an open issue <Mono>{factory.definition.github.label}</Mono> in{' '}
-              <Mono>
-                {factory.definition.github.owner}/{factory.definition.github.repo}
-              </Mono>{' '}
-              and it appears here within a minute.
-            </>
+            <>{factoryIntakeDescription(factory.definition)} appear here on the next check.</>
           ) : (
             'Activate the factory to start claiming matching issues.'
           )}
@@ -1495,7 +1512,7 @@ function RunList({
                         <span className="flex items-baseline gap-2">
                           {sourceAccess && (
                             <span className="shrink-0 font-mono text-xs text-text-tertiary">
-                              #{run.issue.number}
+                              {factoryIssueLabel(run.issue)}
                             </span>
                           )}
                           <span
@@ -1542,7 +1559,7 @@ function EmptyRuns({
   activating: boolean;
   onActivate: () => void;
 }) {
-  const { github, limits } = factory.definition;
+  const { limits } = factory.definition;
   return (
     <div className="px-6 py-10">
       <div className="max-w-xl">
@@ -1550,19 +1567,16 @@ function EmptyRuns({
         <p className="mt-1.5 text-sm leading-6 text-text-secondary">
           {factory.status === 'active' ? (
             <>
-              Label an open issue <Mono>{github.label}</Mono> in{' '}
-              <Mono>
-                {github.owner}/{github.repo}
-              </Mono>
-              . It appears here on the factory’s next check, and up to {limits.maxConcurrentRuns}{' '}
-              run at once.
+              {factoryIntakeDescription(factory.definition)} appear here on the factory’s next
+              check, and up to {limits.maxConcurrentRuns} run at once.
             </>
           ) : factory.status === 'paused' ? (
             'The factory is paused. Resume it to claim matching issues again.'
           ) : (
             <>
-              Activating lets this factory claim open issues labelled <Mono>{github.label}</Mono>{' '}
-              and publish pull requests under the policy you review first.
+              Activating lets this factory claim{' '}
+              {factoryIntakeDescription(factory.definition).toLowerCase()} and publish pull requests
+              under the policy you review first.
             </>
           )}
         </p>
@@ -1582,11 +1596,11 @@ function EmptyFactories({ onStart }: { onStart: (request: string) => void }) {
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-4xl px-8 py-14">
         <h2 className="max-w-xl text-xl font-semibold leading-snug text-balance text-text-primary">
-          Turn labelled issues into merged, verified pull requests
+          Turn work items into merged, verified pull requests
         </h2>
         <p className="mt-2 max-w-prose text-sm leading-6 text-text-secondary">
-          A factory watches one repository for a label and runs every matching issue down the same
-          line. You decide what it must prove, whether it may publish, and who approves each merge.
+          A factory watches a work item source and runs every matching open item down the same line.
+          You decide what it must prove, whether it may publish, and who approves each merge.
         </p>
         <ol className="factory-line mt-10" aria-label="The factory line">
           {FACTORY_STATIONS.map((station) => (

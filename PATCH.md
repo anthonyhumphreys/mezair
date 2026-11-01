@@ -618,6 +618,17 @@ ADO delivery with Jira intake, no label gate, backlog selection and Mezair
 organisation viewing at desktop/compact widths. No live credential exchange,
 provider write, production migration or deployment was performed.
 
+Rollout on 1 November 2026: source commit `4c9eb0c0` was pushed to `main`;
+migration 0009 was applied to both hosted databases and both backends deployed
+through the guarded deployment commands. Staging version
+`04d7f76c-7ab5-4d12-ae12-563c95607aa2` and production version
+`97d47250-0a6f-4e26-abe9-4cd080285a32` each serve 100% of traffic. Ten live
+smoke checks passed per environment, covering descriptor identity, service and
+webhook authentication, rejection of cross-environment service credentials,
+WorkOS API credentials, the migrated claim schema and recorded deployment.
+See `docs/hosted-environment-cutover.md` for the rollout record. Live work item
+and source control provider writes were not exercised.
+
 ### C9: GitHub Work Item connection identity
 
 GitHub Work Items bind credentials to the selected named connection, independently

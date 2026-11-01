@@ -18,7 +18,8 @@ Account: `715060911f9418f1df0f9de0265d8a64`.
 | Private R2 bucket | `mezair-sync-hosted-staging-artifacts` | `mezair-sync-hosted-production-artifacts` |
 | Descriptor identity | `mezair-hosted-staging-20261031` | `mezair-hosted-production-20261031` |
 
-Both databases have all eight hosted billing migrations. Each Worker owns its
+Both databases have all nine hosted billing migrations after the factory
+provider rollout on 1 November 2026. Each Worker owns its
 own Account, Session and Machine Endpoint Durable Object namespaces and the
 `17 * * * *` reconciliation cron. Runtime compatibility is dated `2026-10-31`,
 with `nodejs_compat`, persisted logs and query-string redaction enabled. The
@@ -138,6 +139,33 @@ Bootstrap results and generated configs are retained locally under
 `mezair-app/cloud/backend/.wrangler/bootstrap/`. These checks do not claim a
 completed customer sign-in, subscription checkout or physical multi-device Sync
 acceptance run.
+
+## Factory provider rollout
+
+On 1 November 2026, source commit
+[`4c9eb0c0`](https://github.com/anthonyhumphreys/mezair/commit/4c9eb0c067f8b8719788c7ee33c1d39a09057a26)
+was pushed to `main`, migration `0009_factory_issue_ids.sql` was applied to
+both databases, and both backends were deployed through the guarded local
+deployment commands. The migration preserves existing numeric GitHub claims
+as provider-native text IDs. Production had no factory definitions or claims
+at the pre-migration check.
+
+| Environment | Worker version | Traffic |
+| --- | --- | --- |
+| Staging | `04d7f76c-7ab5-4d12-ae12-563c95607aa2` | 100% |
+| Production | `97d47250-0a6f-4e26-abe9-4cd080285a32` | 100% |
+
+Both deployment dry runs passed. Ten live smoke checks passed per environment:
+descriptor/desktop identity, unsigned service rejection, valid service
+signatures reaching payload validation, rejection of the other environment's
+service credentials, unsigned webhook rejection, valid webhook signatures
+reaching payload validation, WorkOS API credential acceptance, the text claim
+schema, migration 0009 history, and the matching successful Worker deployment.
+Staging smoke evidence was recorded before production deployment. Cloudflare
+deployment history confirmed the version and traffic allocation for each Worker.
+
+These checks do not claim live work item or source control writes, a completed
+customer sign-in, subscription checkout, or physical multi-device acceptance.
 
 ## Remaining operator steps
 

@@ -161,7 +161,9 @@ in the standalone replay; see `src/renderer/components/chat/replay/README.md`.
 1. Apply desktop migration 116 (automatic on app startup) and the accompanying
    hosted factory migration before enabling organisation factories. Deploy the
    matching backend with factory registry/access RPC support; older backends fail
-   closed. No production migration or deployment is performed by this change.
+   closed. Migration 0009 and the matching backend were rolled out to staging
+   and production on 1 November 2026; see the
+   [deployment record](../../../docs/hosted-environment-cutover.md#factory-provider-rollout).
 2. Sign in to Codex and authenticate the executor for GitHub (`gh`) or Azure
    DevOps (Git Credential Manager or Azure CLI). Save a local Codex
    workflow, then describe the factory in chat or open Factories. Choose the

@@ -11,6 +11,7 @@ import { isAcpAgentProvider } from '../../shared/agent-providers';
  */
 export function agentProviderLabel(provider: AgentProvider | undefined): string | null {
   if (!provider) return null;
+  if (provider === 'claude') return 'Claude Code';
   if (isAcpAgentProvider(provider)) return provider === 'cursor' ? 'Cursor' : 'Devin';
   return 'Codex';
 }

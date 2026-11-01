@@ -37,7 +37,7 @@ export const featureBeta = {
 export const hostedSignupNotice = "Hosting is invite-only until full public launch.";
 
 /** Agent providers Mezair Desktop can drive today (mezair-app/src/shared/agent-providers.ts). */
-export const desktopProviders = ["Codex", "Cursor", "Devin", "OpenAI", "Azure OpenAI", "LLMGateway"] as const;
+export const desktopProviders = ["Codex", "Claude Code", "Cursor", "Devin", "OpenAI", "Azure OpenAI", "LLMGateway"] as const;
 
 export type ProductId = "desktop" | "sync" | "registry" | "node-base" | "cloud";
 
@@ -71,7 +71,7 @@ export const desktop: Product = {
   repoName: "mezair-app/",
   tagline: "The open-source harness for coding agents.",
   description:
-    "Mezair Desktop gives each repo a workspace where you plan with an agent, watch it work, and review every change before you keep it. The app runs locally and connects to Codex, Cursor, Devin, OpenAI, Azure OpenAI or LLMGateway with your own provider account. No Mezair account is needed for local use.",
+    "Mezair Desktop gives each repo a workspace where you plan with an agent, watch it work, and review every change before you keep it. The app runs locally and connects to Codex, Claude Code, Cursor, Devin, OpenAI, Azure OpenAI or LLMGateway with your own provider account. No Mezair account is needed for local use.",
   boundary:
     "Runs your local workflow: repositories, agent sessions, terminals, reviews and the notes you hand on with finished work.",
   status: "Beta. Builds for macOS (Apple silicon), Windows and Linux ship from GitHub releases. User-definable software factories are in beta.",
@@ -83,7 +83,7 @@ export const desktop: Product = {
   repoHref: desktopRepositoryUrl,
   command: "pnpm dev",
   points: [
-    "Run Codex, Cursor, Devin, OpenAI, Azure OpenAI or LLMGateway against a real checkout",
+    "Run Codex, Claude Code, Cursor, Devin, OpenAI, Azure OpenAI or LLMGateway against a real checkout",
     "Review diffs, test runs and security findings before you accept a change",
     "Threads and terminals keep running while you switch workspaces",
     "Work items, automations and multi-agent workflows with a human sign-off",
@@ -325,7 +325,7 @@ export const plans: Plan[] = [
     cadence: "forever",
     summary: "The whole app, on your machine.",
     features: [
-      "Codex, Cursor, Devin, OpenAI, Azure OpenAI and LLMGateway agents",
+      "Codex, Claude Code, Cursor, Devin, OpenAI, Azure OpenAI and LLMGateway agents",
       "Review every change before you keep it",
       "Terminals, editor, work items and automations",
       "Repos and chat history stored locally",
@@ -390,6 +390,10 @@ export const pricingFaqs = [
     a: "Yes. The desktop app is free and open source, with no account needed for local use. The self-hosted Sync & Mesh backend is free too; you cover your own infrastructure. You pay Mezair only when we host the backend for you. Model providers bill you separately."
   },
   {
+    q: "Can I use my Claude Code subscription?",
+    a: "Yes. Install and sign in to Claude Code on your computer, then enable it in Mezair Settings. Choose a model from your CLI's catalog or keep your configured default. Claude's model access and usage limits apply; Mezair does not require a separate Anthropic API key for this login path."
+  },
+  {
     q: "How does hosted signup work?",
     a: "Signup is invite-only until full public launch. Waitlist approval lets you create an account and subscribe; an active subscription is required for hosted Sync & Mesh. Approval does not include a free subscription. Self-hosting needs no Mezair subscription."
   },
@@ -403,7 +407,7 @@ export const pricingFaqs = [
   },
   {
     q: "What about model and cloud costs?",
-    a: "You bring your own accounts. OpenAI, Azure, AWS, Cloudflare and the rest bill you directly; Mezair doesn't add a margin."
+    a: "You bring your own accounts. Anthropic, OpenAI, Azure, AWS, Cloudflare and the rest bill you directly; Mezair doesn't add a margin."
   },
   {
     q: "Can I leave?",

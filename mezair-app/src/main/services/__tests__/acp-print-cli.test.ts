@@ -25,7 +25,12 @@ describe('resolveDevinCliPermissionMode (H7)', () => {
 
   it('uses only modes the devin CLI accepts', () => {
     const valid = new Set(['auto', 'accept-edits', 'smart', 'dangerous']);
-    for (const mode of ['read-only', 'on-request', 'workspace-auto', 'full-access'] as CodexMode[]) {
+    for (const mode of [
+      'read-only',
+      'on-request',
+      'workspace-auto',
+      'full-access',
+    ] as CodexMode[]) {
       for (const policy of [WRITING, READ_ONLY, FULL]) {
         expect(valid).toContain(resolveDevinCliPermissionMode(mode, policy));
       }
@@ -47,6 +52,28 @@ describe('resolveCursorPrintModeArgs', () => {
 });
 
 describe('buildAcpPrintInvocation', () => {
+  it('runs Claude with a selected model and honors the persona access ceiling', () => {
+    const invocation = buildAcpPrintInvocation({
+      provider: 'claude',
+      model: 'haiku',
+      mode: 'full-access',
+      policy: READ_ONLY,
+      prompt: 'inspect',
+    });
+    expect(invocation.executable).toBe('claude');
+    expect(invocation.args).toContain('haiku');
+    expect(invocation.args).toContain('plan');
+    expect(invocation.args).toContain('Read,Glob,Grep');
+    expect(invocation.args).not.toContain('bypassPermissions');
+    const automatic = buildAcpPrintInvocation({
+      provider: 'claude',
+      model: 'auto',
+      mode: 'on-request',
+      policy: WRITING,
+      prompt: 'inspect',
+    });
+    expect(automatic.args).not.toContain('--model');
+  });
   it('builds a devin --print invocation with the mapped permission mode', () => {
     const { executable, args } = buildAcpPrintInvocation({
       provider: 'devin',

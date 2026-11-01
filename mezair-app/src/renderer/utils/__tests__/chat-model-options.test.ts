@@ -8,6 +8,35 @@ import type {
 import { buildChatModelOptions } from '../chat-model-options';
 
 describe('buildChatModelOptions', () => {
+  it('offers Claude CLI default and all available models without Codex reasoning controls', () => {
+    const options = buildChatModelOptions(
+      ['codex', 'claude'],
+      'claude',
+      'haiku',
+      null,
+      null,
+      null,
+      null,
+      {
+        installed: true,
+        authenticated: true,
+        models: [
+          { id: 'auto', label: 'Use CLI default' },
+          { id: 'haiku', label: 'Haiku' },
+          { id: 'sonnet', label: 'Sonnet' },
+          { id: 'opus', label: 'Opus' },
+        ],
+      },
+    );
+    const claude = options.filter((option) => option.provider === 'claude');
+    expect(claude.map((option) => option.id)).toEqual(['auto', 'haiku', 'sonnet', 'opus']);
+    expect(
+      claude.every(
+        (option) =>
+          option.supportedReasoningEfforts.length === 0 && option.serviceTiers.length === 0,
+      ),
+    ).toBe(true);
+  });
   it('does not invent gateway models or reasoning capabilities when its catalog is unavailable', () => {
     const options = buildChatModelOptions(
       ['llmgateway'],
@@ -109,8 +138,7 @@ describe('buildChatModelOptions', () => {
     expect(options[0]).toMatchObject({
       id: 'deployment-review',
       label: 'deployment-review',
-      description:
-        'Custom model or deployment selected under Settings → Providers & models.',
+      description: 'Custom model or deployment selected under Settings → Providers & models.',
     });
     expect(options.some((option) => option.id === 'gpt-5.6-sol')).toBe(true);
   });

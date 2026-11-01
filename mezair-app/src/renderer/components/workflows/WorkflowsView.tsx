@@ -63,6 +63,7 @@ import type {
   CodexCliStatus,
   CursorCliStatus,
   DevinCliStatus,
+  ClaudeCliStatus,
   LlmGatewayStatus,
   Persona,
   WorkflowNode,
@@ -95,6 +96,7 @@ const EMPTY_TEMPLATE: WorkflowTemplate = {
 const PROVIDER_LABELS: Record<AgentProvider, string> = {
   codex: 'Codex',
   cursor: 'Cursor',
+  claude: 'Claude Code',
   devin: 'Devin',
   openai: 'OpenAI',
   azure: 'Azure',
@@ -208,6 +210,7 @@ export function WorkflowsView() {
   const [agentSettings, setAgentSettings] = useState<AppSettings | null>(null);
   const [codexStatus, setCodexStatus] = useState<CodexCliStatus | null>(null);
   const [cursorStatus, setCursorStatus] = useState<CursorCliStatus | null>(null);
+  const [claudeStatus, setClaudeStatus] = useState<ClaudeCliStatus | null>(null);
   const [devinStatus, setDevinStatus] = useState<DevinCliStatus | null>(null);
   const [llmGatewayStatus, setLlmGatewayStatus] = useState<LlmGatewayStatus | null>(null);
   const [kickoff, setKickoff] = useState('');
@@ -287,13 +290,23 @@ export function WorkflowsView() {
       window.mezair.settings.getCodexStatus().catch(() => null),
       window.mezair.settings.getCursorStatus().catch(() => null),
       window.mezair.settings.getDevinStatus().catch(() => null),
+      window.mezair.settings.getClaudeStatus().catch(() => null),
       window.mezair.settings.getLlmGatewayStatus().catch(() => null),
-    ]).then(([nextCodexStatus, nextCursorStatus, nextDevinStatus, nextLlmGatewayStatus]) => {
-      setCodexStatus(nextCodexStatus);
-      setCursorStatus(nextCursorStatus);
-      setDevinStatus(nextDevinStatus);
-      setLlmGatewayStatus(nextLlmGatewayStatus);
-    });
+    ]).then(
+      ([
+        nextCodexStatus,
+        nextCursorStatus,
+        nextDevinStatus,
+        nextClaudeStatus,
+        nextLlmGatewayStatus,
+      ]) => {
+        setCodexStatus(nextCodexStatus);
+        setCursorStatus(nextCursorStatus);
+        setDevinStatus(nextDevinStatus);
+        setClaudeStatus(nextClaudeStatus);
+        setLlmGatewayStatus(nextLlmGatewayStatus);
+      },
+    );
   }, []);
 
   useEffect(() => {
@@ -1177,6 +1190,7 @@ export function WorkflowsView() {
               codexStatus={codexStatus}
               cursorStatus={cursorStatus}
               devinStatus={devinStatus}
+              claudeStatus={claudeStatus}
               llmGatewayStatus={llmGatewayStatus}
             />
           ) : selectedNode ? (
@@ -1192,6 +1206,7 @@ export function WorkflowsView() {
               codexStatus={codexStatus}
               cursorStatus={cursorStatus}
               devinStatus={devinStatus}
+              claudeStatus={claudeStatus}
               llmGatewayStatus={llmGatewayStatus}
               onChange={updateNode}
               onDelete={() => {
@@ -1220,6 +1235,7 @@ function Inspector({
   codexStatus,
   cursorStatus,
   devinStatus,
+  claudeStatus,
   llmGatewayStatus,
   onChange,
   onDelete,
@@ -1231,6 +1247,7 @@ function Inspector({
   codexStatus: CodexCliStatus | null;
   cursorStatus: CursorCliStatus | null;
   devinStatus: DevinCliStatus | null;
+  claudeStatus: ClaudeCliStatus | null;
   llmGatewayStatus: LlmGatewayStatus | null;
   onChange: (updates: Partial<WorkflowNode>) => void;
   onDelete: () => void;
@@ -1243,6 +1260,7 @@ function Inspector({
     cursorStatus,
     llmGatewayStatus,
     devinStatus,
+    claudeStatus,
   );
   const selectedModel = modelOptions.find((model) => model.id === node.model);
   const reasoning = selectedModel?.supportedReasoningEfforts ?? [];

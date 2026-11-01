@@ -1,5 +1,5 @@
 import type { DojoTokenUsage } from '../../shared/dojo-types.js';
-import type { ChildProcess } from 'node:child_process';
+import type { AgentProcess } from './agent-process.js';
 import { randomUUID } from 'node:crypto';
 import type {
   ChatGoalSnapshot,
@@ -111,7 +111,7 @@ export function commonParentDir(paths: string[]): string {
 }
 
 export function sendCodexJsonRpc(
-  proc: ChildProcess,
+  proc: AgentProcess,
   method: string,
   params: Record<string, unknown>,
 ): boolean {
@@ -119,7 +119,7 @@ export function sendCodexJsonRpc(
 }
 
 export function sendCodexJsonRpcWithId(
-  proc: ChildProcess,
+  proc: AgentProcess,
   method: string,
   params: Record<string, unknown>,
   requestId: JsonRpcRequestId,
@@ -133,7 +133,7 @@ export function sendCodexJsonRpcWithId(
 }
 
 export function sendCodexJsonRpcNotification(
-  proc: ChildProcess,
+  proc: AgentProcess,
   method: string,
   params: Record<string, unknown>,
 ): boolean {
@@ -141,7 +141,7 @@ export function sendCodexJsonRpcNotification(
 }
 
 export function sendCodexJsonRpcResult(
-  proc: ChildProcess,
+  proc: AgentProcess,
   requestId: JsonRpcRequestId,
   result: Record<string, unknown>,
 ): boolean {
@@ -152,7 +152,7 @@ export function sendCodexJsonRpcResult(
   });
 }
 
-function writeCodexJsonRpcLine(proc: ChildProcess, payload: Record<string, unknown>): boolean {
+function writeCodexJsonRpcLine(proc: AgentProcess, payload: Record<string, unknown>): boolean {
   const stdin = proc.stdin;
   if (!stdin) return false;
 
@@ -168,7 +168,7 @@ function writeCodexJsonRpcLine(proc: ChildProcess, payload: Record<string, unkno
   }
 }
 
-function guardJsonRpcStdin(stdin: NonNullable<ChildProcess['stdin']>): void {
+function guardJsonRpcStdin(stdin: NonNullable<AgentProcess['stdin']>): void {
   if (guardedJsonRpcStdin.has(stdin)) return;
   guardedJsonRpcStdin.add(stdin);
   stdin.on('error', handleJsonRpcStdinError);
@@ -260,6 +260,21 @@ export function handleCodexServerLine(
       const update = params?.update as Record<string, unknown> | undefined;
       const kind = update?.sessionUpdate;
       if (kind === 'usage_update') {
+        const usage = readProtocolUsage(update?.tokens);
+        if (usage) {
+          emitEvent(state, callbacks, {
+            type: 'usage',
+            usage,
+            usageId: typeof update?.usageId === 'string' ? update.usageId : undefined,
+            model: typeof update?.model === 'string' ? update.model : undefined,
+            observedCostUsd:
+              typeof update?.costDelta === 'number' &&
+              Number.isFinite(update.costDelta) &&
+              update.costDelta >= 0
+                ? update.costDelta
+                : undefined,
+          });
+        }
         const cost = isRecord(update?.cost) ? update.cost : null;
         const amount =
           cost?.currency === 'USD' &&
@@ -1365,6 +1380,7 @@ function parseUserInputQuestions(value: unknown): CodexUserInputQuestion[] {
         question: candidate.question,
         isOther: candidate.isOther === true,
         isSecret: candidate.isSecret === true,
+        ...(candidate.allowMultiple === true ? { allowMultiple: true } : {}),
         options,
       },
     ];

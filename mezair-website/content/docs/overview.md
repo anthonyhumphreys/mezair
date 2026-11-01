@@ -16,7 +16,7 @@ Mezair (may-ZAIR) is a set of open-source tools for running coding agents on you
 
 | If you want to… | Use | Read first |
 | --- | --- | --- |
-| Run Codex, Cursor, Devin or OpenAI agents on your repos, and review what they change | Mezair Desktop | [Install Mezair Desktop](/docs/desktop/installation) |
+| Run Codex, Claude Code, Cursor, Devin or OpenAI agents on your repos, and review what they change | Mezair Desktop | [Install Mezair Desktop](/docs/desktop/installation) |
 | Keep your Mezair setup in step across machines, or send work from one machine to another | Sync & Mesh | [How Sync & Mesh works](/docs/sync/overview) |
 | Check npm packages against a policy before they reach developers or CI | Mezair Registry | [Registry quickstart](/docs/registry/quickstart) |
 | Install dependencies for a repo you don't trust yet | Mezair Node Base | [Safe mode](/docs/node-base/safe-mode) |

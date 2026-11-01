@@ -7,6 +7,7 @@ import { getSettings } from './settings.service.js';
 import { getCodexSessionModel } from './codex-session.service.js';
 import { detectCodexCli } from './codex-bridge.service.js';
 import { detectCursorCli } from './cursor-bridge.service.js';
+import { getClaudeCliStatus } from './claude-bridge.service.js';
 import { detectDevinCli } from './devin-bridge.service.js';
 import { getLlmGatewayStatus } from './llm-gateway.service.js';
 import { getCloudAgentSettings } from './cloud-agent-settings.service.js';
@@ -36,31 +37,34 @@ export async function discoverDelegationCapabilities(
   const enabled = settings.enabledLlmProviders?.length
     ? settings.enabledLlmProviders
     : [settings.llmProvider];
-  const [codex, cursor, devin, gateway] = await Promise.all([
-    enabled.some((p) => p !== 'cursor' && p !== 'devin')
+  const [codex, cursor, devin, gateway, claude] = await Promise.all([
+    enabled.some((p) => p !== 'cursor' && p !== 'devin' && p !== 'claude')
       ? detectCodexCli().catch(() => null)
       : null,
     enabled.includes('cursor') ? detectCursorCli().catch(() => null) : null,
     enabled.includes('devin') ? detectDevinCli().catch(() => null) : null,
     enabled.includes('llmgateway') ? getLlmGatewayStatus().catch(() => null) : null,
+    enabled.includes('claude') ? getClaudeCliStatus().catch(() => null) : null,
   ]);
   const providers = enabled.map((id): DelegationCapabilities['providers'][number] => {
     const models =
-      id === 'cursor'
-        ? (cursor?.models.map((m) => ({ id: m.id, label: m.label })) ?? [])
-        : id === 'devin'
-          ? (devin?.models.map((m) => ({ id: m.id, label: m.label })) ?? [])
-          : id === 'llmgateway'
-            ? (gateway?.models
-                .filter((m) => !m.hidden)
-                .map((m) => ({ id: m.id, label: m.displayName })) ?? [])
-            : (codex?.models
-                ?.filter((m) => !m.hidden)
-                .map((m) => ({ id: m.id, label: m.displayName })) ?? []);
+      id === 'claude'
+        ? (claude?.models ?? [])
+        : id === 'cursor'
+          ? (cursor?.models.map((m) => ({ id: m.id, label: m.label })) ?? [])
+          : id === 'devin'
+            ? (devin?.models.map((m) => ({ id: m.id, label: m.label })) ?? [])
+            : id === 'llmgateway'
+              ? (gateway?.models
+                  .filter((m) => !m.hidden)
+                  .map((m) => ({ id: m.id, label: m.displayName })) ?? [])
+              : (codex?.models
+                  ?.filter((m) => !m.hidden)
+                  .map((m) => ({ id: m.id, label: m.displayName })) ?? []);
     const defaultModel =
       id === ctx.provider
         ? (getCodexSessionModel(ctx.sessionId) ?? settings.openaiModel)
-        : id === 'cursor' || id === 'devin'
+        : id === 'cursor' || id === 'devin' || id === 'claude'
           ? 'auto'
           : id === 'llmgateway'
             ? (models[0]?.id ?? '')
@@ -71,18 +75,20 @@ export async function discoverDelegationCapabilities(
     if (defaultModel && !models.some((m) => m.id === defaultModel))
       models.unshift({ id: defaultModel, label: defaultModel });
     const localAvailable =
-      id === 'cursor'
-        ? cursor?.installed === true
-        : id === 'devin'
-          ? devin?.installed === true && devin.authenticated !== false
-          : id === 'llmgateway'
-            ? codex?.installed === true && gateway?.connected === true
-            : id === 'openai'
-              ? codex?.installed === true && Boolean(settings.openaiApiKey)
-              : id === 'azure'
-                ? codex?.installed === true &&
-                  Boolean(settings.foundryApiKey && settings.foundryEndpoint)
-                : codex?.installed === true;
+      id === 'claude'
+        ? claude?.installed === true && claude.authenticated === true
+        : id === 'cursor'
+          ? cursor?.installed === true
+          : id === 'devin'
+            ? devin?.installed === true && devin.authenticated !== false
+            : id === 'llmgateway'
+              ? codex?.installed === true && gateway?.connected === true
+              : id === 'openai'
+                ? codex?.installed === true && Boolean(settings.openaiApiKey)
+                : id === 'azure'
+                  ? codex?.installed === true &&
+                    Boolean(settings.foundryApiKey && settings.foundryEndpoint)
+                  : codex?.installed === true;
     return { id, localAvailable, defaultModel, models };
   });
   const destinations: ChatDelegationDestination[] = [

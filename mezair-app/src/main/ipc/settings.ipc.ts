@@ -33,6 +33,7 @@ import {
   writeCodexAgentsFile,
 } from '../services/codex-agents-file.service.js';
 import { detectCodexCli, setCodexAgentMaxThreads } from '../services/codex-bridge.service.js';
+import { getClaudeCliStatus, startClaudeAuthLogin } from '../services/claude-bridge.service.js';
 import { detectCursorCli } from '../services/cursor-bridge.service.js';
 import { detectDevinCli, startDevinAuthLogin } from '../services/devin-bridge.service.js';
 import { getCodexRuntimeStatus, installCodexRuntime } from '../services/codex-runtime.service.js';
@@ -145,6 +146,11 @@ export function registerSettingsHandlers(): void {
       throw err;
     }
   });
+
+  ipcMain.handle('settings:claude-status', (_event, force?: boolean) =>
+    getClaudeCliStatus(force === true),
+  );
+  ipcMain.handle('settings:claude-login', () => startClaudeAuthLogin());
 
   ipcMain.handle('settings:devin-status', async () => {
     try {

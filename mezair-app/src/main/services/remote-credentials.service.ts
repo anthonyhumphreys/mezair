@@ -177,8 +177,10 @@ async function deliverGrant(
   let env: Record<string, string>;
   let codexAuthJson: string | undefined;
   let devinCredentialsToml: string | undefined;
-  let provider: Exclude<AgentProvider, 'codex'> | undefined;
+  let provider: Exclude<AgentProvider, 'codex' | 'claude'> | undefined;
   if (input.choice === 'cloud-provider') {
+    if (input.provider === 'claude')
+      throw new Error('Claude Code login stays on the local device.');
     if (input.provider === 'codex') throw new Error('Choose Codex account authentication.');
     validateCloudAgentProvider(input.provider);
     const credential = readCloudAgentCredential(input.provider);

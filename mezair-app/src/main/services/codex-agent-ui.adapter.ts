@@ -20,7 +20,7 @@ interface AgentProviderUIContext {
   workspaceId?: string;
   providerThreadId?: string;
   sessionId: string;
-  provider: 'codex' | 'cursor' | 'devin';
+  provider: 'codex' | 'cursor' | 'devin' | 'claude';
 }
 
 export function adaptProviderEventToAgentUIIntent(
@@ -217,13 +217,11 @@ function questionFromCursor(question: CursorQuestion): AgentUIQuestion {
     question: question.prompt,
     required: true,
     allowCancel: true,
-    options: question.options.map(
-      (option): AgentUIQuestionOption => ({
-        id: option.id,
-        label: option.label,
-        value: option.id,
-      }),
-    ),
+    options: question.options.map((option): AgentUIQuestionOption => ({
+      id: option.id,
+      label: option.label,
+      value: option.id,
+    })),
   };
 }
 
@@ -259,7 +257,11 @@ function questionFromCodexUserInput(
   });
   return {
     id: question.id,
-    kind: options?.length ? 'single_choice' : 'free_text',
+    kind: options?.length
+      ? question.allowMultiple
+        ? 'multiple_choice'
+        : 'single_choice'
+      : 'free_text',
     question: question.question,
     context: question.header,
     required: true,

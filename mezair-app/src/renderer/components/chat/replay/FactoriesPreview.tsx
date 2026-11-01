@@ -814,6 +814,7 @@ export function installFactoriesPreviewBridge(): void {
     getCodexStatus: async () => null,
     getCursorStatus: async () => null,
     getDevinStatus: async () => null,
+    getClaudeStatus: async () => null,
     getLlmGatewayStatus: async () => null,
   };
   bridge.chat = {

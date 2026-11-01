@@ -475,6 +475,8 @@ export function readCloudAgentCredential(provider: AgentProvider): {
   validateCloudAgentProvider(provider);
   const settings = getSettings();
   switch (provider) {
+    case 'claude':
+      throw new Error('Claude Code currently uses target-local Desktop authentication only.');
     case 'codex': {
       const token =
         settings.openaiApiKey?.trim() ||

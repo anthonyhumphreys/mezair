@@ -1,3 +1,4 @@
+import { CLAUDE_MODEL_OPTIONS } from '../../shared/claude-models';
 import { DEFAULT_CODEX_MODEL } from '../../shared/codex-models';
 import { isAcpAgentProvider, type AcpAgentProvider } from '../../shared/agent-providers';
 import type { AgentProvider, AppSettings } from '../../shared/types';
@@ -10,7 +11,12 @@ export function selectPrimaryAgentProvider(
   const currentProvider = settings.llmProvider ?? 'codex';
   const currentModel = settings.openaiModel ?? DEFAULT_CODEX_MODEL;
   const knownAcpModel = (provider: AcpAgentProvider) =>
-    currentModel === 'auto' || (acpModelIds[provider] ?? []).includes(currentModel);
+    currentModel === 'auto' ||
+    (provider === 'claude' &&
+      (CLAUDE_MODEL_OPTIONS.some((model) => model.id === currentModel) ||
+        currentModel.startsWith('claude-') ||
+        currentProvider === 'claude')) ||
+    (acpModelIds[provider] ?? []).includes(currentModel);
   const model = isAcpAgentProvider(nextProvider)
     ? knownAcpModel(nextProvider)
       ? currentModel

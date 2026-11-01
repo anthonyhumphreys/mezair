@@ -7,6 +7,7 @@ export const MODEL_PROVIDER_LABELS: Record<AgentProvider, string> = {
   openai: 'OpenAI',
   azure: 'Azure Foundry',
   cursor: 'Cursor CLI',
+  claude: 'Claude Code',
   devin: 'Devin CLI',
   llmgateway: 'LLMGateway',
 };

@@ -377,7 +377,9 @@ function requireScope(context: BrowserWorkspaceExecutionContext, scope: string):
   }
 }
 
-const BROWSER_CHAT_PROVIDERS: readonly BrowserWorkspaceAgentProvider[] = AGENT_PROVIDERS;
+const BROWSER_CHAT_PROVIDERS: readonly BrowserWorkspaceAgentProvider[] = AGENT_PROVIDERS.filter(
+  (provider): provider is BrowserWorkspaceAgentProvider => provider !== 'claude',
+);
 
 function toModelOption(id: string, label = id): BrowserWorkspaceExecutionModelOption {
   return { id, label };
@@ -519,7 +521,8 @@ async function getBrowserWorkspaceExecutionOptions(
             gatewayStatus?.error ?? 'LLMGateway credentials are not available on this Desktop.';
         } else if (!runtimeStatus?.ready) {
           unavailableReason =
-            runtimeStatus?.error ?? 'The Mezair-managed Codex runtime is not ready on this Desktop.';
+            runtimeStatus?.error ??
+            'The Mezair-managed Codex runtime is not ready on this Desktop.';
         } else if (models.length === 0) {
           unavailableReason = gatewayStatus?.error ?? 'LLMGateway has no current models available.';
         } else {

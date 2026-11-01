@@ -23,6 +23,7 @@ Theme and chat layout are also saved here. The onboarding preview replays the ro
 Choose one primary provider for new Chat threads and app-level AI work, then enable any additional providers that workflow steps may use. Provider settings cover:
 
 - Codex CLI status, model, reasoning effort, and maximum agent threads
+- [Claude Code](/docs/desktop/claude-code) installation and sign-in status, CLI model discovery, and selectable models including the CLI default
 - Cursor CLI status and the locally reported model catalog
 - OpenAI API credentials and model selection
 - Azure AI Foundry configuration through the Codex provider configuration

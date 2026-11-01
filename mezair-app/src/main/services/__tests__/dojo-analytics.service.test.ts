@@ -8,7 +8,7 @@ vi.mock('../../db/database.js', () => ({ getDb: () => db }));
 vi.mock('../settings.service.js', () => ({
   getSettings: () => ({
     llmProvider: 'codex',
-    enabledLlmProviders: ['codex', 'cursor', 'openai', 'azure'],
+    enabledLlmProviders: ['codex', 'claude', 'cursor', 'openai', 'azure'],
   }),
 }));
 vi.mock('../llm.service.js', () => ({ callLlm: vi.fn() }));
@@ -51,7 +51,7 @@ describe('Dojo analytics', () => {
     ).toHaveLength(5);
     legacy.close();
   });
-  it.each(['codex', 'cursor', 'openai', 'azure'])(
+  it.each(['codex', 'claude', 'cursor', 'openai', 'azure'])(
     'uses the same outcome and usage accounting for %s',
     (provider) => {
       session('s', provider);

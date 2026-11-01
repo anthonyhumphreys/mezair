@@ -547,6 +547,14 @@ export interface DevinDetectedModel {
   label: string;
 }
 
+export interface ClaudeCliStatus {
+  installed: boolean;
+  version?: string;
+  path?: string;
+  authenticated?: boolean;
+  models: Array<{ id: string; label: string }>;
+}
+
 export interface DevinCliStatus {
   installed: boolean;
   version?: string;
@@ -649,7 +657,8 @@ export type ReasoningEffort =
   'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
 
 export type WorkflowExecutionStrategy = 'focused' | 'adaptive' | 'parallel' | 'review-team';
-export type AgentProvider = 'azure' | 'openai' | 'codex' | 'cursor' | 'devin' | 'llmgateway';
+export type AgentProvider =
+  'azure' | 'openai' | 'codex' | 'cursor' | 'devin' | 'claude' | 'llmgateway';
 export type LlmGatewayBillingMode = 'devpass' | 'payg';
 
 export interface LlmGatewayModel extends CodexDetectedModel {
@@ -837,7 +846,7 @@ export interface WorkflowNodeRun {
   sessionId?: string;
   /**
    * Honesty marker: 'acp-print' means the step ran through a one-shot print
-   * CLI (Cursor `cursor-agent -p` / Devin `devin --print`) and no tool-call,
+   * CLI (Cursor `cursor-agent -p`, Devin `devin --print`, Claude `claude --print`) and no tool-call,
    * diff, or reasoning events were captured — only the final text output.
    */
   executionMode?: 'app-server' | 'acp-print';
@@ -1181,6 +1190,8 @@ export interface CodexUserInputQuestion {
   isOther: boolean;
   isSecret: boolean;
   options?: CodexUserInputOption[];
+  /** Normalized provider questions may allow several selected answers. */
+  allowMultiple?: boolean;
 }
 
 export interface CursorQuestionOption {

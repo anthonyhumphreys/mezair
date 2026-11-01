@@ -10,7 +10,7 @@ order: 25
 
 # Your first task in Mezair Desktop
 
-This walkthrough takes you from a fresh install to a reviewed change on a repository you already know. It assumes you have [installed the app](/docs/desktop/installation) and have Codex, Cursor, Devin, or an OpenAI, Azure AI Foundry or LLMGateway account you can connect. The screenshots use a fixture workspace called **Acme** with one repository, `storefront`.
+This walkthrough takes you from a fresh install to a reviewed change on a repository you already know. It assumes you have [installed the app](/docs/desktop/installation) and have Codex, Claude Code, Cursor, Devin, or an OpenAI, Azure AI Foundry or LLMGateway account you can connect. The screenshots use a fixture workspace called **Acme** with one repository, `storefront`.
 
 ## 1. Finish first launch
 

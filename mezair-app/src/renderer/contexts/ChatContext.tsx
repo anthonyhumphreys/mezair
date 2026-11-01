@@ -1070,20 +1070,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const enabledProviders = [
         ...new Set<AgentProvider>([settings.llmProvider, ...(settings.enabledLlmProviders ?? [])]),
       ];
-      const [codexStatus, cursorStatus, devinStatus, llmGatewayStatus] = await Promise.all([
-        enabledProviders.some((provider) => ['codex', 'openai', 'azure'].includes(provider))
-          ? window.mezair.settings.getCodexStatus().catch(() => null)
-          : Promise.resolve(null),
-        enabledProviders.includes('cursor')
-          ? window.mezair.settings.getCursorStatus().catch(() => null)
-          : Promise.resolve(null),
-        enabledProviders.includes('devin')
-          ? window.mezair.settings.getDevinStatus().catch(() => null)
-          : Promise.resolve(null),
-        enabledProviders.includes('llmgateway')
-          ? window.mezair.settings.getLlmGatewayStatus().catch(() => null)
-          : Promise.resolve(null),
-      ]);
+      const [codexStatus, cursorStatus, devinStatus, llmGatewayStatus, claudeStatus] =
+        await Promise.all([
+          enabledProviders.some((provider) => ['codex', 'openai', 'azure'].includes(provider))
+            ? window.mezair.settings.getCodexStatus().catch(() => null)
+            : Promise.resolve(null),
+          enabledProviders.includes('cursor')
+            ? window.mezair.settings.getCursorStatus().catch(() => null)
+            : Promise.resolve(null),
+          enabledProviders.includes('devin')
+            ? window.mezair.settings.getDevinStatus().catch(() => null)
+            : Promise.resolve(null),
+          enabledProviders.includes('llmgateway')
+            ? window.mezair.settings.getLlmGatewayStatus().catch(() => null)
+            : Promise.resolve(null),
+          enabledProviders.includes('claude')
+            ? window.mezair.settings.getClaudeStatus().catch(() => null)
+            : Promise.resolve(null),
+        ]);
       if (requestId !== modelSelectionRequestRef.current) return;
       const model = selection?.model ?? settings.openaiModel ?? DEFAULT_CODEX_MODEL;
       const provider = settings.llmProvider;
@@ -1095,6 +1099,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         cursorStatus,
         llmGatewayStatus,
         devinStatus,
+        claudeStatus,
       );
       const selectedOption = options.find(
         (option) => option.provider === provider && option.id === model,
@@ -2818,9 +2823,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
 
       const sessionSnapshot = liveSessionsByThreadIdRef.current[sideThread.id] ?? sideSession;
-      const statusAfterSend = await window.mezair.chat.getSessionStatus(sideSession.id).catch(() => {
-        return sessionSnapshot.status;
-      });
+      const statusAfterSend = await window.mezair.chat
+        .getSessionStatus(sideSession.id)
+        .catch(() => {
+          return sessionSnapshot.status;
+        });
       liveSessionsByThreadIdRef.current[sideThread.id] = {
         ...sessionSnapshot,
         status: statusAfterSend,

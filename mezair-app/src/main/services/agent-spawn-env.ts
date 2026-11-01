@@ -52,6 +52,8 @@ const NETWORK_ALLOWLIST = [
 
 const PROVIDER_CONFIG_ALLOWLIST = [
   'CODEX_HOME',
+  'CLAUDE_CONFIG_DIR',
+  'ANTHROPIC_MODEL',
   'XDG_CONFIG_HOME',
   'XDG_DATA_HOME',
   'XDG_CACHE_HOME',
@@ -119,5 +121,12 @@ export function providerSpawnEnv(
     if (value === undefined) delete env[name];
     else env[name] = value;
   }
+  return env;
+}
+
+/** Claude uses its own CLI login; unrelated providers' keys do not enter it. */
+export function claudeSpawnEnv(): Record<string, string> {
+  const env = providerSpawnEnv();
+  for (const name of PROVIDER_CREDENTIAL_ALLOWLIST) delete env[name];
   return env;
 }

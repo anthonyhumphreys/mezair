@@ -32,7 +32,7 @@ Mezair Desktop earns its place when a change needs more than a chat window:
 | --- | --- |
 | Repositories | Add local checkouts, see branch state, and index the code so agents work from what really exists. |
 | Chat | Plan, build, review, investigate, document and hand over with your chosen agent. Threads keep their history and workspace context. |
-| Workflows | Build reusable multi-step workflows. Each step can use a different provider and model, including Codex and your local Cursor models. |
+| Workflows | Build reusable multi-step workflows. Each step can use a different provider and model, including Codex, Claude Code and your local Cursor models. |
 | User-definable software factories (beta) | Describe an issue-to-PR process in chat, review its typed definition, and activate it. Labelled GitHub issues then go through checks, CI and review repair to a confirmed merge. |
 | Work items | Bring in Linear, Jira or Azure DevOps items, acceptance criteria, analyst findings and follow-up tasks next to the code. |
 | Editor and terminal | Open an editor and real terminals scoped to the workspace. Terminals keep running, with their output buffered, while you work elsewhere in the app. |

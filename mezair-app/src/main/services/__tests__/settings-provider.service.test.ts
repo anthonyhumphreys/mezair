@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { normaliseEnabledLlmProviders } from '../settings.service';
 
 describe('normaliseEnabledLlmProviders', () => {
+  it('preserves Claude Code as primary and as an additional provider', () => {
+    expect(normaliseEnabledLlmProviders(['codex', 'claude'], 'claude')).toEqual([
+      'claude',
+      'codex',
+    ]);
+  });
   it('always keeps the primary provider enabled', () => {
     expect(normaliseEnabledLlmProviders(['cursor'], 'codex')).toEqual(['codex', 'cursor']);
   });

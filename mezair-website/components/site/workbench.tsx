@@ -28,7 +28,7 @@ const steps: Step[] = [
   },
   {
     title: "Hand it a task.",
-    body: "Say what you want in plain words and pick an agent: Codex, Cursor, Devin, OpenAI or Azure OpenAI. Every command and file edit shows up as it happens, and you can stop it at any point.",
+    body: "Say what you want in plain words and pick an agent: Codex, Claude Code, Cursor, Devin, OpenAI, Azure OpenAI or LLMGateway. Every command and file edit shows up as it happens, and you can stop it at any point.",
     note: "Bring your own accounts. Providers bill you directly."
   },
   {

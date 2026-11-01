@@ -35,7 +35,7 @@ The command palette reaches views, recent threads, workspace switching and actio
 | <kbd>$</kbd> | Skills available to the agent. |
 | <kbd>@</kbd> | Mention a file from the thread's repositories. |
 
-Guide, Queue and a read-only side question are available for Codex, OpenAI, Azure and LLMGateway. Cursor and Devin offer Queue while work continues. The composer shows which modes the current provider supports.
+Guide, Queue and a read-only side question are available for Codex, OpenAI, Azure and LLMGateway. Claude Code, Cursor and Devin offer Queue while work continues. The composer shows which modes the current provider supports.
 
 ## Rebinding
 

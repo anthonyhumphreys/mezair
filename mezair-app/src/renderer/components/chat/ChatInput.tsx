@@ -2365,7 +2365,12 @@ export function getCompactModelLabel(
   provider: AgentProvider,
 ): string {
   if (!isAcpAgentProvider(provider)) return label;
-  if (model === 'auto') return provider === 'devin' ? 'Devin auto' : 'Cursor auto';
+  if (model === 'auto')
+    return provider === 'claude'
+      ? 'Claude default'
+      : provider === 'devin'
+        ? 'Devin auto'
+        : 'Cursor auto';
 
   const compact = label
     .replace(/\s+\([^)]*\)$/, '')

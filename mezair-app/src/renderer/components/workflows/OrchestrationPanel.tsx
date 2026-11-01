@@ -5,6 +5,7 @@ import type {
   CodexCliStatus,
   CursorCliStatus,
   DevinCliStatus,
+  ClaudeCliStatus,
   LlmGatewayStatus,
   Persona,
   WorkflowAgentProfile,
@@ -69,6 +70,7 @@ export function OrchestrationPanel({
   codexStatus,
   cursorStatus,
   devinStatus,
+  claudeStatus,
   llmGatewayStatus,
 }: {
   value?: WorkflowOrchestration;
@@ -78,6 +80,7 @@ export function OrchestrationPanel({
   codexStatus: CodexCliStatus | null;
   cursorStatus: CursorCliStatus | null;
   devinStatus: DevinCliStatus | null;
+  claudeStatus: ClaudeCliStatus | null;
   llmGatewayStatus: LlmGatewayStatus | null;
 }) {
   const [expandedProfile, setExpandedProfile] = useState<string | null>(null);
@@ -110,6 +113,7 @@ export function OrchestrationPanel({
               cursorStatus,
               llmGatewayStatus,
               devinStatus,
+              claudeStatus,
             )[0];
             update({
               profiles: [
@@ -146,6 +150,7 @@ export function OrchestrationPanel({
             cursorStatus,
             llmGatewayStatus,
             devinStatus,
+            claudeStatus,
           );
           const selectedModel = modelOptions.find((model) => model.id === profile.model);
           return (
@@ -225,6 +230,7 @@ export function OrchestrationPanel({
                           cursorStatus,
                           llmGatewayStatus,
                           devinStatus,
+                          claudeStatus,
                         )[0];
                         updateProfile(profile.id, {
                           provider,
@@ -270,7 +276,9 @@ export function OrchestrationPanel({
                       ))}
                     </select>
                     <p className="mt-1 text-xs text-text-tertiary">
-                      {profile.provider === 'cursor' ? (
+                      {profile.provider === 'claude' ? (
+                        'Auto uses your Claude Code configuration. Other models follow your Claude plan.'
+                      ) : profile.provider === 'cursor' ? (
                         cursorStatus?.models.length ? (
                           `${cursorStatus.models.length} models detected from Cursor CLI.`
                         ) : (
@@ -334,8 +342,12 @@ export function OrchestrationPanel({
                     </label>
                   ) : (
                     <p className="text-xs text-text-tertiary">
-                      {profile.provider === 'devin' ? 'Devin' : 'Cursor'} reasoning is selected
-                      through its model ID.
+                      {profile.provider === 'claude'
+                        ? 'Claude Code'
+                        : profile.provider === 'devin'
+                          ? 'Devin'
+                          : 'Cursor'}{' '}
+                      reasoning is selected through its model ID.
                     </p>
                   )}
                   <label className="block text-xs text-text-secondary">

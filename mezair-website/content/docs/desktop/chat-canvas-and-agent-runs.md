@@ -26,9 +26,16 @@ New chats use your primary provider. Mezair can drive:
 
 - **Codex**, **OpenAI** and **Azure AI Foundry**, through Codex's app server
 - **LLMGateway**, through Codex with LLMGateway's models
+- **Claude Code**, through your installed Claude CLI and local sign-in; see [Claude Code setup](/docs/desktop/claude-code)
 - **Cursor** and **Devin**, through their own command-line agents
 
 The model list follows the provider you pick. Reasoning effort is a setting on the run, not something hidden in the prompt. Whether a provider works depends on it being installed and signed in on your machine, not only on your Mezair settings.
+
+Claude Code's model picker uses the CLI's available models. **Use CLI default**
+(`auto`) preserves your existing configuration, including Haiku if that is your
+CLI default. You can choose another listed model or enter a custom model ID.
+Claude Code offers Queue for follow-ups and uses its own permission modes;
+strict read-only sessions, temporary chats and cloud execution are unavailable.
 
 Optional local models only handle short helper prompts. Apple Foundation Models, Ollama and LM Studio don't replace the agent for repository tools, commands, approvals or long turns.
 

@@ -144,7 +144,7 @@ export default function HomePage() {
                 Put your agents in motion.
               </h1>
               <p className="cine-lede cine-fade mt-5 max-w-[54ch]" style={fade(420)}>
-                Run Codex, Cursor, Devin and more from one desktop app. Bring your own subscriptions. Free and open
+                Run Codex, Claude Code, Cursor, Devin and more from one desktop app. Bring your own subscriptions. Free and open
                 source. Add hosted{" "}
                 <Link href="/sync" className="cine-link">
                   Sync &amp; Mesh

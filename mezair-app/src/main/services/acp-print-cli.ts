@@ -15,6 +15,7 @@
 //   --auto-review    server classifier auto-runs safe tool calls
 //   --force          allow commands unless explicitly denied
 
+import { resolveClaudeModel } from '../../shared/claude-models.js';
 import type { AcpAgentProvider } from '../../shared/agent-providers.js';
 import type { CodexMode } from '../../shared/types.js';
 
@@ -63,7 +64,7 @@ export function resolveCursorPrintModeArgs(mode: CodexMode, policy: AcpAccessPol
 }
 
 export function acpProviderLabel(provider: AcpAgentProvider): string {
-  return provider === 'devin' ? 'Devin' : 'Cursor';
+  return provider === 'claude' ? 'Claude Code' : provider === 'devin' ? 'Devin' : 'Cursor';
 }
 
 /** Build the print-mode argv for a one-shot ACP run. */
@@ -75,6 +76,39 @@ export function buildAcpPrintInvocation(input: {
   prompt: string;
 }): AcpPrintInvocation {
   const label = acpProviderLabel(input.provider);
+  if (input.provider === 'claude') {
+    const model = resolveClaudeModel(input.model);
+    const readOnly = input.policy.sandbox === 'read-only' || input.mode === 'read-only';
+    return {
+      executable: 'claude',
+      label,
+      args: [
+        '--print',
+        '--output-format',
+        'text',
+        '--permission-mode',
+        readOnly
+          ? 'plan'
+          : input.mode === 'full-access'
+            ? 'bypassPermissions'
+            : input.mode === 'workspace-auto'
+              ? 'acceptEdits'
+              : 'default',
+        ...(readOnly
+          ? [
+              '--tools',
+              'Read,Glob,Grep',
+              '--strict-mcp-config',
+              '--mcp-config',
+              '{"mcpServers":{}}',
+            ]
+          : []),
+        ...(model ? ['--model', model] : []),
+        '--',
+        input.prompt,
+      ],
+    };
+  }
   if (input.provider === 'devin') {
     return {
       executable: 'devin',

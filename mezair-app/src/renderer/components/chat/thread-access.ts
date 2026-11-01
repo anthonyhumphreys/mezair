@@ -117,6 +117,7 @@ export interface ChatAccessOption {
  * mirrors `ACP_ACCESS_MODES` in codex-session.service.ts.
  */
 const ACP_ACCESS_MODES: Record<AcpAgentProvider, readonly string[]> = {
+  claude: ['agent', 'accept-edits', 'bypass', 'plan'],
   cursor: ['ask', 'agent', 'plan'],
   devin: ['ask', 'accept-edits', 'smart', 'bypass', 'plan'],
 };
@@ -145,7 +146,7 @@ function acpAccessOption(provider: AcpAgentProvider, modeId: string): ChatAccess
       };
     case 'accept-edits':
       return {
-        level: 'on-request',
+        level: provider === 'claude' ? 'workspace-auto' : 'on-request',
         appliedMode: 'accept-edits',
         label: 'Accept edits',
         description: `${name} applies file edits without asking and still asks before other actions.`,
@@ -221,6 +222,11 @@ export function expectedAcpAppliedMode(
   if (!isAcpAgentProvider(provider)) return undefined;
   if (collaborationMode === 'plan') return 'plan';
   const effectiveLevel = canWriteFiles === false ? 'read-only' : level;
+  if (provider === 'claude') {
+    if (effectiveLevel === 'read-only') return 'plan';
+    if (effectiveLevel === 'full-access') return 'bypass';
+    return effectiveLevel === 'workspace-auto' ? 'accept-edits' : 'agent';
+  }
   if (provider === 'devin') {
     switch (effectiveLevel) {
       case 'read-only':

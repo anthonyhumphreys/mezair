@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { providerSpawnEnv } from '../agent-spawn-env.js';
+import { claudeSpawnEnv, providerSpawnEnv } from '../agent-spawn-env.js';
 
 const STASHED: Record<string, string | undefined> = {};
 const VARS = [
@@ -31,6 +31,16 @@ function restore() {
 
 describe('providerSpawnEnv', () => {
   afterEach(restore);
+
+  it("keeps Claude on its local login and excludes other providers' API keys", () => {
+    stash();
+    process.env.OPENAI_API_KEY = 'unrelated-openai-key';
+    process.env.WINDSURF_API_KEY = 'unrelated-devin-key';
+    const env = claudeSpawnEnv();
+    expect(env.HOME).toBe(process.env.HOME);
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(env.WINDSURF_API_KEY).toBeUndefined();
+  });
 
   it('keeps base session vars and drops ambient credentials', () => {
     stash();

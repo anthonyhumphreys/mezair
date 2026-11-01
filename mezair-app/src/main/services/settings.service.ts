@@ -106,6 +106,7 @@ const AGENT_PROVIDERS: AgentProvider[] = [
   'codex',
   'cursor',
   'devin',
+  'claude',
   'openai',
   'azure',
   'llmgateway',

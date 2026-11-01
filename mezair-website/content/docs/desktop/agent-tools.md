@@ -17,6 +17,7 @@ Every saved local chat gets a set of Mezair tools over the [Model Context Protoc
 - The main process hosts a **loopback** Streamable HTTP MCP endpoint. It only listens on `127.0.0.1`.
 - Each session gets its own **bearer token**. A token is scoped to that session and dies with it.
 - Codex-family sessions (Codex, OpenAI, Azure, LLMGateway) receive the endpoint through per-launch configuration overrides. Cursor and Devin receive it through their ACP `mcpServers` setting, over HTTP or a small stdio shim.
+- Claude Code receives the same session-scoped HTTP endpoint through the Agent SDK. Its bearer stays in process communication and is not written into your Claude settings or command-line arguments.
 - Repository tools check that the repository belongs to the session's workspace before they do anything. An agent can't point a Mezair tool at a checkout outside its scope.
 
 Your permission mode still applies. Tools that change state go through the same approvals as the rest of the session.

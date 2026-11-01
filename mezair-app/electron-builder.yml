@@ -23,6 +23,8 @@ files:
   - 'scripts/review-scenario-runner.mjs'
   - 'node_modules/**/*'
   - '!node_modules/**/test*'
+  # Claude always uses the locally installed executable.
+  - '!node_modules/@anthropic-ai/claude-agent-sdk-*/**/*'
 
 extraResources:
   - from: resources/mezair.png

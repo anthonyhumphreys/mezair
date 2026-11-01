@@ -36,7 +36,7 @@ Profiles name a specialist's persona, provider, model, reasoning level, and capa
 | Debate | Specialists propose alternatives before the coordinator evaluates them. |
 | Autonomous delegation | The agent requests tasks from the approved pool through a final delegation block. Mezair adds child nodes and calls the parent again to synthesise their results. |
 
-Child tasks appear in the live graph. Providers can differ between the coordinator and specialists. Codex, OpenAI, and Azure steps use the Codex app-server route; Cursor steps use `cursor-agent`. Providers must be enabled and authenticated locally.
+Child tasks appear in the live graph. Providers can differ between the coordinator and specialists. Codex, OpenAI, and Azure steps use the Codex app-server route; Cursor steps use `cursor-agent`; Devin and [Claude Code](/docs/desktop/claude-code) use their installed CLIs in print mode. Claude Code steps run locally and can select any model the CLI makes available, or keep the CLI default with `auto`. Print-mode steps record the final text, without interactive tool, diff or reasoning events. Providers must be enabled and authenticated locally.
 
 Older templates may retain focused, adaptive, parallel, or review-team execution hints. Those are provider instructions. The team strategies above are managed by Mezair's scheduler.
 

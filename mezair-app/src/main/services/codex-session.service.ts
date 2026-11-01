@@ -1,5 +1,8 @@
 import { listDojoPrices, recordDojoExecutionEvent } from './dojo-analytics.service.js';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import type { AgentProcess } from './agent-process.js';
+import { ClaudeAgentProcess } from './claude-agent-process.js';
+import { resolveClaudeModel } from '../../shared/claude-models.js';
 
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
@@ -53,7 +56,7 @@ import {
 } from './codex-protocol.service.js';
 import { emitCompanionEvent } from './companion-events.service.js';
 import { normaliseCodexModel, normaliseReasoningEffort } from '../../shared/codex-models.js';
-import { providerSpawnEnv } from './agent-spawn-env.js';
+import { claudeSpawnEnv, providerSpawnEnv } from './agent-spawn-env.js';
 import { assertSessionTurnAllowed } from './mesh-ownership.service.js';
 import { notifyChatActivity, type ChatActivityKind } from './notification.service.js';
 import { getLlmGatewayCodexConfigArgs, LLM_GATEWAY_KEY_ENV } from '../../shared/llm-gateway.js';
@@ -116,9 +119,10 @@ import {
 const ACP_PROVIDER_LABELS: Record<AcpAgentProvider, string> = {
   cursor: 'Cursor',
   devin: 'Devin',
+  claude: 'Claude Code',
 };
 
-const ACP_AUTH_METHODS: Record<AcpAgentProvider, string> = {
+const ACP_AUTH_METHODS: Record<Exclude<AcpAgentProvider, 'claude'>, string> = {
   cursor: 'cursor_login',
   devin: 'devin-browser',
 };
@@ -135,7 +139,7 @@ interface ManagedSession {
   mode: CodexMode;
   /** Access mode pinned by the session caller, such as a read-only side chat. */
   modeOverride?: CodexMode;
-  process: ChildProcess;
+  process: AgentProcess;
   /** Isolated process group captured at spawn time on POSIX. */
   processGroupId?: number;
   provider: 'codex' | AcpAgentProvider;
@@ -287,6 +291,7 @@ export function subscribeToCodexEvents(listener: CodexEventListener): () => void
 }
 
 export function resolveSessionModel(provider: AgentProvider, configuredModel: string): string {
+  if (provider === 'claude') return resolveClaudeModel(configuredModel) ?? 'auto';
   if (isAcpAgentProvider(provider)) return configuredModel.trim() || 'auto';
   if (provider === 'llmgateway') return configuredModel.trim();
   return normaliseCodexModel(configuredModel);
@@ -304,7 +309,7 @@ export async function buildCodexProcessEnvironment(
   settings: ReturnType<typeof getSettings>,
   extraEnv?: Record<string, string>,
 ): Promise<Record<string, string>> {
-  const env: Record<string, string> = providerSpawnEnv();
+  const env: Record<string, string> = provider === 'claude' ? claudeSpawnEnv() : providerSpawnEnv();
   let gatewayHome: string | undefined;
   if (provider === 'openai' && settings.openaiApiKey) env.OPENAI_API_KEY = settings.openaiApiKey;
   if (provider === 'llmgateway') {
@@ -335,6 +340,11 @@ export function resolveAcpSessionMode(
   codexMode: CodexMode,
   collaborationMode?: ChatSendOptions['collaborationMode'],
 ): string {
+  if (provider === 'claude') {
+    if (collaborationMode === 'plan' || codexMode === 'read-only') return 'plan';
+    if (codexMode === 'full-access') return 'bypass';
+    return codexMode === 'workspace-auto' ? 'accept-edits' : 'agent';
+  }
   if (provider === 'devin') {
     if (collaborationMode === 'plan') return 'plan';
     switch (codexMode) {
@@ -360,7 +370,7 @@ export function resolveAcpSessionMode(
 export function resolveAcpModelValue(provider: AcpAgentProvider, model: string): string | null {
   const trimmed = model.trim();
   if (!trimmed || trimmed === 'auto') {
-    return provider === 'cursor' ? 'default' : null;
+    return provider === 'cursor' ? 'default' : provider === 'claude' ? 'auto' : null;
   }
   return trimmed;
 }
@@ -370,6 +380,7 @@ function acpProviderLabel(provider: ManagedSession['provider']): string {
 }
 
 function acpProcessLabel(provider: ManagedSession['provider']): string {
+  if (provider === 'claude') return 'Claude Code';
   if (provider === 'cursor') return 'cursor-agent acp';
   if (provider === 'devin') return 'devin acp';
   return 'codex app-server';
@@ -500,14 +511,17 @@ export async function startSession(
   if (gatewayConfig)
     args.push(...(await writeGatewayCodexCatalog(env.CODEX_HOME, gatewayConfig.models)));
 
-  let proc: ChildProcess;
+  let proc: AgentProcess;
   try {
-    proc = spawn(command, args, {
-      cwd,
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      ...providerProcessSpawnOptions(),
-    });
+    proc =
+      provider === 'claude'
+        ? new ClaudeAgentProcess(env, model)
+        : spawn(command, args, {
+            cwd,
+            env,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            ...providerProcessSpawnOptions(),
+          });
   } catch (err) {
     revokeAgentMcpToken(id);
     if (options?.temporaryChat) rmSync(cwd, { recursive: true, force: true });
@@ -541,6 +555,7 @@ export async function startSession(
     model,
     systemPrompt,
     agentLabel: isAcpAgentProvider(provider) ? ACP_PROVIDER_LABELS[provider] : undefined,
+    acpSystemPromptDelivered: provider === 'claude',
     status: 'starting',
     startedAt: new Date().toISOString(),
     cwd,
@@ -698,6 +713,8 @@ export async function startSession(
     else await stopSessionAndWait(id);
     throw error;
   }
+
+  if (provider === 'claude' && process.platform !== 'win32') session.processGroupId = proc.pid;
 
   if (
     !session.headless &&
@@ -1506,14 +1523,15 @@ export async function stopSessionAndWait(sessionId: string): Promise<void> {
   const session = sessions.get(sessionId);
   if (!session) return;
   const proc = session.process;
-  const processGroupId = session.processGroupId;
+  const processGroupId =
+    session.processGroupId ?? (process.platform !== 'win32' ? proc.pid : undefined);
   stopSession(sessionId);
   await stopManagedProviderProcess(proc, processGroupId);
 }
 
 /** Kill only a process group created for a provider session, never Mezair's group. */
 export async function stopManagedProviderProcess(
-  proc: ChildProcess,
+  proc: AgentProcess,
   processGroupId?: number,
   graceMs = 3_000,
 ): Promise<void> {
@@ -2158,6 +2176,7 @@ function handleServerMessage(session: ManagedSession, line: string): void {
       // back to a fresh session once — continuity reports what really happened.
       if (
         isAcpAgentProvider(session.provider) &&
+        session.provider !== 'claude' &&
         session.acpResumeAttempted &&
         !session.acpResumeFailed &&
         !session.threadId
@@ -2560,6 +2579,7 @@ function isAcpAuthError(message: string): boolean {
  * distinct there.
  */
 const ACP_ACCESS_MODES: Record<AcpAgentProvider, string[]> = {
+  claude: ['agent', 'accept-edits', 'bypass', 'plan'],
   cursor: ['ask', 'agent', 'plan'],
   devin: ['ask', 'accept-edits', 'smart', 'bypass', 'plan'],
 };

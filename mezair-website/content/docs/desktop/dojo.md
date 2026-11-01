@@ -10,7 +10,7 @@ order: 170
 
 # Dojo analytics and coaching
 
-Dojo helps you inspect how agent-assisted work is going in a workspace. It combines recorded execution activity with optional coaching reviews of conversation history. It supports Codex, Cursor, OpenAI, and Azure session attribution where the provider data is available.
+Dojo helps you inspect how agent-assisted work is going in a workspace. It combines recorded execution activity with optional coaching reviews of conversation history. It supports Codex, Claude Code, Cursor, Devin, OpenAI, and Azure session attribution where the provider data is available.
 
 ## Inspect activity
 

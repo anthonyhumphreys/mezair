@@ -2,6 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { selectPrimaryAgentProvider } from '../agent-provider-settings';
 
 describe('selectPrimaryAgentProvider', () => {
+  it('uses the CLI default on first selecting Claude and preserves an explicit Claude model', () => {
+    expect(
+      selectPrimaryAgentProvider({ llmProvider: 'codex', openaiModel: 'gpt-5.6-sol' }, 'claude'),
+    ).toMatchObject({
+      llmProvider: 'claude',
+      openaiModel: 'auto',
+      enabledLlmProviders: ['claude', 'codex'],
+    });
+    expect(
+      selectPrimaryAgentProvider({ llmProvider: 'claude', openaiModel: 'haiku' }, 'claude')
+        .openaiModel,
+    ).toBe('haiku');
+    expect(
+      selectPrimaryAgentProvider({ llmProvider: 'claude', openaiModel: 'opus' }, 'codex')
+        .openaiModel,
+    ).toBe('gpt-5.6-sol');
+  });
   it('makes Cursor primary, enables it, and selects its automatic model', () => {
     expect(
       selectPrimaryAgentProvider(

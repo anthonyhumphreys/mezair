@@ -117,6 +117,7 @@ import type {
   CodexCliStatus,
   CursorCliStatus,
   DevinCliStatus,
+  ClaudeCliStatus,
   LlmGatewayBillingMode,
   LlmGatewayStatus,
   CodexMcpRegisterInput,
@@ -862,6 +863,8 @@ export interface MezairAPI {
     getCodexRuntimeStatus: () => Promise<CodexRuntimeStatus>;
     installCodexRuntime: () => Promise<CodexRuntimeStatus>;
     getCursorStatus: () => Promise<CursorCliStatus>;
+    getClaudeStatus: (force?: boolean) => Promise<ClaudeCliStatus>;
+    startClaudeLogin: () => Promise<{ ok: boolean; error?: string }>;
     getDevinStatus: () => Promise<DevinCliStatus>;
     startDevinLogin: () => Promise<{ ok: boolean; error?: string }>;
     getLlmGatewayStatus: (

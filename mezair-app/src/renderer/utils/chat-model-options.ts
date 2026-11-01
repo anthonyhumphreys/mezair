@@ -1,10 +1,12 @@
 import { CODEX_MODEL_OPTIONS, CODEX_REASONING_EFFORTS } from '../../shared/codex-models';
+import { CLAUDE_MODEL_OPTIONS } from '../../shared/claude-models';
 import { isAcpAgentProvider } from '../../shared/agent-providers';
 import type {
   AgentProvider,
   CodexCliStatus,
   CursorCliStatus,
   DevinCliStatus,
+  ClaudeCliStatus,
   LlmGatewayStatus,
   ReasoningEffort,
 } from '../../shared/types';
@@ -26,7 +28,34 @@ export function buildProviderModelOptions(
   cursorStatus: CursorCliStatus | null,
   llmGatewayStatus?: LlmGatewayStatus | null,
   devinStatus?: DevinCliStatus | null,
+  claudeStatus?: ClaudeCliStatus | null,
 ): ChatModelOption[] {
+  if (provider === 'claude') {
+    const models = claudeStatus?.models.length ? claudeStatus.models : CLAUDE_MODEL_OPTIONS;
+    const options: ChatModelOption[] = models.map((model) => ({
+      provider,
+      id: model.id,
+      label: model.label,
+      description:
+        model.id === 'auto'
+          ? 'Use the model configured in Claude Code.'
+          : 'Run this model through your local Claude Code login.',
+      supportedReasoningEfforts: [],
+      defaultReasoningEffort: 'medium',
+      serviceTiers: [],
+    }));
+    if (selectedModel && !options.some((option) => option.id === selectedModel))
+      options.unshift({
+        provider,
+        id: selectedModel,
+        label: selectedModel,
+        description: 'Custom Claude Code model.',
+        supportedReasoningEfforts: [],
+        defaultReasoningEffort: 'medium',
+        serviceTiers: [],
+      });
+    return options;
+  }
   const catalogModels = provider === 'llmgateway' ? llmGatewayStatus?.models : codexStatus?.models;
   const detectedCodexOptions = catalogModels
     ?.filter((model) => !model.hidden)
@@ -136,6 +165,7 @@ export function buildChatModelOptions(
   cursorStatus: CursorCliStatus | null,
   llmGatewayStatus?: LlmGatewayStatus | null,
   devinStatus?: DevinCliStatus | null,
+  claudeStatus?: ClaudeCliStatus | null,
 ): ChatModelOption[] {
   return [...new Set([selectedProvider, ...enabledProviders])].flatMap((provider) =>
     buildProviderModelOptions(
@@ -145,6 +175,7 @@ export function buildChatModelOptions(
       cursorStatus,
       llmGatewayStatus,
       devinStatus,
+      claudeStatus,
     ),
   );
 }

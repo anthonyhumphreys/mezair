@@ -68,6 +68,24 @@ const ACP_MCP_EVIDENCE =
  * 'transcript-seeded' on the session's continuity field.
  */
 const PROVIDER_CAPABILITIES: Record<AgentProvider, ProviderCapability> = {
+  claude: {
+    provider: 'claude',
+    cliMinVersion: '2.1.316',
+    modes: [
+      { mode: 'native-resume', scope: 'same-home', verified: false },
+      { mode: 'summary-continuation', scope: 'cross-device', verified: false },
+    ],
+    evidence:
+      'claude-agent-process.ts: Agent SDK query resume with local Claude Code session id; live resume not yet verified',
+    caveat:
+      'Claude sessions stay on this device. Plan mode is not a filesystem sandbox; strict read-only and temporary chats are unavailable.',
+    agentTools: {
+      transport: 'mcp-http',
+      verified: false,
+      evidence:
+        'claude-agent-process.ts: SDK mcpServers with per-session HTTP bearer, delivered over stdin; live round trip not yet verified',
+    },
+  },
   codex: {
     provider: 'codex',
     modes: [

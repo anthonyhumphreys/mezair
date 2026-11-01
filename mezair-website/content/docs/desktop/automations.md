@@ -91,7 +91,7 @@ Run history records what triggered each run, its status, the result, any error, 
 
 ## Limits
 
-- Persona automations require the local Codex runtime and configured persona access. Workflow automations require the tools and credentials for each selected provider.
+- Persona automations require the selected provider's local CLI or runtime and configured persona access. Claude Code uses your installed `claude` CLI, local login and selected model. Workflow automations require the tools and credentials for each selected provider.
 - Command and write permissions are broad within the disposable worktrees. Review retained changes before merging them.
 - Cancellation and failure do not reverse commands or external effects that already occurred.
 - External Watchtower polling depends on local provider credentials and API availability.

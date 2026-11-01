@@ -44,10 +44,11 @@ Settings separates your **primary** agent from the providers that are **active**
 - The primary provider starts new chats and handles app-level AI tasks.
 - Active providers appear in each workflow step's provider selector.
 - Each step stores its own provider and model, so planning, implementation, and independent reviews do not have to use the same runtime.
+- [Claude Code](/docs/desktop/claude-code) models come from your installed CLI. Choose a listed model or use `auto` to keep the CLI default.
 - Cursor's models come from your local `cursor-agent` install. You can type in custom Codex, OpenAI or Azure model and deployment names.
 - Templates created before provider-aware workflows continue to use Codex unless you change the step.
 
-Codex, OpenAI and Azure steps run through Codex with the model you picked. Cursor steps run through `cursor-agent`. If a saved step names a provider you've since turned off, the workflow stops and tells you.
+Codex, OpenAI and Azure steps run through Codex with the model you picked. Cursor steps run through `cursor-agent`; Devin and Claude Code steps use their installed CLIs in print mode. Claude Code workflow steps run locally and use the model stored in the step. If a saved step names a provider you've since turned off, the workflow stops and tells you.
 
 An agent can also call another provider's CLI from a prompt when that's the simplest handoff. Workflow steps are better when you want the choice of provider to be visible, repeatable and saved with the template.
 

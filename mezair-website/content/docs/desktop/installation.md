@@ -84,7 +84,7 @@ The result lands in `dist/`.
 You can start locally without a Mezair account. Setup has three short steps:
 
 1. **Choose your starting tools.** Pick the kind of work you do. This changes the initial navigation, not what you are allowed to use. Change your role or show all tools in Settings later.
-2. **Connect a coding agent, or choose Set up later.** Use your Codex, Cursor or Devin subscription, or connect OpenAI, Azure AI Foundry or LLMGateway. A coding agent is needed for chat and coding tasks; you can browse repositories before connecting one. Any API keys you save are encrypted on your machine.
+2. **Connect a coding agent, or choose Set up later.** Use your Codex, Claude Code, Cursor or Devin subscription, or connect OpenAI, Azure AI Foundry or LLMGateway. A coding agent is needed for chat and coding tasks; you can browse repositories before connecting one. Any API keys you save are encrypted on your machine.
 3. **Choose whether to use Sync.** Select **Continue without Sync** to work on this device. Sync is optional and has separate hosting and account setup.
 
 Next, create a workspace and add a local repository or clone one. A workspace groups the repositories and conversations for a piece of work. Let indexing finish, then try a small task on a repository you know.
@@ -94,6 +94,12 @@ Next, create a workspace and add a local repository or clone one. A workspace gr
 You do not need to configure everything before your first task. Settings lets you add more agent accounts, choose models, and connect Azure DevOps, Linear or Jira for work items. Connect Confluence, Notion or Linear for documents when your work needs them.
 
 For LLMGateway, Mezair offers **Install coding engine** during setup. It uses Codex to edit files and run commands, while LLMGateway supplies and bills for the models. A ChatGPT subscription is not required.
+
+For [Claude Code](/docs/desktop/claude-code), install and sign in to the local
+`claude` CLI, then enable **Claude Code** in **Settings → Providers & models**.
+You can use the CLI's configured model or select another available model in
+Settings or the chat composer. Your Claude plan's model access and usage
+limits apply.
 
 ### Optional on-device helpers
 

@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
+import { callClaudeUtility } from './claude-utility.js';
 import { getSettings } from './settings.service.js';
 import { providerSpawnEnv } from './agent-spawn-env.js';
 import type { AgentProvider } from '../../shared/types.js';
@@ -576,18 +577,30 @@ export async function callLlm(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     let result: string;
 
-    if (provider === 'codex' || provider === 'cursor' || provider === 'devin') {
+    if (
+      provider === 'codex' ||
+      provider === 'cursor' ||
+      provider === 'devin' ||
+      provider === 'claude'
+    ) {
       try {
         result =
-          provider === 'cursor'
-            ? await callCursor(
+          provider === 'claude'
+            ? await callClaudeUtility(
                 userMessage,
-                options,
-                modelOverride || settings.openaiModel || 'auto',
+                modelOverride ||
+                  (settings.llmProvider === 'claude' ? settings.openaiModel : 'auto'),
+                options?.cwd,
               )
-            : provider === 'devin'
-              ? await callDevin(userMessage, options, modelOverride || settings.openaiModel)
-              : await callCodex(userMessage, options, modelOverride);
+            : provider === 'cursor'
+              ? await callCursor(
+                  userMessage,
+                  options,
+                  modelOverride || settings.openaiModel || 'auto',
+                )
+              : provider === 'devin'
+                ? await callDevin(userMessage, options, modelOverride || settings.openaiModel)
+                : await callCodex(userMessage, options, modelOverride);
       } catch (err) {
         if (err instanceof EmptyLlmResponseError) {
           lastEmptyResponseMessage = err.message;
@@ -673,10 +686,13 @@ export async function testLlmConnection(): Promise<{ ok: boolean; error?: string
     if (
       settings.llmProvider === 'codex' ||
       settings.llmProvider === 'cursor' ||
-      settings.llmProvider === 'devin'
+      settings.llmProvider === 'devin' ||
+      settings.llmProvider === 'claude'
     ) {
       console.log(`[LLM] Test: running ${settings.llmProvider} CLI ping`);
-      if (settings.llmProvider === 'cursor') {
+      if (settings.llmProvider === 'claude') {
+        await callClaudeUtility('respond with the word pong', settings.openaiModel);
+      } else if (settings.llmProvider === 'cursor') {
         await callCursor('respond with the word pong', undefined, settings.openaiModel || 'auto');
       } else if (settings.llmProvider === 'devin') {
         await callDevin('respond with the word pong', undefined, settings.openaiModel);

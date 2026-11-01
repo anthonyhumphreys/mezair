@@ -916,6 +916,7 @@ export function getChatThreadProviderBinding(
       provider === 'openai' ||
       provider === 'cursor' ||
       provider === 'devin' ||
+      provider === 'claude' ||
       provider === 'codex' ||
       provider === 'llmgateway'
         ? provider

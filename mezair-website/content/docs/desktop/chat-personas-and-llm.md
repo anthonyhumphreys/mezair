@@ -19,16 +19,17 @@ Chat sessions in a workspace draw on your repositories, work items and current b
 | OpenAI API | Add an API key in Settings | Calls OpenAI directly from the main process. |
 | Azure AI Foundry | Configure a provider in `~/.codex/config.toml`, with its API key in the environment variable that config names | For teams with Azure OpenAI deployments. Mezair reads the same config Codex uses. |
 | Codex CLI | Install Codex and sign in | Runs your local `codex` command. Best for agent sessions that need to read and change files. |
+| Claude Code | Install the `claude` CLI, run `claude auth login`, then enable Claude Code in Settings | Uses your local sign-in and selected Claude model. [Setup and limits](/docs/desktop/claude-code). |
 | Apple Foundation Models | macOS 26 or later with Apple Intelligence turned on. On macOS 27, the built-in `fm` tool (after `sudo fm license`) or a Swift toolchain with `FoundationModels` | Optional, on-device, for short helper prompts. Handles image attachments on macOS 27. No API key. Falls back to your main provider when it can't help. |
 
 Cursor, Devin and LLMGateway are set up under **Agent providers**; see [Chat, surfaces and agent runs](/docs/desktop/chat-canvas-and-agent-runs).
 
-Credentials are encrypted and stored in the local database by the main process. The interface never sees raw API keys.
+Credentials saved through Mezair are encrypted by the main process. Claude Code authentication stays with the local CLI. The interface never sees raw API keys or Claude login material.
 
 ## Set up a provider
 
 1. Open **Settings** and go to the AI section.
-2. Choose Codex CLI, OpenAI API or Azure AI Foundry.
+2. Choose your primary provider and enable any additional providers you want in the model picker. For [Claude Code](/docs/desktop/claude-code), use your installed CLI and local sign-in.
 3. For OpenAI, enter your API key and model.
 4. For Azure AI Foundry, edit `~/.codex/config.toml` and set the environment variable its `env_key` points to.
 5. Run the connection test if the provider has one. Apple Foundation Models has its own **Test Apple Models** button.
@@ -81,7 +82,7 @@ Press **Cmd+K** and choose **Temporary chat** for a throwaway conversation. You 
 
 The transcript and any unsent draft live in memory until you end the chat or quit. Temporary chats don't appear in your thread list, don't get automatic titles and aren't recorded in run history. They run in an empty folder, read-only, with no workspace, repository, governance or MCP context.
 
-Temporary chat is text-only and works with providers that run through Codex. Cursor, Devin, attachments, pasted images and dropped files aren't available.
+Temporary chat is text-only and works with providers that run through Codex. Claude Code, Cursor, Devin, attachments, pasted images and dropped files aren't available.
 
 ## Thread titles and summaries
 

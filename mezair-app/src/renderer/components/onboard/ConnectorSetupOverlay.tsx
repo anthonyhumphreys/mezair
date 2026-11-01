@@ -478,6 +478,12 @@ export function ConnectorSetupOverlay({
                     onClick={() => selectLlmProvider('codex')}
                   />
                   <ProviderButton
+                    label="Claude Code"
+                    active={llmProvider === 'claude'}
+                    disabled={inputsDisabled}
+                    onClick={() => selectLlmProvider('claude')}
+                  />
+                  <ProviderButton
                     label="Cursor"
                     active={llmProvider === 'cursor'}
                     disabled={inputsDisabled}
@@ -512,6 +518,13 @@ export function ConnectorSetupOverlay({
                   <p className="text-xs text-text-tertiary">
                     Uses Codex installed on this machine and your ChatGPT sign-in. No API key
                     needed.
+                  </p>
+                )}
+                {llmProvider === 'claude' && (
+                  <p className="text-xs text-text-tertiary">
+                    Uses your installed Claude Code CLI, local sign-in and configured model. Run{' '}
+                    <code>claude auth login</code> to sign in. You can select models in chat or{' '}
+                    <SettingsLink to="providers#model">Settings</SettingsLink>.
                   </p>
                 )}
                 {llmProvider === 'cursor' && (

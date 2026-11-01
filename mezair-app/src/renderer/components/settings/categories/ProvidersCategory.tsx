@@ -6,6 +6,7 @@ import type {
   CodexCliStatus,
   CursorCliStatus,
   DevinCliStatus,
+  ClaudeCliStatus,
   LocalLlmCapabilities,
   LocalLlmProvider,
   LlmGatewayBillingMode,
@@ -60,6 +61,11 @@ const AGENT_PROVIDER_OPTIONS: Array<{
     id: 'cursor',
     label: 'Cursor CLI',
     description: 'Cursor models and agent tools through cursor-agent.',
+  },
+  {
+    id: 'claude',
+    label: 'Claude Code',
+    description: 'Your local Claude Code CLI, sign-in, and choice of Claude models.',
   },
   {
     id: 'devin',
@@ -216,6 +222,8 @@ export function ProvidersCategory() {
   );
   const [codexStatus, setCodexStatus] = useState<CodexCliStatus | null>(null);
   const [cursorStatus, setCursorStatus] = useState<CursorCliStatus | null>(null);
+  const [claudeStatus, setClaudeStatus] = useState<ClaudeCliStatus | null>(null);
+  const [claudeSigningIn, setClaudeSigningIn] = useState(false);
   const [devinStatus, setDevinStatus] = useState<DevinCliStatus | null>(null);
   const [devinSigningIn, setDevinSigningIn] = useState(false);
   const [llmGatewayStatus, setLlmGatewayStatus] = useState<LlmGatewayStatus | null>(null);
@@ -236,6 +244,7 @@ export function ProvidersCategory() {
         setSavedAgentMaxThreads(status.agentMaxThreads ?? 6);
       })
       .catch(console.warn);
+    window.mezair.settings.getClaudeStatus().then(setClaudeStatus).catch(console.warn);
     window.mezair.settings.getCursorStatus().then(setCursorStatus).catch(console.warn);
     window.mezair.settings.getDevinStatus().then(setDevinStatus).catch(console.warn);
     window.mezair.settings.getLlmGatewayStatus().then(setLlmGatewayStatus).catch(console.warn);
@@ -314,6 +323,7 @@ export function ProvidersCategory() {
         cursorStatus,
         llmGatewayStatus,
         devinStatus,
+        claudeStatus,
       )
     : [];
 
@@ -349,6 +359,7 @@ export function ProvidersCategory() {
 
   const setPrimaryProvider = (nextProvider: AgentProvider) => {
     const next = selectPrimaryAgentProvider(settings, nextProvider, {
+      claude: claudeStatus?.models.map((model) => model.id) ?? [],
       cursor: cursorStatus?.models.map((model) => model.id) ?? [],
       devin: devinStatus?.models.map((model) => model.id) ?? [],
     });
@@ -561,6 +572,7 @@ export function ProvidersCategory() {
             cursorStatus,
             llmGatewayStatus,
             devinStatus,
+            claudeStatus,
           )}
           provider={provider}
           model={selectedModelId}
@@ -589,6 +601,59 @@ export function ProvidersCategory() {
           <p className="text-sm text-text-secondary">
             Codex CLI uses your local ChatGPT sign-in and app-server configuration.
           </p>
+        )}
+
+        {enabledProviders.includes('claude') && (
+          <div className="space-y-3 rounded-md border border-border bg-bg-primary p-4">
+            <p className="text-sm text-text-secondary">
+              Claude Code uses your installed CLI and its local sign-in. Use CLI default keeps your
+              configured model; you can select a different model below or in chat.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              {claudeStatus?.installed && claudeStatus.authenticated !== true && (
+                <Button
+                  disabled={claudeSigningIn}
+                  onClick={async () => {
+                    setClaudeSigningIn(true);
+                    try {
+                      const result = await window.mezair.settings.startClaudeLogin();
+                      if (!result.ok)
+                        reportError(result.error ?? 'Unable to start Claude Code sign-in.');
+                    } catch (error) {
+                      reportError(
+                        error instanceof Error ? error.message : 'Claude Code sign-in failed.',
+                      );
+                    } finally {
+                      setClaudeSigningIn(false);
+                    }
+                  }}
+                >
+                  Sign in with Claude Code
+                </Button>
+              )}
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  void window.mezair.settings
+                    .getClaudeStatus(true)
+                    .then(setClaudeStatus)
+                    .catch(console.warn)
+                }
+              >
+                Check again
+              </Button>
+              <span className="text-xs text-text-tertiary">
+                {!claudeStatus
+                  ? 'Checking for Claude Code…'
+                  : !claudeStatus.installed
+                    ? 'Claude Code was not detected. Install it, then check again.'
+                    : `${claudeStatus.version ?? 'Claude Code installed'} · ${claudeStatus.authenticated === true ? 'signed in' : claudeStatus.authenticated === false ? 'sign-in required' : 'sign-in status unavailable'}`}
+              </span>
+            </div>
+            <p className="text-xs text-text-tertiary">
+              You can also sign in from a terminal with <code>claude auth login</code>.
+            </p>
+          </div>
         )}
 
         {enabledProviders.includes('cursor') && (
@@ -811,6 +876,37 @@ export function ProvidersCategory() {
         saveKeys={['openaiModel', 'reasoningLevel']}
         autosave
       >
+        {provider === 'claude' && (
+          <div className="space-y-2 rounded-md border border-border bg-bg-primary p-4">
+            <label className="block text-sm text-text-secondary" htmlFor="settings-claude-model">
+              Primary Claude model
+            </label>
+            <input
+              id="settings-claude-model"
+              list="settings-claude-models"
+              value={settings.openaiModel ?? 'auto'}
+              onChange={(event) => {
+                draft.update('openaiModel', event.target.value);
+                announceSelection({ openaiModel: event.target.value });
+              }}
+              className="w-full rounded-md border border-border bg-bg-secondary px-3 py-2 text-sm text-text-primary outline-none focus:border-accent"
+            />
+            <datalist id="settings-claude-models">
+              {buildProviderModelOptions('claude', null, null, null, null, null, claudeStatus).map(
+                (model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.label}
+                  </option>
+                ),
+              )}
+            </datalist>
+            <p className="text-xs text-text-tertiary">
+              Choose a model or enter a Claude model ID. Auto uses your CLI configuration. Model
+              access and usage limits follow your Claude plan.
+            </p>
+          </div>
+        )}
+
         {provider === 'cursor' && (
           <div className="space-y-2 rounded-md border border-border bg-bg-primary p-4">
             <label className="block text-sm text-text-secondary">Primary Cursor model</label>

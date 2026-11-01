@@ -709,3 +709,46 @@ runtime settings, migrations, descriptors and signed-channel rejection across
 environments. Live bootstrap evidence and remaining operator actions are recorded
 in `docs/hosted-environment-cutover.md`; full customer/payment/device acceptance
 remains distinct from provisioning.
+
+
+### C14: Local Claude Code provider
+
+Status: active
+Owner projects: `mezair-app`, with public coverage in `mezair-website`
+
+Use the official Anthropic Agent SDK with the user's installed `claude`
+executable and local CLI sign-in. The SDK adapter translates into Desktop's
+existing agent-client session controls; Claude is not an ACP subprocess.
+
+- `auto` omits the model override and preserves CLI settings. Discover model
+  choices through SDK controls without inference; all returned model IDs and
+  explicit custom IDs remain selectable. Never impose Haiku or upgrade the
+  user's chosen model silently. Switching from a Codex model resets to auto.
+- Keep authentication in the local CLI. Return only installed/authenticated
+  state and model metadata to the renderer. Do not copy OAuth files or export
+  Claude credentials to remote workers. Drop unrelated providers' API keys.
+- Preserve persona instructions, queued follow-ups, approvals, user questions,
+  streaming text, tool results, successful file-change evidence and cumulative
+  usage accounting. Cancellation is interrupted, provider errors are failed.
+  Keep Claude sessions attributed to Claude in Dojo and allow its model rates.
+  Stop the isolated CLI process group and verify teardown.
+- Attach Mezair MCP through SDK stdin configuration with the existing
+  session-scoped bearer. Never put it in process arguments or diagnostics.
+- Map permission controls to Claude's default, acceptEdits,
+  bypassPermissions and plan modes. Plan mode is not a filesystem sandbox;
+  strict read-only and temporary chats remain unavailable. Factory workers,
+  browser execution and cloud credential delivery remain on their existing
+  provider allowlists. Local workflows and automations use `claude --print`.
+- Audit capabilities honestly: native resume uses SDK `resume` on this device;
+  cross-device continuation and live MCP connectivity are not claimed verified
+  without their own fixtures. Exclude unused SDK-bundled CLI binaries from
+  Desktop packages.
+- Keep the website's shared provider lists, metadata, installation and workflow
+  guides in step with this provider. Its dedicated Claude Code guide must explain
+  model selection, CLI defaults, local authentication and current limits.
+
+Verification from `mezair-app/`: run both Desktop TypeScript projects, lint,
+`claude-agent-process.test.ts`, the provider/model-picker and agent-client
+regression tests, then the Desktop suite and build. Live probes must use
+minimal prompts and preserve the user's model preference; the initial
+Haiku stream smoke check used a single `OK` response.

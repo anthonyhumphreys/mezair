@@ -10,7 +10,7 @@ order: 45
 
 # LAN-first Mesh routes
 
-**Beta through 30 November 2026.**
+**Beta.**
 
 When Desktop, the headless daemon or the native mobile app connects to one of your enrolled hosts, Mesh chooses the route for you. It tries the host's address on your local network first and falls back quickly when that address doesn't answer. When a better route appears, the live session switches only after a replacement has authenticated and caught up, and the switch never resends a command.
 
@@ -79,7 +79,7 @@ Backend authorization failures are reported separately from route unavailability
 
 Android permits plain HTTP and WebSocket connections to private IP addresses for this. Application URL restrictions still apply, broker credentials still need HTTPS, and machine sessions stay authenticated and end-to-end encrypted.
 
-Sync & Mesh is in beta through 30 November 2026. See
+Sync & Mesh is in beta. See
 [Status and limits](/docs/sync/status-and-limits) for connection requirements
 and supported clients.
 

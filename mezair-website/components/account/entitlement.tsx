@@ -46,7 +46,7 @@ export function entitlementSummary(entitlement: HostedEntitlement): string {
     }
     case "restricted":
       return entitlement.reason === "subscription-required" || entitlement.reason === "preview-ended"
-        ? "Hosted Sync & Mesh needs a subscription or a valid beta code. Local work, reads, exports and account recovery remain available."
+        ? "An active subscription is required for hosted Sync & Mesh. Local work, reads, exports and account recovery remain available."
         : entitlement.reason === "device-limit-exceeded"
           ? "Hosted writes are paused because this account exceeds its device limit. Revoke a device to resume."
           : "Hosted writes are restricted by account or service policy. Local work remains available.";

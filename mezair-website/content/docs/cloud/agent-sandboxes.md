@@ -18,9 +18,10 @@ The beta includes local execution, persisted events, source snapshots, a CLI
 service and an optional Desktop view. The AWS Lambda MicroVM adapter supports
 read-only execution. The sections below describe the contracts and their limits.
 
-Mezair Cloud Agents will let you run this work on machines we host. It hasn't
-launched, and no price or release date has been set. Existing integrations use
-your own machines or provider accounts; those providers bill you directly.
+**Mezair Cloud Agents is coming soon.** It will let you run this work on machines
+we host and is not available to enable yet. Existing integrations use your own
+machines or provider accounts; those providers bill you directly, and no Sync & Mesh
+subscription is required.
 
 ## Why sandboxes exist
 
@@ -376,5 +377,5 @@ Example future inspect shape:
   supports that provider's login flow.
 - The beta service stores state locally. It does not provide shared hosted
   persistence, hosted memory or a hosted credential broker.
-- Mezair Cloud Agents hosted compute is not available. No price or release date
-  has been set.
+- Mezair Cloud Agents hosted compute is **coming soon** and is not available to
+  enable yet.

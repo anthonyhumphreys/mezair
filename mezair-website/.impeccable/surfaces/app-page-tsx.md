@@ -11,7 +11,7 @@ Mode: Persuade. Docs, account, workspace, auth and artifact routes are out of sc
 
 ## Audience, job, actions
 - Developer or tech lead deciding whether to try Mezair Desktop today, and whether hosted Sync is worth requesting.
-- Actions: Download for Mac (unsigned; install guide), Windows/Linux releases, view MIT source, request hosted Sync beta (invite-only through `featureBeta.endDate`), redeem beta code, self-host Sync, read docs.
+- Actions: Download for Mac (unsigned; install guide), Windows/Linux releases, view MIT source, request hosted Sync beta (invite-only until full public launch), redeem beta code, self-host Sync, read docs.
 - Proof: real captures of Mezair Desktop with synthetic fixture content (Electron shell and the mezair-app replay harness; provenance in `public/screens/manifest.json`), plus labelled motion diagrams of Sync & Mesh whose states and ordering follow `cloud/contract`.
 
 ## Direction contract
@@ -36,7 +36,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
 ## Pricing composition
 
-- Pricing uses a compact, left-aligned “Pricing” heading with a short explanation of the free app and the choice of self-hosted or hosted Sync & Mesh. The comparison board carries the price figures and primary actions. Beta access and code redemption are quiet links above the board, not a second set of large buttons.
+- Pricing uses a compact, left-aligned “Pricing” heading with a short explanation of the free app and the choice of self-hosted or hosted Sync & Mesh. The comparison board carries the price figures and primary actions. Beta access and the account are quiet links above the board, not a second set of large buttons.
 
 ## Additional confirmed direction
 - Pricing is up front and said the same way everywhere, in one or two sentences: the app is free; Sync & Mesh is free on a backend you run (your cloud provider bills you) or £8.99 a month (£89.90 a year) if Mezair hosts it; hosting is an invite-only beta for now. On the homepage it sits in the lede, before the download action.

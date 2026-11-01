@@ -45,5 +45,8 @@ An unauthenticated redirect or a rendered page does not prove the signed-in
 account flow. Record the result in
 [staging acceptance](staging-acceptance.md).
 
-Sync and Mesh do not require Stripe configuration. Do not enable checkout or
-add payment steps to the staging website acceptance.
+Automatic staging keeps checkout disabled. To accept the new paid signup flow,
+use the separately reviewed Stripe test-mode checkout deployment. Verify that
+waitlist approval permits signup while hosted writes remain restricted until
+subscription/invoice confirmation. Do not substitute a Mezair beta code for this
+payment acceptance.

@@ -10,7 +10,7 @@ order: 85
 
 # User-definable software factories
 
-**Beta through 30 November 2026.**
+**Beta.**
 
 ![The Factories view with a factory line: runs at intake, building, review, waiting for approval and merging stations.](/screens/factories-line.webp "A factory line from the synthetic factory fixture.")
 

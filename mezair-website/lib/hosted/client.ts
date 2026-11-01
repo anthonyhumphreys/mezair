@@ -249,10 +249,6 @@ export function createCheckout(
   });
 }
 
-export function redeemBetaCode(identity: HostedIdentity, code: string): Promise<{ accessUntil: string }> {
-  return hostedCall("/internal/hosted/beta/redeem", { ...identity, code });
-}
-
 /** Organization billing is scoped to the organization customer in Stripe. */
 export function createOrganizationPortal(
   identity: HostedIdentity,

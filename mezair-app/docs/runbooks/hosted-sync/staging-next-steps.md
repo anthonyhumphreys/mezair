@@ -20,8 +20,9 @@ compatibility; the successful staging workflow establishes the candidate deploye
 Neither establishes signed-in or physical-device acceptance.
 
 The core staging target uses existing Worker, D1 and R2 resources. Hosted
-writes require an admitted account and redeemed beta code; checkout is
-disabled. Mezair Cloud Agents are disabled too. It deploys
+writes require subscription entitlement after account admission. Automatic
+staging checkout is disabled; the paid signup rehearsal uses a separately
+reviewed Stripe test-mode checkout deployment. Mezair Cloud Agents are disabled too. It deploys
 no Cloud Agent provisioner or container image. The managed endpoint pilot is
 enabled for `mezair.dev`; production remains off. Private routes are
 preferred where reachable, with the managed HTTPS tunnel available across
@@ -102,7 +103,8 @@ Use a disposable repository for commands that write files.
 Follow [staging acceptance](staging-acceptance.md) in order. The required results are:
 
 - [ ] Website and both machines sign in to the same admitted test account.
-      Redeem a time-limited beta code; no purchase or organization is required.
+      Complete Stripe test-mode checkout on the reviewed paid-flow deployment.
+      Approval alone must not enable hosted writes; no organisation is required.
 - [ ] A new workspace starts Local. Opting it into Sync transfers its portable
       definition and preferences. The other machine links or clones its own
       checkout; repository files, Git history and uncommitted changes are not

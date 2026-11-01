@@ -9,7 +9,7 @@ import { EnvelopeBoundary } from "@/components/site/envelope-boundary";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
 import { pageMetadata } from "@/lib/metadata";
-import { agentEnvironments, featureBeta, syncBackends } from "@/lib/site";
+import { agentEnvironments, featureBeta, hostedSignupNotice, syncBackends } from "@/lib/site";
 
 export const metadata: Metadata = pageMetadata({
   title: "Sync & Mesh | Mezair",
@@ -86,9 +86,9 @@ export default function SyncPage() {
                   </Button>
                 </div>
                 <p className="cine-fine mt-4">
-                  Hosting is invite-only until {featureBeta.endDate}.{" "}
-                  <Link href="/account/billing" className="cine-link">
-                    Redeem your code
+                  {hostedSignupNotice}{" "}
+                  <Link href="/account" className="cine-link">
+                    Your account
                   </Link>{" "}
                   or check{" "}
                   <Link href="/docs/sync/status-and-limits" className="cine-link">
@@ -281,7 +281,7 @@ export default function SyncPage() {
             <h3 className="mt-16 text-xl font-semibold">Temporary cloud environments</h3>
             <p className="cine-fine mt-2">
               A workflow can ask for a temporary environment in a cloud account you connect. That provider bills you
-              directly.{" "}
+              directly. Using your provider&apos;s agents does not require a Sync &amp; Mesh subscription.{" "}
               <Link href="/docs/cloud/agent-sandboxes" className="cine-link">
                 How sandboxes work
               </Link>
@@ -294,7 +294,7 @@ export default function SyncPage() {
                   </Link>
                   <p className="text-[0.9375rem] leading-7 text-muted-foreground">{environment.detail}</p>
                   <p
-                    className={`text-sm font-medium md:text-right ${environment.status === "Later" ? "text-muted-foreground" : "text-foreground"}`}
+                    className={`text-sm font-medium md:text-right ${environment.status === "Coming soon" ? "text-muted-foreground" : "text-foreground"}`}
                   >
                     {environment.status}
                   </p>
@@ -326,8 +326,8 @@ export default function SyncPage() {
               Try the hosted beta
             </h2>
             <p className="cine-lede mt-6">
-              The beta is invite-only. You can redeem your invitation code without a payment method, and paid plans
-              aren&apos;t on sale yet. You can also run the backend yourself.
+              Hosted signup is invite-only. Once approved, choose a plan and complete Stripe checkout.
+              You can also run the backend yourself for free.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Button asChild size="lg">

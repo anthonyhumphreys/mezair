@@ -59,7 +59,7 @@ Cloud features are off by default. Enabling them reveals the Cloud Workbench; it
 In **Settings → Sync & Mesh**, choose a backend and sign in to connect a device.
 You can use your own Cloudflare deployment or a compatible third-party backend.
 Mezair-hosted production access has not launched. Its invite-only beta
-requires a subscription or a beta code, and checkout is closed. Proposed paid plans are
+requires waitlist approval to sign up and an active subscription for hosted Sync & Mesh. Checkout is closed. Proposed paid plans are
 on the [pricing page](/pricing). Running your own backend carries no Mezair
 subscription charge.
 
@@ -72,7 +72,7 @@ Once signed in, you can manage devices, follow remote jobs, enable the worker
 on this machine and export your data. Account security and deployment limits
 still apply.
 
-For supported upgraded clients, the app selects an encrypted live route to an enrolled host when that host is enabled and reachable, trying the host's LAN address first ([LAN-first Mesh routes](/docs/sync/lan-first-routes), in beta through 30 November 2026). Managed routes need a provisioned, enabled endpoint and use the provider's proxy, so they are not peer-to-peer; availability depends on the deployment. Configuring a Sync backend alone does not provide a host route.
+For supported upgraded clients, the app selects an encrypted live route to an enrolled host when that host is enabled and reachable, trying the host's LAN address first ([LAN-first Mesh routes](/docs/sync/lan-first-routes), in beta). Managed routes need a provisioned, enabled endpoint and use the provider's proxy, so they are not peer-to-peer; availability depends on the deployment. Configuring a Sync backend alone does not provide a host route.
 
 The panel itself is covered in [Sync and Mesh](/docs/desktop/sync-and-mesh); the encryption, sync, job, handoff, and self-deploy mechanics behind it are in the [Sync & Mesh docs](/docs/sync/overview).
 

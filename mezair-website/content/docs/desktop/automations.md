@@ -12,7 +12,7 @@ order: 150
 
 An automation runs an agent prompt against one or more repositories. It can start when you click **Run now**, on a schedule, or when Watchtower sees a matching workflow, pull request or pipeline event.
 
-To take GitHub issues all the way to a confirmed merge under a reviewed policy, use [user-definable software factories](/docs/desktop/software-factories) instead. Factories are a separate feature, in beta through 30 November 2026, with their own issue lifecycle, merge modes and controls.
+To take GitHub issues all the way to a confirmed merge under a reviewed policy, use [user-definable software factories](/docs/desktop/software-factories) instead. Factories are a separate feature, in beta, with their own issue lifecycle, merge modes and controls.
 
 ## What an automation contains
 

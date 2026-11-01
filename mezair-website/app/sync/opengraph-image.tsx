@@ -9,7 +9,7 @@ export default function Image() {
     title: "Use Mezair on all your machines",
     description: "Encrypted sync, jobs on your other machines and session handoff.",
     label: "Sync & Mesh",
-    status: "Beta through 30 November 2026",
+    status: "Beta",
     facts: ["AES-256-GCM", "LAN first", "Self-host free"],
     image: { file: "mesh-jobs.jpg", width: 1100, height: 1184, top: 96 }
   });

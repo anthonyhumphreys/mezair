@@ -15,7 +15,7 @@ live acceptance separately.
 
 Sync is opt-in per workspace, with Local as the default for new workspaces. Local use and
 self-hosted deployments carry no Mezair subscription charge. The Mezair-hosted beta gates writes on a
-paid entitlement or a redeemed beta code; checkout stays closed in staging, and production hosted
+valid subscription after waitlist admission; checkout stays closed in staging, and production hosted
 access is not yet available. Sync carries portable workspace definitions, repository references,
 preferences, templates, agent definitions, and bootstrap instructions. It does not copy repository
 contents, `.git`, dirty changes, or machine-local paths. The current serializer includes `remoteUrl`,

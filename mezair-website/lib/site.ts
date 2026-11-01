@@ -31,10 +31,10 @@ export const latestDesktopDmgUrl =
 
 /** Shared beta wording for LAN-first Mesh and user-definable software factories. */
 export const featureBeta = {
-  endDate: "30 November 2026",
-  endDateIso: "2026-11-30",
-  label: "Beta through 30 November 2026"
+  label: "Beta"
 } as const;
+
+export const hostedSignupNotice = "Hosting is invite-only until full public launch.";
 
 /** Agent providers Mezair Desktop can drive today (mezair-app/src/shared/agent-providers.ts). */
 export const desktopProviders = ["Codex", "Cursor", "Devin", "OpenAI", "Azure OpenAI", "LLMGateway"] as const;
@@ -74,7 +74,7 @@ export const desktop: Product = {
     "Mezair Desktop gives each repo a workspace where you plan with an agent, watch it work, and review every change before you keep it. The app runs locally and connects to Codex, Cursor, Devin, OpenAI, Azure OpenAI or LLMGateway with your own provider account. No Mezair account is needed for local use.",
   boundary:
     "Runs your local workflow: repositories, agent sessions, terminals, reviews and the notes you hand on with finished work.",
-  status: `Beta. Builds for macOS (Apple silicon), Windows and Linux ship from GitHub releases. User-definable software factories are in beta through ${featureBeta.endDate}.`,
+  status: "Beta. Builds for macOS (Apple silicon), Windows and Linux ship from GitHub releases. User-definable software factories are in beta.",
   statusLabel: "Beta",
   icon: Terminal,
   href: "/docs/desktop",
@@ -87,7 +87,7 @@ export const desktop: Product = {
     "Review diffs, test runs and security findings before you accept a change",
     "Threads and terminals keep running while you switch workspaces",
     "Work items, automations and multi-agent workflows with a human sign-off",
-    `User-definable software factories (beta through ${featureBeta.endDate}): take labelled GitHub issues to verified, confirmed merges under a policy you activate`,
+    "User-definable software factories (beta): take labelled GitHub issues to verified, confirmed merges under a policy you activate",
     "Notifications take you to the exact thread that is waiting for you",
     "Companion controls for iPhone, Apple Watch, Raycast and the menu bar"
   ],
@@ -109,7 +109,7 @@ export const sync: Product = {
     "Sync carries your workspaces, templates, custom agents and settings between machines, encrypted on the device before anything leaves it. Mesh lets one machine send work to another, and you can move a running session to a different machine when you get up from your desk.",
   boundary:
     "Handles your account, paired devices, encrypted sync, jobs sent between your machines, share links and session handoff.",
-  status: `Beta through ${featureBeta.endDate}, including LAN-first Mesh routing. It runs on backends you deploy yourself, and Mezair hosting is invite-only during the beta. Paid hosted plans are not on sale yet.`,
+  status: "Beta, including LAN-first Mesh routing. It runs on backends you deploy yourself, and Mezair hosting is invite-only until full public launch. Paid hosted plans are not on sale yet.",
   statusLabel: "Beta",
   icon: Network,
   href: "/docs/sync",
@@ -122,7 +122,7 @@ export const sync: Product = {
     "Synced workspace contents are encrypted on your device; the server never has the key",
     "Workspace Sync excludes repository files, credentials and chat transcripts",
     "Send a job to another machine; it runs there at the exact commit you pinned",
-    `LAN-first Mesh (beta through ${featureBeta.endDate}): the host's LAN address first, then other private routes, HTTPS and managed ingress`,
+    "LAN-first Mesh (beta): the host's LAN address first, then other private routes, HTTPS and managed ingress",
     "Move a session to another machine with its progress encrypted in transit",
     "Share links decrypt in the recipient's browser"
   ],
@@ -207,7 +207,7 @@ export const cloud: Product = {
   boundary:
     "Provides the backend tools for your own apps. It is separate from Desktop and the optional hosted Sync service.",
   status:
-    "Beta. The runtime, CLI and AWS preview work today. Hosted Mezair Cloud Agents isn't available yet.",
+    "Beta. The runtime, CLI and AWS preview work today. Hosted Mezair Cloud Agents is coming soon.",
   statusLabel: "Beta",
   icon: Cloud,
   href: "/docs/cloud",
@@ -256,7 +256,7 @@ export const syncBackends = [
   },
   {
     name: "Mezair-hosted",
-    body: "We run the backend and keep it updated. Invite-only beta now; request access and redeem an invitation code. The Sync and Team plans are not on sale yet.",
+    body: "We run the backend and keep it updated. Request access through the waitlist; once approved, choose a subscription. Production hosting is not available yet.",
     cost: "From £8.99 a month"
   },
   {
@@ -293,8 +293,8 @@ export const agentEnvironments = [
   },
   {
     provider: "Mezair Cloud Agents",
-    detail: "Machines we run for you, billed by use.",
-    status: "Later",
+    detail: "Machines we run for you, as a separate fixed monthly add-on.",
+    status: "Coming soon",
     href: "/pricing#hosted-compute"
   }
 ] as const;
@@ -390,8 +390,8 @@ export const pricingFaqs = [
     a: "Yes. The desktop app is free and open source, with no account needed for local use. The self-hosted Sync & Mesh backend is free too; you cover your own infrastructure. You pay Mezair only when we host the backend for you. Model providers bill you separately."
   },
   {
-    q: "When do the paid plans start?",
-    a: "Paid signup opens after the invite-only beta. Request beta access; invited testers receive a code for time-limited access without a payment method. Self-hosting needs no Mezair subscription."
+    q: "How does hosted signup work?",
+    a: "Signup is invite-only until full public launch. Waitlist approval lets you create an account and subscribe; an active subscription is required for hosted Sync & Mesh. Approval does not include a free subscription. Self-hosting needs no Mezair subscription."
   },
   {
     q: "Why charge for Mezair-hosted Sync?",
@@ -435,7 +435,7 @@ export const docsHighlights = [
     label: "User-definable software factories",
     href: "/docs/desktop/software-factories",
     icon: Factory,
-    description: `GitHub issue to verified, confirmed merge under a policy you activate. Beta through ${featureBeta.endDate}.`
+    description: "GitHub issue to verified, confirmed merge under a policy you activate. Currently in beta."
   },
   {
     label: "How Sync keeps your data private",
@@ -453,7 +453,7 @@ export const docsHighlights = [
     label: "LAN-first Mesh routes",
     href: "/docs/sync/lan-first-routes",
     icon: Network,
-    description: `How Mesh prefers the host's LAN address and switches routes safely. Beta through ${featureBeta.endDate}.`
+    description: "How Mesh prefers the host's LAN address and switches routes safely. Currently in beta."
   },
   {
     label: "Run your own backend",

@@ -11,8 +11,8 @@
  * surface (Durable Object bindings, DO migrations, R2 binding) still
  * matches wrangler.jsonc. The actual bucket name is target-specific and is
  * checked against the selected environment manifest by hosted-deploy.mjs.
- * Billing credentials and Stripe price IDs are optional. Sync and Mesh are
- * free services; Stripe remains only for existing billing cleanup.
+ * Billing credentials and Stripe price IDs are optional only while checkout
+ * is closed during bootstrap. Hosted Sync and Mesh require a subscription.
  *
  * Usage:
  *   node scripts/verify-hosted-config.mjs [config-path]

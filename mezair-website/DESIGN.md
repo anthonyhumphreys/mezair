@@ -275,11 +275,11 @@ One SVG stage, four stories: Sync (an edit is sealed, relayed as ciphertext and 
 
 ### Plans and divided rows
 
-Every mention of price says the same thing in one or two plain sentences: the app is free, and Sync & Mesh is free on a backend you run (your cloud provider bills you) or £8.99 a month (£89.90 a year) if Mezair hosts it. Where space allows, add that hosting is an invite-only beta until `featureBeta.endDate` and the prices are planned. The homepage says it in the lede, before the download action. Don't turn price into badges, definition lists or "Free / Free / Paid" grids.
+Every mention of price says the same thing in one or two plain sentences: the app is free, and Sync & Mesh is free on a backend you run (your cloud provider bills you) or £8.99 a month (£89.90 a year) if Mezair hosts it. Where space allows, add that hosting is invite-only until full public launch and the prices are planned. The homepage says it in the lede, before the download action. Don't turn price into badges, definition lists or "Free / Free / Paid" grids.
 
 Pricing is one rounded, ruled board rather than detached cards. The featured column receives a subtle orange tint and a two-pixel top edge; wide Archivo gives prices their hierarchy. The bill ledger, backend comparisons and companion list use divided rows. FAQs use native disclosure controls with a plus rotating when open. Availability and pricing limits remain visible beside the action they qualify.
 
-The pricing page opens with a compact, left-aligned “Pricing” heading. Use the headline type scale, one short explanation that the app and self-hosted Sync & Mesh are free, then quiet beta-access and code-redemption links. Keep price figures in the comparison board rather than repeating them in the headline and lede. Plan actions carry the button emphasis.
+The pricing page opens with a compact, left-aligned “Pricing” heading. Use the headline type scale, one short explanation that the app and self-hosted Sync & Mesh are free, then quiet beta-access and account links. Keep price figures in the comparison board rather than repeating them in the headline and lede. Plan actions carry the button emphasis.
 
 ### Naming and horseplay
 

@@ -6,7 +6,6 @@ export {
   createOrganizationPortal,
   createPortal,
   createCheckout,
-  redeemBetaCode,
   deleteAccount,
   getAccount,
   getBilling,

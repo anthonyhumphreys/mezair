@@ -922,6 +922,8 @@ export async function createMeshDeploymentPlan(
     ...(options.accountId ? { accountId: options.accountId } : {}),
     main: source?.main ?? DEFAULT_ENTRYPOINT,
     compatibilityDate: source?.compatibilityDate ?? FALLBACK_COMPATIBILITY_DATE,
+    compatibilityFlags: source?.compatibilityFlags ?? [],
+    ...(source?.observability ? { observability: source.observability } : {}),
     durableObjects,
     migrations,
     r2Buckets,
@@ -1574,6 +1576,8 @@ function isValidWorkerName(name: string): boolean {
 type BackendProjectSource = {
   main: string;
   compatibilityDate: string;
+  compatibilityFlags: string[];
+  observability?: Record<string, unknown>;
   durableObjects: MeshDurableObjectBinding[];
   newClassMigrations: MeshDurableObjectMigration[];
   r2Buckets: MeshR2BucketBinding[];
@@ -1636,6 +1640,8 @@ async function readBackendProject(
     typeof config["compatibility_date"] === "string"
       ? config["compatibility_date"]
       : FALLBACK_COMPATIBILITY_DATE;
+  const compatibilityFlags = readStringList(config["compatibility_flags"]);
+  const observability = config["observability"];
 
   if (!existsSync(path.join(backendDir, main))) {
     diagnostics.push({
@@ -1657,6 +1663,12 @@ async function readBackendProject(
   return {
     main,
     compatibilityDate,
+    compatibilityFlags,
+    ...(typeof observability === "object" &&
+    observability !== null &&
+    !Array.isArray(observability)
+      ? { observability: observability as Record<string, unknown> }
+      : {}),
     durableObjects,
     newClassMigrations,
     r2Buckets,
@@ -1785,6 +1797,8 @@ function buildMeshConfigObject(input: {
   accountId?: string;
   main: string;
   compatibilityDate: string;
+  compatibilityFlags: string[];
+  observability?: Record<string, unknown>;
   durableObjects: MeshDurableObjectBinding[];
   migrations: MeshDurableObjectMigration[];
   r2Buckets: MeshR2BucketBinding[];
@@ -1852,6 +1866,10 @@ function buildMeshConfigObject(input: {
       path.join(input.backendDir, input.main),
     ),
     compatibility_date: input.compatibilityDate,
+    ...(input.compatibilityFlags.length
+      ? { compatibility_flags: input.compatibilityFlags }
+      : {}),
+    ...(input.observability ? { observability: input.observability } : {}),
     workers_dev: true,
     ...(input.accountId ? { account_id: input.accountId } : {}),
     ...bindings,
@@ -1862,6 +1880,7 @@ function buildMeshConfigObject(input: {
     config["env"] = {
       [input.environmentName]: {
         name: `${input.workerName}-${input.environmentName}`,
+        ...(input.observability ? { observability: input.observability } : {}),
         ...bindings,
         vars: input.vars,
       },

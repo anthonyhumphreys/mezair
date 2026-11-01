@@ -33,7 +33,7 @@ Mezair Desktop earns its place when a change needs more than a chat window:
 | Repositories | Add local checkouts, see branch state, and index the code so agents work from what really exists. |
 | Chat | Plan, build, review, investigate, document and hand over with your chosen agent. Threads keep their history and workspace context. |
 | Workflows | Build reusable multi-step workflows. Each step can use a different provider and model, including Codex and your local Cursor models. |
-| User-definable software factories (beta through 30 November 2026) | Describe an issue-to-PR process in chat, review its typed definition, and activate it. Labelled GitHub issues then go through checks, CI and review repair to a confirmed merge. |
+| User-definable software factories (beta) | Describe an issue-to-PR process in chat, review its typed definition, and activate it. Labelled GitHub issues then go through checks, CI and review repair to a confirmed merge. |
 | Work items | Bring in Linear, Jira or Azure DevOps items, acceptance criteria, analyst findings and follow-up tasks next to the code. |
 | Editor and terminal | Open an editor and real terminals scoped to the workspace. Terminals keep running, with their output buffered, while you work elsewhere in the app. |
 | Git and code review | Read diffs, run reviews, separate blocking issues from preferences, and prepare pull request notes. |
@@ -61,7 +61,7 @@ The optional Cloud Workbench keeps the same split. Its access token is encrypted
 ## Newer tools
 
 - [Workflows](/docs/desktop/workflow-graphs) run teams of specialist agents across providers, with limits on delegation and a person making the key decisions.
-- [User-definable software factories](/docs/desktop/software-factories), in beta through 30 November 2026, take labelled GitHub issues to verified, confirmed merges. You choose human-approved or standing automatic merge when you activate one.
+- [User-definable software factories](/docs/desktop/software-factories), in beta, take labelled GitHub issues to verified, confirmed merges. You choose human-approved or standing automatic merge when you activate one.
 - [Change review](/docs/desktop/change-review) ties sign-off to a replayed version of the change, a versioned set of criteria and the evidence captured.
 - [Dojo](/docs/desktop/dojo) links agent activity and usage to suggestions for better prompts and skills.
 

@@ -14,6 +14,7 @@ import {
   docsHighlights,
   featureBeta,
   githubRepositoryUrl,
+  hostedSignupNotice,
   latestDesktopDmgUrl,
   releasesUrl
 } from "@/lib/site";
@@ -236,7 +237,7 @@ export default function HomePage() {
                   </Button>
                 </div>
                 <p className="cine-fine mt-4">
-                  Free to self-host, £8.99 a month hosted. Hosting is invite-only until {featureBeta.endDate}.
+                  Free to self-host, £8.99 a month hosted. {hostedSignupNotice}
                 </p>
               </div>
             </div>

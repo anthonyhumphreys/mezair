@@ -1,42 +1,46 @@
-# Hosted beta codes and paid signup
+# Hosted waitlist admission and Stripe checkout
 
-Mezair Desktop and self-hosted Sync & Mesh carry no Mezair subscription charge.
-The Mezair-operated backend can enable
-`HOSTED_BILLING_ENFORCEMENT=true`; hosted writes then require a confirmed paid
-subscription or team seat, or an unexpired redeemed beta code. Staging keeps
-checkout disabled and uses beta codes for testers.
+Waitlist approval permits signup to the paid hosted service. It does not grant
+Sync or Mesh writes, a subscription, or an automatic discount. Local Desktop
+and self-hosted Sync & Mesh remain free.
 
-## Invite a tester
+## Admit a customer
 
-1. Apply all `cloud/backend/migrations/hosted-billing` migrations, including
-   `0006_beta_codes.sql`, through the selected-target deployment procedure.
-2. Leave `HOSTED_CHECKOUT_ENABLED=false`. Stripe is optional for code-only beta.
-3. Approve the tester's verified email on this environment's WorkOS waitlist.
-   Admission permits sign-in but does not grant Sync or Mesh writes.
-4. From `mezair-app/cloud/backend`, generate a code with explicit UTC deadlines:
+1. Apply the hosted billing migrations through the selected deployment target.
+2. Configure and verify this environment's Stripe prices, secrets, webhooks and
+   fixed account/billing return URLs. Enable checkout only after the payment
+   acceptance checks pass.
+3. Approve the exact email on the same environment's WorkOS waitlist. WorkOS
+   sends the invitation to complete signup. The backend verifies the configured
+   client and the user's verified email before creating their hosted account.
+4. The customer completes signup and opens `/account/billing`. An approved
+   account can reach checkout without enrolling a Desktop device first.
+5. The customer chooses a plan and completes Stripe checkout. Hosted writes
+   become available only after confirmed subscription/invoice evidence reaches
+   the backend. Account creation and checkout redirects grant no entitlement.
 
-   ```sh
-   node scripts/create-beta-code.mjs --redeem-until <ISO-date> --access-until <ISO-date>
-   ```
+The planned end of closed signup is the end of November 2026. It is not a free
+subscription deadline. Opening signup requires coordinated WorkOS and backend
+admission configuration; merely changing public copy does not remove the
+backend's approval check.
 
-5. Apply the emitted SQL to the selected hosted D1 database using the existing
-   operator deployment credentials. Only the hash goes in D1. Send the raw code
-   to the tester privately, with its access expiry and the `/account/billing` URL.
-   Do not commit codes, paste them into tickets, or save them in application logs.
-6. The tester signs in and redeems the code. No payment method is required.
+## Manual Stripe discounts
 
-The code is bound atomically to its first redeemer. That account can retry without
-extending access; another account cannot use it. Unredeemed codes expire at
-`redeem_until`. Redeemed access ends at `access_until`, even if redemption closes
-earlier. To revoke a code, set `revoked_at` to the current Unix time in milliseconds
-for its `code_hash` in the selected database. The next write checks the new state.
-Do not alter `preview_eligible`: the old global preview grants no access.
+Create coupons and customer-facing promotion codes manually in the Stripe
+dashboard for the selected environment. The operator chooses which recipients
+receive them. Checkout enables Stripe's promotion-code field; discounts are
+applied there as part of subscription signup. Waitlist approval does not
+create, send or redeem a coupon.
 
-## Open paid signup later
+Configure discount duration, applicable products, redemption deadlines and
+customer/redemption limits deliberately. A promotion code's redemption deadline
+is distinct from how long a subscription discount lasts. Stripe remains the
+subscription authority, including when a discount reduces an invoice to zero.
+See [Stripe checkout parameters](https://docs.stripe.com/api/checkout/sessions/create).
 
-This code change does not deploy anything or open checkout. Before launch, verify
-Stripe webhooks, reconciliation, return URLs and cancellation in the selected
-environment. Configure these nonsecret Worker variables:
+## Configure paid signup
+
+Non-secret Worker variables:
 
 - `STRIPE_PRICE_SYNC_MONTHLY` and `STRIPE_PRICE_SYNC_ANNUAL`, GBP £8.99 and £89.90.
 - `STRIPE_PRICE_TEAM_MONTHLY` and `STRIPE_PRICE_TEAM_ANNUAL`, GBP £12 and £120 per seat.
@@ -45,11 +49,19 @@ environment. Configure these nonsecret Worker variables:
 
 Install matching-environment `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` as
 secrets. Only then set `HOSTED_CHECKOUT_ENABLED=true` in the reviewed target vars.
-Automatic staging CI deliberately keeps checkout off. Use a separate reviewed
-test deployment for paid checkout acceptance. Never reuse staging credentials
-or prices in production.
+Keep `HOSTED_BILLING_ENFORCEMENT=true`. Automatic staging CI deliberately keeps
+checkout off; use a separate reviewed Stripe test-mode deployment to rehearse
+the paid flow. Never reuse staging credentials or prices in production.
 
-Checkout redirects do not grant access. Only a confirmed paid invoice advances
-`paid_through` and paid seat quantity. Team checkout requires an active owner and
-5 to 50 seats. Membership is not shared workspace access. Existing subscriptions
-remain manageable through the portal; this rollout does not cancel or refund them.
+Only confirmed paid invoice state advances `paid_through` and paid seat quantity.
+Team checkout requires an active owner and 5 to 50 seats. Membership is not
+shared workspace access. Existing subscriptions remain manageable through the
+portal; this rollout does not cancel or refund them.
+
+## Existing beta-code records
+
+The former Mezair beta-code flow is no longer part of website signup. Existing
+redeemed grants retain their recorded expiry and revocation behaviour for
+compatibility. Do not issue new Mezair codes for this signup flow; use Stripe
+promotion codes when a discount is intended. The old global preview flag does
+not grant access.

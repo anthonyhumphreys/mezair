@@ -86,10 +86,24 @@ variables. The four backend secrets were installed in GitHub's `mezair-staging`
 environment for guarded CI deployment. The old ignored backend JSON and provisioner token files were
 removed after the reinstall succeeded.
 
-Production isolation checks load the Staging source independently to compare
-values across environments. A process-only Staging source cannot be loaded for
-that comparison, so production operations must fail closed until an independent
-Staging source is available.
+Production isolation checks normally load the Staging source independently to
+compare values across environments. A process-only Staging source cannot supply
+both environments. CI can instead set the manifest's top-level
+`stagingSecretFingerprintsFile` to a JSON comparison reference generated with
+`createBackendSecretFingerprints` from `scripts/hosted-deploy.mjs`. This contains
+SHA-256 fingerprints of each scalar credential and each individual HMAC secret;
+key IDs and JSON formatting cannot conceal reuse. Shared Cloudflare account and
+zone IDs are exempt. The reference cannot serve as a backend secret source.
+Missing, incomplete or malformed references fail closed.
+
+The production workflow materializes this reference from its environment
+variable `STAGING_SECRET_FINGERPRINTS_JSON`. Keep it outside tracked source and
+refresh it whenever staging credentials rotate, including optional operator,
+Stripe, tunnel and provisioner credentials. Never copy the complete staging
+credential bundle into the production GitHub environment merely to compare it.
+See the [current cutover record](../../../../../docs/hosted-environment-cutover.md)
+for the replacement environments and current credential custody; the September
+and early October setup above is historical.
 
 Website values may also use names such as `MEZAIR_STAGING_*` and
 `MEZAIR_PRODUCTION_*`. Send only the website-specific values to the matching

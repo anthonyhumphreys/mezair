@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
 import { pageMetadata } from "@/lib/metadata";
-import { featureBeta, plans, pricingFaqs } from "@/lib/site";
+import { hostedSignupNotice, plans, pricingFaqs } from "@/lib/site";
 
 export const metadata: Metadata = pageMetadata({
   title: "Pricing | Mezair",
@@ -30,7 +30,7 @@ const bill = [
     who: "Your providers: OpenAI, Azure, AWS, Cloudflare, Vercel and the rest",
     amount: "No Mezair margin"
   },
-  { item: "Mezair Cloud Agents", who: "Hosted machines billed by use. Not available yet.", amount: "No price yet" }
+  { item: "Mezair Cloud Agents", who: "Separate fixed monthly add-on for machines we host.", amount: "Coming soon" }
 ];
 
 export default function PricingPage() {
@@ -49,13 +49,13 @@ export default function PricingPage() {
               </p>
               <div className="mt-4 flex flex-wrap items-baseline gap-x-5 gap-y-2 text-sm">
                 <p className="cine-fine">
-                  Hosted beta access is invite-only until {featureBeta.endDate}.
+                  {hostedSignupNotice}
                 </p>
                 <Link href="/waitlist" className="cine-link inline-flex min-h-11 items-center">
                   Request beta access
                 </Link>
-                <Link href="/account/billing" className="cine-link inline-flex min-h-11 items-center">
-                  Redeem a beta code
+                <Link href="/account" className="cine-link inline-flex min-h-11 items-center">
+                  Your account
                 </Link>
               </div>
             </div>

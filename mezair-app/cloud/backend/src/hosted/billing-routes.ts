@@ -1028,6 +1028,7 @@ export async function handleCheckout(body: unknown, env: Env, db: D1Database): P
       idempotencyKey: `checkout:${ownerKey}:${Math.floor(now / 3_600_000)}`,
       params: {
         mode: 'subscription',
+        allow_promotion_codes: true,
         customer: customerId,
         client_reference_id: account.id,
         success_url: successUrl,
@@ -1477,7 +1478,10 @@ export async function handleBillingOverview(
   if (!isRecord(body) || !validateHostedIdentity(body)) {
     return rpcErrorResponse(undefined, 'malformed-request');
   }
-  const account = await getBillingAccountByIdentity(db, identityFrom(body));
+  const identity = identityFrom(body);
+  const account =
+    (await getBillingAccountByIdentity(db, identity)) ??
+    (await getOrCreateAdmittedBillingAccount(env, db, identity));
   if (account === null) {
     return rpcErrorResponse(undefined, 'not-found');
   }
@@ -1536,8 +1540,8 @@ export async function handleBillingOverview(
 
 /**
  * `POST /internal/hosted/entitlement` — the stored entitlement snapshot.
- * Pure read of D1 provider truth; BILL-03 enforcement and desktop status
- * consume the same shape.
+ * First admission creates the account but never grants subscription access;
+ * BILL-03 enforcement and desktop status consume the same entitlement shape.
  */
 export async function handleEntitlement(
   body: unknown,
@@ -1547,7 +1551,10 @@ export async function handleEntitlement(
   if (!isRecord(body) || !validateHostedIdentity(body)) {
     return rpcErrorResponse(undefined, 'malformed-request');
   }
-  const account = await getBillingAccountByIdentity(db, identityFrom(body));
+  const identity = identityFrom(body);
+  const account =
+    (await getBillingAccountByIdentity(db, identity)) ??
+    (await getOrCreateAdmittedBillingAccount(env, db, identity));
   if (account === null) {
     return rpcErrorResponse(undefined, 'not-found');
   }

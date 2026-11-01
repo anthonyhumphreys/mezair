@@ -12,7 +12,7 @@ the operator-controlled rollout, not production availability.
 
 Mezair connects trusted devices that belong to the same personal account. An
 organization or shared fleet is not required. Hosted writes require a paid
-entitlement or a redeemed beta code while hosted billing enforcement is on;
+subscription entitlement while hosted billing enforcement is on;
 this staging beta uses codes and keeps checkout disabled. Local use and
 self-hosted deployments carry no Mezair subscription charge. Mezair Cloud Agents
 are separate and remain default-off.

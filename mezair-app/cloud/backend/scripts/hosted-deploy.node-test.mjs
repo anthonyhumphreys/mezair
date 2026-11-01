@@ -17,6 +17,7 @@ import {
   BACKEND_DIR,
   HostedDeployError,
   assertProductionSecretsAreFresh,
+  createBackendSecretFingerprints,
   checkedFlags,
   cliArgs,
   mergeTargetVars,
@@ -51,18 +52,28 @@ const paths = {
   provisioner: '/tmp/staging/provisioner.jsonc',
 };
 
-test('the checked-in target example keeps current resources assigned to staging', () => {
+test('the checked-in target example pins the new Mezair staging resources', () => {
   const selected = validateManifest(manifest, 'staging');
   assert.equal(selected.workerName, 'mezair-sync-hosted-staging');
-  assert.equal(selected.databaseId, '9d396edc-2967-4d94-9ca0-51311c2c4f13');
+  assert.equal(selected.databaseId, 'ff1ce27d-1d40-4629-ad80-7fa61380ce94');
   assert.equal(selected.managedProvisioner, false);
   assert.equal(selected.provisionerName, undefined);
-  assert.equal(selected.workos.hostedClientId, 'client_01M27GDYFBX70F16V6ZQ74KSDE');
+  assert.equal(selected.workos.hostedClientId, 'client_01M6986W9HRXVYW0XEV61R7AHW');
 });
 
-test('production is blocked until its independent Cloudflare and WorkOS target is configured', () => {
-  assert.throws(() => validateManifest(manifest, 'production'), /production\.accountId/);
+test('production is blocked when its independent Cloudflare account is missing', () => {
+  const incomplete = structuredClone(manifest);
+  incomplete.environments.production.accountId = '';
+  assert.throws(() => validateManifest(incomplete, 'production'), /production\.accountId/);
   assert.equal(manifest.environments.production.managedProvisioner, false);
+});
+
+test('the checked-in production target uses separate Mezair resources and WorkOS clients', () => {
+  const production = validateManifest(manifest, 'production');
+  assert.equal(production.workerName, 'mezair-sync-hosted-production');
+  assert.equal(production.databaseId, '2cda230a-489c-442b-964b-6e83fc4f242c');
+  assert.notEqual(production.workos.desktopClientId, staging.workos.desktopClientId);
+  assert.notEqual(production.workos.hostedClientId, staging.workos.hostedClientId);
 });
 
 test('secret source selection accepts one JSON, dotenv, or explicit process source', () => {
@@ -490,27 +501,42 @@ test('beta deploys without Stripe prices and paid signup requires explicit check
       productionPath,
       hostedConfig(production, 'production', { MEZAIR_CLOUD_AGENTS_ENABLED: 'true' }),
     );
-    assert.equal(validateGeneratedConfig(productionPath, production, 'production').name, production.workerName);
+    assert.equal(
+      validateGeneratedConfig(productionPath, production, 'production').name,
+      production.workerName,
+    );
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
 });
 
 test('paid signup can be explicitly enabled only with prices, HTTPS return URLs and Stripe secrets', () => {
-  const config = { vars: {
-    HOSTED_CHECKOUT_ENABLED: 'true',
-    STRIPE_PRICE_SYNC_MONTHLY: 'price_personal_month',
-    STRIPE_PRICE_SYNC_ANNUAL: 'price_personal_year',
-    STRIPE_PRICE_TEAM_MONTHLY: 'price_team_month',
-    STRIPE_PRICE_TEAM_ANNUAL: 'price_team_year',
-    HOSTED_CHECKOUT_SUCCESS_URL: 'https://example.test/account/billing',
-    HOSTED_CHECKOUT_CANCEL_URL: 'https://example.test/account/billing',
-    HOSTED_PORTAL_RETURN_URL: 'https://example.test/account/billing',
-  } };
-  assert.throws(() => validateCheckoutSecrets(config, {}, 'staging'), /requires both Stripe secrets/);
-  assert.doesNotThrow(() => validateCheckoutSecrets(config, {
-    STRIPE_SECRET_KEY: 'sk_test_fake', STRIPE_WEBHOOK_SECRET: 'whsec_fake',
-  }, 'staging'));
+  const config = {
+    vars: {
+      HOSTED_CHECKOUT_ENABLED: 'true',
+      STRIPE_PRICE_SYNC_MONTHLY: 'price_personal_month',
+      STRIPE_PRICE_SYNC_ANNUAL: 'price_personal_year',
+      STRIPE_PRICE_TEAM_MONTHLY: 'price_team_month',
+      STRIPE_PRICE_TEAM_ANNUAL: 'price_team_year',
+      HOSTED_CHECKOUT_SUCCESS_URL: 'https://example.test/account/billing',
+      HOSTED_CHECKOUT_CANCEL_URL: 'https://example.test/account/billing',
+      HOSTED_PORTAL_RETURN_URL: 'https://example.test/account/billing',
+    },
+  };
+  assert.throws(
+    () => validateCheckoutSecrets(config, {}, 'staging'),
+    /requires both Stripe secrets/,
+  );
+  assert.doesNotThrow(() =>
+    validateCheckoutSecrets(
+      config,
+      {
+        STRIPE_SECRET_KEY: 'sk_test_fake',
+        STRIPE_WEBHOOK_SECRET: 'whsec_fake',
+      },
+      'staging',
+    ),
+  );
 });
 
 test('production migration list cannot reuse staging WorkOS user IDs', () => {
@@ -792,6 +818,158 @@ test('production isolation compares dotenv staging secrets and rejects an ambien
   }
 });
 
+test('fingerprint isolation rejects reused scalar and renamed HMAC credentials without staging secrets', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'hosted-fingerprints-test-'));
+  const referencePath = join(directory, 'staging-fingerprints.json');
+  const stageSecrets = {
+    HOSTED_SERVICE_KEYS: JSON.stringify({ oldWebsite: 's'.repeat(48) }),
+    HOSTED_OPERATOR_KEYS: JSON.stringify({ oldOperator: 'o'.repeat(48) }),
+    WORKOS_API_KEY: 'sk_test_staging_unique',
+    WORKOS_WEBHOOK_SECRET: 'staging_webhook_unique',
+    MANAGED_PROVISIONER_TOKEN: 'p'.repeat(48),
+    CLOUDFLARE_TUNNEL_ACCOUNT_ID: 'shared-account',
+    CLOUDFLARE_TUNNEL_ZONE_ID: 'shared-zone',
+    CLOUDFLARE_TUNNEL_API_TOKEN: 'staging-tunnel-token',
+  };
+  const productionSecrets = {
+    ...stageSecrets,
+    HOSTED_SERVICE_KEYS: JSON.stringify({ website: 'x'.repeat(48) }),
+    HOSTED_OPERATOR_KEYS: JSON.stringify({ operator: 'y'.repeat(48) }),
+    WORKOS_API_KEY: 'sk_production_unique',
+    WORKOS_WEBHOOK_SECRET: 'production_webhook_unique',
+    MANAGED_PROVISIONER_TOKEN: 'q'.repeat(48),
+    CLOUDFLARE_TUNNEL_API_TOKEN: 'production-tunnel-token',
+  };
+  const targetManifest = {
+    ...manifest,
+    stagingSecretFingerprintsFile: referencePath,
+    environments: {
+      ...manifest.environments,
+      staging: { ...staging, secrets: { backendEnv: 'process' } },
+    },
+  };
+  try {
+    const reference = createBackendSecretFingerprints(stageSecrets);
+    const serialized = JSON.stringify(reference);
+    for (const value of Object.values(stageSecrets))
+      assert.equal(serialized.includes(value), false);
+    writeJson(referencePath, reference);
+    assert.doesNotThrow(() => assertProductionSecretsAreFresh(targetManifest, productionSecrets));
+    for (const name of [
+      'WORKOS_API_KEY',
+      'WORKOS_WEBHOOK_SECRET',
+      'MANAGED_PROVISIONER_TOKEN',
+      'CLOUDFLARE_TUNNEL_API_TOKEN',
+    ]) {
+      assert.throws(
+        () =>
+          assertProductionSecretsAreFresh(targetManifest, {
+            ...productionSecrets,
+            [name]: stageSecrets[name],
+          }),
+        new RegExp(`Production secret ${name} reuses staging`),
+      );
+    }
+    for (const name of ['HOSTED_SERVICE_KEYS', 'HOSTED_OPERATOR_KEYS']) {
+      const reused = Object.values(JSON.parse(stageSecrets[name]))[0];
+      assert.throws(
+        () =>
+          assertProductionSecretsAreFresh(targetManifest, {
+            ...productionSecrets,
+            [name]: JSON.stringify({ renamed: reused }, null, 2),
+          }),
+        /reuses a staging key/,
+      );
+      const other = name === 'HOSTED_SERVICE_KEYS' ? 'HOSTED_OPERATOR_KEYS' : 'HOSTED_SERVICE_KEYS';
+      assert.throws(
+        () =>
+          assertProductionSecretsAreFresh(targetManifest, {
+            ...productionSecrets,
+            [other]: JSON.stringify({ crossed: reused }),
+          }),
+        /must not reuse keys from either staging audience/,
+      );
+    }
+    rmSync(referencePath);
+    assert.throws(
+      () => assertProductionSecretsAreFresh(targetManifest, productionSecrets),
+      /missing or invalid JSON/,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('fingerprint isolation fails closed on incomplete or malformed references', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'hosted-fingerprints-test-'));
+  const referencePath = join(directory, 'fingerprints.json');
+  const secrets = {
+    HOSTED_SERVICE_KEYS: JSON.stringify({ website: 's'.repeat(48) }),
+    WORKOS_API_KEY: 'sk_test_staging_unique',
+    WORKOS_WEBHOOK_SECRET: 'staging_webhook_unique',
+  };
+  const reference = createBackendSecretFingerprints(secrets);
+  const targetManifest = { ...manifest, stagingSecretFingerprintsFile: referencePath };
+  const altered = (change) => {
+    const copy = structuredClone(reference);
+    change(copy);
+    return copy;
+  };
+  try {
+    for (const invalid of [
+      {},
+      null,
+      [],
+      { ...reference, algorithm: 'md5' },
+      altered((x) => {
+        delete x.fingerprints.HOSTED_SERVICE_KEYS;
+      }),
+      altered((x) => {
+        x.fingerprints.WORKOS_API_KEY = [];
+      }),
+      altered((x) => {
+        x.fingerprints.HOSTED_SERVICE_KEYS = ['not-a-hash'];
+      }),
+      altered((x) => {
+        x.fingerprints.unknown = ['a'.repeat(64)];
+      }),
+      altered((x) => {
+        x.fingerprints.WORKOS_API_KEY = ['a'.repeat(64), 'b'.repeat(64)];
+      }),
+    ]) {
+      writeJson(referencePath, invalid);
+      assert.throws(
+        () => assertProductionSecretsAreFresh(targetManifest, secrets),
+        /incomplete or malformed/,
+      );
+    }
+    writeJson(referencePath, reference);
+    assert.throws(
+      () => assertProductionSecretsAreFresh(targetManifest, {}),
+      /complete core backend secret set/,
+    );
+    const managed = {
+      ...targetManifest,
+      environments: {
+        ...manifest.environments,
+        staging: managedProvisionerStaging,
+      },
+    };
+    assert.throws(
+      () => assertProductionSecretsAreFresh(managed, secrets),
+      /incomplete or malformed/,
+    );
+    assert.throws(
+      () => validateManifest({ ...manifest, stagingSecretFingerprintsFile: '' }, 'production'),
+      /non-empty path/,
+    );
+    const target = { ...staging, secrets: { backendFile: referencePath } };
+    assert.throws(() => readBackendSecrets(target, 'staging'), /invalid shape/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('secret forwarding files contain only selected values, use mode 0600, and always clean up', () => {
   let successfulFiles;
   const status = withSecretFiles(
@@ -901,10 +1079,7 @@ test('run forwards dotenv secrets through temporary files and cleans them up on 
       configPath,
       hostedConfig(target, 'staging', { MEZAIR_MESH_MANAGED_ENDPOINTS: 'true' }),
     );
-    writeFileSync(
-      envPath,
-      envContents.replace(/^CLOUDFLARE_TUNNEL_API_TOKEN=.*\n/m, ''),
-    );
+    writeFileSync(envPath, envContents.replace(/^CLOUDFLARE_TUNNEL_API_TOKEN=.*\n/m, ''));
     assert.throws(
       () => run(args, () => assert.fail('missing tunnel credential reached the CLI')),
       /requires CLOUDFLARE_TUNNEL_API_TOKEN when MEZAIR_MESH_MANAGED_ENDPOINTS is enabled/,
@@ -949,13 +1124,7 @@ test('run forwards dotenv secrets through temporary files and cleans them up on 
 });
 
 test('target command construction pins all resource and generated-config inputs', () => {
-  const args = cliArgs(
-    'plan',
-    undefined,
-    managedProvisionerStaging,
-    paths,
-    ['--json', '--write'],
-  );
+  const args = cliArgs('plan', undefined, managedProvisionerStaging, paths, ['--json', '--write']);
   assert.deepEqual(args.slice(0, 4), ['mesh', 'plan', '--backend', BACKEND_DIR]);
   assert.ok(args.includes('--stage') && args.includes('staging'));
   assert.ok(args.includes('--name') && args.includes(staging.workerName));

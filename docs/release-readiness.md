@@ -34,7 +34,7 @@ signing identities, hosted resources and profile compatibility.
   and [staging acceptance runbook](../mezair-app/docs/runbooks/hosted-sync/staging-acceptance.md).
   Match Desktop, daemon, website, optional clients and the deployed backend to
   the selected candidate. Verify advertised capabilities for the features tested.
-- Exercise hosted sign-in, entitlement or beta-code admission, recovery and
+- Exercise hosted sign-in, waitlist admission, Stripe checkout and subscription entitlement, recovery and
   revocation with a disposable account. Use two physical hosts on separate WANs
   for bidirectional Sync, approval/denial, interruption, reconnect and cleanup.
 - Run the [browser workspace acceptance checks](../mezair-website/content/docs/sync/browser-workspace.md):

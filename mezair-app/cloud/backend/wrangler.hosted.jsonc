@@ -2,7 +2,13 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "mezair-backend-hosted",
   "main": "src/index.ts",
-  "compatibility_date": "2026-09-01",
+  "compatibility_date": "2026-10-31",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "redact_query_string": true,
+  },
   // BILL-01 hosted deployment: same Worker + Durable Objects + R2 surface as
   // wrangler.jsonc, plus the D1 billing store used by hosted identity
   // and the /internal/hosted/* service channel. Self-host deploys keep using
@@ -16,14 +22,14 @@
   // See docs/runbooks/hosted-sync/deploy.md in mezair-app for the complete
   // branch-testing sequence and per-target generated configuration.
   //
-  // Hosted identity and billing. Stripe is optional during code-only beta.
+  // Hosted identity and billing. Checkout stays closed until Stripe is configured.
   // Secrets via `wrangler secret put`, never in vars:
   //   WORKOS_API_KEY          WorkOS environment key for org + invite APIs
   //   WORKOS_WEBHOOK_SECRET   signing secret for /v1/hosted/workos-webhook
   //   HOSTED_SERVICE_KEYS     website -> backend HMAC map (BILL-01)
   //   HOSTED_OPERATOR_KEYS    separate operator-only HMAC map (optional)
   // Vars:
-  //   HOSTED_CHECKOUT_ENABLED       false during beta; explicit true opens paid signup
+  //   HOSTED_CHECKOUT_ENABLED       false during bootstrap; explicit true opens paid signup
   //   HOSTED_PORTAL_RETURN_URL      fixed portal return target for existing billing
   //   HOSTED_BILLING_ENVIRONMENT    generated as 'staging' or 'production'
   //   HOSTED_ADMITTED_WORKOS_USER_IDS JSON array of reviewed existing user_... IDs, if needed

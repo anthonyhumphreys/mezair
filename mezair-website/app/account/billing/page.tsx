@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AuthNotConfigured, BackendNotConfigured } from "@/components/account/not-configured";
-import { BetaCodeForm, BillingActions } from "@/components/account/billing-actions";
+import { BillingActions } from "@/components/account/billing-actions";
 import { EntitlementStateBadge, entitlementSummary } from "@/components/account/entitlement";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, hostedFailureMessage, loadAccountContext, tryHosted } from "@/lib/account";
@@ -27,7 +27,7 @@ async function BillingData({ identity }: { identity: HostedIdentity }) {
         <h1 className="text-3xl font-semibold tracking-[-0.02em]">Hosted Sync &amp; Mesh</h1>
         <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
           A subscription pays for Mezair-hosted Sync &amp; Mesh, not the desktop app.
-          Invited beta testers can redeem a code below without a payment method.
+          Waitlist approval lets you subscribe. Complete Stripe checkout to start using hosted Sync &amp; Mesh.
           Desktop and self-hosting stay free. View <Link href="/pricing" className="underline underline-offset-4">pricing</Link>.
         </p>
       </header>
@@ -49,7 +49,7 @@ async function BillingData({ identity }: { identity: HostedIdentity }) {
             </p>
           ) : billing.code === "not-found" ? (
             <p className="text-sm text-muted-foreground">
-              No hosted account exists yet. Redeem your beta invitation or connect a device after waitlist approval.
+              Request access through the waitlist. Once approved, finish signup with the approved email address and choose a subscription.
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -57,11 +57,6 @@ async function BillingData({ identity }: { identity: HostedIdentity }) {
             </p>
           )}
         </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>Have a beta invitation?</CardTitle></CardHeader>
-        <CardContent><BetaCodeForm /></CardContent>
       </Card>
 
       {billing.ok && billing.data.teamSponsorship !== null ? (
@@ -148,7 +143,7 @@ async function BillingData({ identity }: { identity: HostedIdentity }) {
               </dl>
             ) : (
               <p className="text-sm text-muted-foreground">
-                You don&apos;t have a personal subscription. A beta code or an assigned paid team seat can also grant hosted access.
+                You don&apos;t have a personal subscription. Choose a plan below, or use a paid seat assigned by your organisation.
               </p>
             )}
             {billing.data.pendingCheckout !== null ? (
@@ -165,7 +160,7 @@ async function BillingData({ identity }: { identity: HostedIdentity }) {
                 billing.data.subscription !== null || billing.data.pendingCheckout !== null
               }
             />
-            {!billing.data.checkoutAvailable ? <p className="text-sm text-muted-foreground">Paid signup is not open yet. <Link href="/waitlist" className="underline underline-offset-4">Join the waitlist</Link>; invited testers receive a beta code.</p> : null}
+            {!billing.data.checkoutAvailable ? <p className="text-sm text-muted-foreground">Subscriptions are not available on this deployment yet. <Link href="/waitlist" className="underline underline-offset-4">Request beta access</Link> to join the waitlist.</p> : null}
             {billing.data.lastReconcileAt !== null || billing.data.lastWebhookAt !== null ? (
               <p className="text-xs text-muted-foreground">
                 Billing history refreshed: {formatDate(billing.data.lastReconcileAt) ?? "never"} ·

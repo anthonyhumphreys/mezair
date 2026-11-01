@@ -100,6 +100,28 @@ function removalEvidence(
 }
 
 describe("Mesh backend recipe planning", () => {
+  it("retains runtime compatibility and logging settings in generated deployments", async () => {
+    const backendDir = await createBackendProject();
+    await writeFile(
+      BACKEND_WRANGLER_PATH(backendDir),
+      BACKEND_WRANGLER_CONFIG.replace(
+        '"compatibility_date": "2026-09-01",',
+        '"compatibility_date": "2026-09-01", "compatibility_flags": ["nodejs_compat"], "observability": {"enabled": true, "redact_query_string": true},',
+      ),
+    );
+    const plan = await createMeshDeploymentPlan({
+      ...baseOptions(backendDir),
+      environmentName: "staging",
+    });
+    const config = JSON.parse(plan.config.contents);
+    expect(config.compatibility_flags).toEqual(["nodejs_compat"]);
+    expect(config.observability).toEqual({
+      enabled: true,
+      redact_query_string: true,
+    });
+    expect(config.env.staging.observability).toEqual(config.observability);
+  });
+
   it("produces a bounded deployment plan from the backend project", async () => {
     const backendDir = await createBackendProject();
 

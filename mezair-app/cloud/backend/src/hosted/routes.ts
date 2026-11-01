@@ -8,6 +8,7 @@
 import { BROWSER_WORKSPACE_MAX_RPC_BODY_BYTES } from '../../../contract/browser-workspace';
 import { isRecord, rpcErrorResponse } from '../rpc';
 import { handleBetaRedeem } from './beta';
+import { getOrCreateAdmittedBillingAccount } from './admission';
 import {
   handleBillingOverview,
   handleCheckout,
@@ -106,11 +107,13 @@ function parseServiceKeys(raw: string | undefined): Record<string, string> | nul
 }
 
 /** `POST /internal/hosted/account` — the website's billing-account lookup. */
-async function handleHostedAccount(body: unknown, db: D1Database): Promise<Response> {
+async function handleHostedAccount(body: unknown, env: Env, db: D1Database): Promise<Response> {
   if (!isRecord(body) || !validateHostedIdentity(body)) {
     return rpcErrorResponse(undefined, 'malformed-request');
   }
-  const account = await getBillingAccountByIdentity(db, body);
+  const account =
+    (await getBillingAccountByIdentity(db, body)) ??
+    (await getOrCreateAdmittedBillingAccount(env, db, body));
   if (account === null) {
     return rpcErrorResponse(undefined, 'not-found');
   }
@@ -237,7 +240,7 @@ export async function handleHostedRequest(request: Request, env: Env): Promise<R
       if (organizationResponse !== null) return organizationResponse;
       switch (path) {
         case '/internal/hosted/account':
-          return await handleHostedAccount(json, db);
+          return await handleHostedAccount(json, env, db);
         case '/internal/hosted/mesh-hosts':
           return await handleHostedMeshHosts(json, env, db);
         case '/internal/hosted/mesh-machine-admission':

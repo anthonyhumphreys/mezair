@@ -858,6 +858,25 @@ describe('entitlement over stored provider truth', () => {
 });
 
 describe('internal billing routes', () => {
+  it('admits an approved website signup without granting a subscription or requiring a device', async () => {
+    const identity = makeIdentity(`approved-signup-${crypto.randomUUID()}`);
+    await stubApprovedWaitlist(identity);
+    const overview = await signedHostedPost('/internal/hosted/billing', identity);
+    expect(overview.status).toBe(200);
+    expect(overview.body).toMatchObject({
+      subscription: null,
+      entitlement: {
+        state: 'restricted', source: 'none', fundedBy: 'none',
+        capabilities: { syncWrite: false, meshSubmit: false },
+      },
+    });
+    const account = await getBillingAccountByIdentity(hostedDb(), identity);
+    expect(account).toMatchObject({ lifecycle: 'active', sync_account_id: null });
+    const entitlement = await signedHostedPost('/internal/hosted/entitlement', identity);
+    expect(entitlement.status).toBe(200);
+    expect(entitlement.body['capabilities']).toEqual({ syncWrite: false, meshSubmit: false });
+  });
+
   it.each([
     { interval: 'month', priceId: MONTHLY_PRICE, amount: 899 },
     { interval: 'year', priceId: ANNUAL_PRICE, amount: 8990 },
@@ -889,6 +908,13 @@ describe('internal billing routes', () => {
       });
       expect(checkout.status).toBe(200);
       expect(checkout.body).toEqual({ checkoutUrl: 'https://checkout.stripe.com/test', sessionId });
+      const calls = await (await fetch(`${STRIPE_API}/__stripe-stub/calls`)).json() as {
+        calls: { method: string; path: string; params: Record<string, string> }[];
+      };
+      expect(calls.calls.find((call) => call.path === '/v1/checkout/sessions')).toMatchObject({
+        method: 'POST',
+        params: { mode: 'subscription', allow_promotion_codes: 'true' },
+      });
       expect(
         (await getEntitlement(hostedDb(), account, Date.now(), DEFAULT_HOSTED_LIMITS, false)).state,
       ).toBe('restricted');
@@ -1001,6 +1027,7 @@ describe('internal billing routes', () => {
 
   it('billing overview and entitlement answer the stored state', async () => {
     const identity = makeIdentity(`over-${crypto.randomUUID()}`);
+    await stubWaitlist(identity, 'pending');
     const unknown = await signedHostedPost('/internal/hosted/billing', identity);
     expect(unknown.status).toBe(404);
 

@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import {
   createPortalAction,
   createCheckoutAction,
-  redeemBetaCodeAction,
   reconcileAction,
   type ActionResult
 } from "@/app/account/actions";
@@ -100,41 +99,5 @@ export function BillingActions({ hasStripeCustomer, checkoutAvailable = false, h
         </p>
       ) : null}
     </div>
-  );
-}
-
-export function BetaCodeForm() {
-  const router = useRouter();
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  return (
-    <form className="grid gap-3" onSubmit={async (event) => {
-      event.preventDefault();
-      const form = event.currentTarget;
-      const code = String(new FormData(form).get("code") ?? "");
-      setPending(true); setError(null); setSuccess(null);
-      try {
-        const result = await redeemBetaCodeAction(code);
-        if (!result.ok) setError(result.message);
-        else {
-          form.reset();
-          setSuccess(`Beta access is active until ${new Date(result.data.accessUntil).toLocaleDateString()}. No payment method required.`);
-          router.refresh();
-        }
-      } catch { setError("Could not redeem the code. Try again."); }
-      finally { setPending(false); }
-    }}>
-      <label htmlFor="beta-code" className="text-sm font-medium">Beta invitation code</label>
-      <div className="flex flex-wrap gap-2">
-        <input id="beta-code" name="code" type="text" required maxLength={43} autoComplete="off" autoCapitalize="none"
-          spellCheck={false} disabled={pending} aria-describedby="beta-code-help" aria-invalid={error !== null}
-          className="min-h-11 min-w-0 flex-1 rounded-md border bg-background px-3 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-        <Button type="submit" disabled={pending}>{pending ? "Redeeming…" : "Redeem beta code"}</Button>
-      </div>
-      <p id="beta-code-help" className="text-sm text-muted-foreground">Invited testers receive a code after waitlist approval. Each code belongs to one account once redeemed.</p>
-      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-      {success ? <p role="status" className="text-sm text-muted-foreground">{success}</p> : null}
-    </form>
   );
 }

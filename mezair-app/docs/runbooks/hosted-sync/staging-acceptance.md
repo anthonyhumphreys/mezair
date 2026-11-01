@@ -3,7 +3,9 @@
 Use this after the backend and current desktop candidate are deployed. The
 deployment sequence starts in [staging-next-steps.md](staging-next-steps.md);
 this file defines the live acceptance gates. Staging hosted writes require an
-admitted account and a redeemed beta code; checkout stays disabled. Local use
+admitted account and valid subscription evidence. Automatic staging checkout
+stays disabled; rehearse new signup on a separately reviewed Stripe test-mode
+checkout deployment. Approval alone must leave writes restricted. Local use
 and self-hosted deployments carry no Mezair subscription charge. Mezair Cloud
 Agents are separate and stay off by default.
 

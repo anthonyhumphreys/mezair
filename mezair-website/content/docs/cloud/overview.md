@@ -20,7 +20,7 @@ Follow the [Notes quickstart](/docs/cloud/quickstart) to add and read records, t
 
 Before deploying, review which resources your app needs and whether the chosen deployment target supports them. AWS is in preview. Cloudflare support is still experimental; a resource appearing in a plan does not mean the runtime can use it. Read [data and background work](/docs/cloud/app-backends) for the shared AWS and Cloudflare backend contract. See [status and limits](/docs/cloud/status-and-limits) before choosing a target for a live app.
 
-The framework is open source and runs in your own provider accounts. Your hosting and model providers bill you directly. **Mezair Cloud Agents**, the planned service that would run agents on machines hosted by Mezair, has not launched. It is separate from this framework and from Desktop Sync.
+The framework is open source and runs in your own provider accounts. Your hosting and model providers bill you directly, and no Sync & Mesh subscription is required. **Mezair Cloud Agents**, the service that will run agents on machines hosted by Mezair, is **coming soon**. It is separate from this framework and from Desktop Sync.
 
 ## Terms used in the guides
 

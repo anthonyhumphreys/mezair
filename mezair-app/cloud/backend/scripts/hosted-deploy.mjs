@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { parseEnv } from 'node:util';
+import { createHash } from 'node:crypto';
 
 export const BACKEND_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 export const DEFAULT_MANIFEST = join(BACKEND_DIR, '.wrangler', 'hosted-targets.json');
@@ -134,6 +135,12 @@ function validateTarget(target, environment) {
 export function validateManifest(manifest, environment) {
   if (manifest?.schemaVersion !== 1 || !manifest.environments)
     throw new HostedDeployError('Manifest must have schemaVersion 1 and an environments object.');
+  if (
+    manifest.stagingSecretFingerprintsFile !== undefined &&
+    (typeof manifest.stagingSecretFingerprintsFile !== 'string' ||
+      !manifest.stagingSecretFingerprintsFile.trim())
+  )
+    throw new HostedDeployError('stagingSecretFingerprintsFile must be a non-empty path.');
   const staging = validateTarget(manifest.environments.staging, 'staging');
   const target = validateTarget(manifest.environments[environment], environment);
   if (environment === 'production') {
@@ -508,11 +515,20 @@ export function validateCheckoutVars(config, environment) {
   if (!['true', 'false'].includes(vars.HOSTED_CHECKOUT_ENABLED))
     throw new HostedDeployError(`${environment} HOSTED_CHECKOUT_ENABLED must be true or false.`);
   if (vars.HOSTED_CHECKOUT_ENABLED !== 'true') return;
-  for (const name of ['STRIPE_PRICE_SYNC_MONTHLY', 'STRIPE_PRICE_SYNC_ANNUAL', 'STRIPE_PRICE_TEAM_MONTHLY', 'STRIPE_PRICE_TEAM_ANNUAL']) {
+  for (const name of [
+    'STRIPE_PRICE_SYNC_MONTHLY',
+    'STRIPE_PRICE_SYNC_ANNUAL',
+    'STRIPE_PRICE_TEAM_MONTHLY',
+    'STRIPE_PRICE_TEAM_ANNUAL',
+  ]) {
     if (typeof vars[name] !== 'string' || !/^price_[A-Za-z0-9_]+$/.test(vars[name]))
       throw new HostedDeployError(`${environment} checkout requires ${name}.`);
   }
-  for (const name of ['HOSTED_CHECKOUT_SUCCESS_URL', 'HOSTED_CHECKOUT_CANCEL_URL', 'HOSTED_PORTAL_RETURN_URL']) {
+  for (const name of [
+    'HOSTED_CHECKOUT_SUCCESS_URL',
+    'HOSTED_CHECKOUT_CANCEL_URL',
+    'HOSTED_PORTAL_RETURN_URL',
+  ]) {
     let valid = false;
     try { valid = new URL(vars[name]).protocol === 'https:'; } catch {}
     if (!valid) throw new HostedDeployError(`${environment} checkout requires an HTTPS ${name}.`);
@@ -626,7 +642,92 @@ export function readProvisionerToken(target, environment) {
   return token;
 }
 
+const SHARED_PROVIDER_IDS = new Set(['CLOUDFLARE_TUNNEL_ACCOUNT_ID', 'CLOUDFLARE_TUNNEL_ZONE_ID']);
+const HMAC_SECRET_NAMES = ['HOSTED_SERVICE_KEYS', 'HOSTED_OPERATOR_KEYS'];
+const REQUIRED_FINGERPRINT_NAMES = [
+  'HOSTED_SERVICE_KEYS',
+  'WORKOS_API_KEY',
+  'WORKOS_WEBHOOK_SECRET',
+];
+
+function secretFingerprint(value) {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+/** A comparison reference, never a deployable credential source. */
+export function createBackendSecretFingerprints(secrets) {
+  if (REQUIRED_FINGERPRINT_NAMES.some((name) => !secrets?.[name]))
+    throw new HostedDeployError('Credential fingerprints require the complete core backend secret set.');
+  const fingerprints = {};
+  for (const [name, value] of Object.entries(selectBackendSecrets(secrets))) {
+    if (SHARED_PROVIDER_IDS.has(name)) continue;
+    if (typeof value !== 'string' || !value.trim())
+      throw new HostedDeployError(`Cannot fingerprint missing or invalid ${name}.`);
+    const values = HMAC_SECRET_NAMES.includes(name)
+      ? Object.values(validateHmacKeyMap(value, name, 'staging'))
+      : [value];
+    fingerprints[name] = [...new Set(values.map(secretFingerprint))];
+  }
+  return { schemaVersion: 1, algorithm: 'sha256', fingerprints };
+}
+
+function assertFreshAgainstFingerprints(manifest, secrets) {
+  let reference;
+  try {
+    reference = JSON.parse(
+      readFileSync(resolveSecretPath(manifest.stagingSecretFingerprintsFile), 'utf8'),
+    );
+  } catch {
+    throw new HostedDeployError(
+      'Staging credential fingerprint reference is missing or invalid JSON.',
+    );
+  }
+  const entries = reference?.fingerprints;
+  if (
+    reference?.schemaVersion !== 1 ||
+    reference.algorithm !== 'sha256' ||
+    !entries ||
+    typeof entries !== 'object' ||
+    Array.isArray(entries) ||
+    REQUIRED_FINGERPRINT_NAMES.some((name) => !Object.hasOwn(entries, name)) ||
+    (manifest.environments.staging.managedProvisioner && !entries.MANAGED_PROVISIONER_TOKEN) ||
+    Object.entries(entries).some(
+      ([name, hashes]) =>
+        !SECRET_NAMES.has(name) ||
+        SHARED_PROVIDER_IDS.has(name) ||
+        !Array.isArray(hashes) ||
+        hashes.length === 0 ||
+        (!HMAC_SECRET_NAMES.includes(name) && hashes.length !== 1) ||
+        hashes.some((hash) => typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)),
+    )
+  )
+    throw new HostedDeployError(
+      'Staging credential fingerprint reference is incomplete or malformed.',
+    );
+
+  const production = createBackendSecretFingerprints(secrets).fingerprints;
+  for (const [name, hashes] of Object.entries(production)) {
+    if (hashes.some((hash) => entries[name]?.includes(hash)))
+      throw new HostedDeployError(
+        HMAC_SECRET_NAMES.includes(name)
+          ? `Production ${name} reuses a staging key.`
+          : `Production secret ${name} reuses staging.`,
+      );
+  }
+  if (
+    production.HOSTED_SERVICE_KEYS?.some((hash) => entries.HOSTED_OPERATOR_KEYS?.includes(hash)) ||
+    production.HOSTED_OPERATOR_KEYS?.some((hash) => entries.HOSTED_SERVICE_KEYS?.includes(hash))
+  )
+    throw new HostedDeployError(
+      'Production hosted HMAC keys must not reuse keys from either staging audience.',
+    );
+}
+
 export function assertProductionSecretsAreFresh(manifest, secrets) {
+  if (manifest.stagingSecretFingerprintsFile !== undefined) {
+    assertFreshAgainstFingerprints(manifest, secrets);
+    return;
+  }
   const staging = manifest.environments.staging;
   if (
     !staging.secrets?.backendFile &&

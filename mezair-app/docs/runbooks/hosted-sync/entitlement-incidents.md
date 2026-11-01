@@ -6,7 +6,8 @@ leave `HOSTED_BILLING_ENFORCEMENT` off and do not contact Mezair billing.
 ## Access decisions
 
 Hosted writes require a confirmed paid invoice covering the current period,
-an assigned paid team seat, or a redeemed unexpired beta code. The old global
+an assigned paid team seat, or a retained unexpired legacy beta grant.
+Waitlist approval only admits an account and never grants new hosted access. The old global
 preview deadline and `preview_eligible` flag do not grant access. Checkout
 completion alone does not prove payment. A subscription without a paid invoice
 does not grant access, even if Stripe reports it as active or trialing.

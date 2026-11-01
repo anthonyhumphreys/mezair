@@ -1,8 +1,16 @@
-# Hosted Sync staging deployment
+# Hosted Sync deployment
 
-Use the guarded staging workflow for the invite-only hosted Sync and Mesh beta.
-Staging grants write access through admitted accounts and redeemed beta codes;
-checkout stays disabled. The workflow deploys the existing staging backend
+The fresh Mezair staging and production resources were provisioned on
+31 October 2026. Current identities, verified bootstrap behavior and remaining
+operator steps are recorded in
+[the environment cutover record](../../../../docs/hosted-environment-cutover.md).
+The tracked hosted target manifests point to the new isolated environments.
+
+Use the guarded staging workflow for internal Sync and Mesh testing.
+Staging public signup and its waitlist are disabled; provision test identities
+explicitly. Automatic staging deployment keeps checkout disabled. Production
+waitlist approval permits signup; a valid subscription is required for new hosted
+write access. The workflow deploys the existing staging backend
 and applies D1 migrations. It does not
 deploy the Mezair Cloud Agents provisioner or container image. Cloud Agents
 remain disabled by default. Start with
@@ -13,8 +21,8 @@ candidate and action sequence.
 
 The workflow is
 [Hosted Sync staging backend](../../../../.github/workflows/sync-backend-staging.yml).
-Pushes to `develop` and `feature/sync-mesh--foundations` deploy the backend
-when one of its configured paths changes. A manual `workflow_dispatch` uses
+Pushes to `develop` deploy the backend when one of its configured paths changes.
+Manual `workflow_dispatch` also supports `main` and uses
 `managed_endpoint_pilot: false` by default. Both paths preserve the saved
 staging managed endpoint setting, set checkout off,
 force `MEZAIR_CLOUD_AGENTS_ENABLED` to false, review the guarded deployment
@@ -47,10 +55,12 @@ on `MEZAIR_MESH_MANAGED_ENDPOINTS` in the staging Worker. Later automatic pushes
 preserve the saved choice. The manual `managed_endpoint_pilot: true` input
 also enables a single deployment without changing the saved configuration.
 
-The selected Cloudflare account is `715060911f9418f1df0f9de0265d8a64`, and
-`mezair.dev` is its active zone `aa52d2318e7bb29a10e3d54c27153ca4`.
-Set `MACHINE_ENDPOINT_DOMAIN=mezair.dev`. Each allocation creates one
-host subdomain beneath that domain; existing website records are retained.
+The selected Cloudflare account is `715060911f9418f1df0f9de0265d8a64`.
+The previously documented zone `aa52d2318e7bb29a10e3d54c27153ca4` actually belongs
+to `anvilstack.dev`, not `mezair.dev`. No Mezair zone is currently accessible to
+this deployment login. Leave managed allocation disabled until the correct zone,
+DNS permissions and controlled `MACHINE_ENDPOINT_DOMAIN` are configured. Each
+allocation creates one host subdomain; existing website records are retained.
 Account and zone IDs are identifiers, not authentication credentials, but the
 deployment wrapper deliberately accepts them through the protected secret
 source alongside the API token.
@@ -78,18 +88,26 @@ deployment and descriptor shape only. Complete the live gates in
 [staging-acceptance.md](staging-acceptance.md), including two physical hosts
 on separate WANs.
 
-Stripe configuration is not required for code-only beta access. Keep checkout
-disabled and hosted billing enforcement enabled. Apply migration `0006_beta_codes`
-before deploying the paid-access code. Approve each tester on the WorkOS waitlist
-and issue a dated code using [beta access](beta-access.md). Existing accounts do
-not get blanket access from the former preview flag. Before rollout, inventory
-current testers and give them codes or verify their paid subscription evidence.
+Keep automatic staging checkout disabled and hosted billing enforcement enabled.
+Use a separately reviewed Stripe test-mode checkout deployment for the new paid
+signup acceptance. Provision internal testers through WorkOS and have them
+complete checkout using [hosted signup](beta-access.md). Admission is not a subscription entitlement.
+Existing redeemed grants retain their expiry; the former global preview flag
+does not grant access.
 See [entitlement incidents](entitlement-incidents.md) for denied-write recovery.
 
 ## Production
 
-Production deployment is outside this staging procedure. No production
-resources, customer migration, or billing cutover are part of this release.
-Do not fill the incomplete production target or run production commands from
-this guide. A future production release needs its own reviewed target and
-recorded evidence.
+Use `.github/workflows/sync-backend-production.yml` from `main` with the protected
+`mezair-production` environment and a reviewed provider-evidence reference. The
+production target is complete and distinct from staging. The bootstrap workflow
+preserves billing enforcement and keeps checkout, hosted agents and managed
+tunnels disabled. Configure and verify Stripe before changing that policy or
+admitting customers. See the environment cutover record for credential setup and
+the remaining website, DNS and release acceptance steps.
+
+The production workflow needs `STAGING_SECRET_FINGERPRINTS_JSON` in the protected
+environment's variables, rather than staging credential values. Regenerate this
+comparison reference whenever staging credentials rotate; see
+[secret inputs](secret-inputs.md). Production's three application credentials
+are already installed. The separate Cloudflare deployment token is still needed.

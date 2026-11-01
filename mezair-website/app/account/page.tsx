@@ -30,7 +30,7 @@ export default async function AccountOverviewPage() {
           Your sign-in, Sync &amp; Mesh status, and paired devices.
         </p>
         <Link href="/account/billing" className="mt-2 w-fit text-sm font-medium underline underline-offset-4">
-          Redeem a beta code or manage hosted Sync &amp; Mesh
+          Manage hosted Sync &amp; Mesh
         </Link>
       </header>
 
@@ -126,9 +126,9 @@ async function OverviewData({ identity }: { identity: HostedIdentity }) {
                     ) : entitlement.data.fundedBy === "personal" ? (
                       "Personal subscription"
                     ) : entitlement.data.fundedBy === "preview" ? (
-                      "Beta invitation"
+                      "Beta access"
                     ) : (
-                      <Link href="/account/billing" className="underline underline-offset-4">Subscribe or redeem a beta code</Link>
+                      <Link href="/account/billing" className="underline underline-offset-4">View hosted access</Link>
                     )}
                   </dd>
                 </div>

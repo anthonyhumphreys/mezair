@@ -13,9 +13,9 @@ order: 200
 Mezair Cloud is beta software. You can run Cells locally, build React/Vite
 clients, inspect them with the CLI and Lens, and try AWS preview deployments.
 
-Mezair Cloud Agents will run agents on machines we host. It hasn't launched
-and has no price or release date yet. The existing integrations use your own
-provider accounts, which bill you directly.
+**Mezair Cloud Agents is coming soon.** It will run agents on machines we host
+and is not available to enable yet. The existing integrations use your own
+provider accounts, which bill you directly and require no Sync & Mesh subscription.
 
 Use it for local development, demos, tests and contribution work. Before a
 preview deployment, check which features your adapter supports and inspect

@@ -14,7 +14,7 @@ A Mezair Agent declares its tools and permissions before it runs.
 
 Agents can work in a Mezair workspace, run a Cell workflow or provide a Cell's main interface. Each agent compiles to a manifest you can review and test locally. Adapters translate that manifest for a provider, so Cell code doesn't need provider-specific APIs.
 
-You can use the open-source runtime and CLI today with your own provider accounts. Providers bill you directly. Mezair Cloud Agents, which will run agents on machines we host, hasn't launched and has no price or release date yet.
+You can use the open-source runtime and CLI today with your own provider accounts. Providers bill you directly, and no Sync & Mesh subscription is required. **Mezair Cloud Agents**, which will run agents on machines we host, is **coming soon** and is not available to enable yet.
 
 [Agent Sandboxes](/docs/cloud/agent-sandboxes) support longer tasks that need
 an isolated repository, approval pauses and saved state. The first AWS Lambda

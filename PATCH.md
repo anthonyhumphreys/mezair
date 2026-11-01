@@ -651,3 +651,61 @@ and links to the renamed `anthonyhumphreys/mezair` repository. Vercel builds
 from `mezair-website` on `main`; the public hostname does not change the
 selected WorkOS/backend environment. Preserve every C1–C10 authentication,
 custody and evidence boundary.
+
+### C12: Hosted signup admission and subscription access
+
+Waitlist approval admits a verified identity to the paid service; it is not a
+subscription entitlement. Before creating a new hosted account, verify the
+configured WorkOS client and the exact approved, verified email (or the existing
+explicit operator admission). The website may create that admitted account on
+its first account/billing request without requiring prior device enrollment.
+An account row, sign-in, invitation or checkout redirect never grants hosted
+Sync/Mesh writes. Stripe-confirmed subscription/invoice state is authoritative,
+including the existing bounded renewal/outage-grace rules. No blanket free beta
+grant is created by approval. Retain already-recorded legacy access until its
+existing expiry or revocation, without advertising code redemption as signup.
+
+The end of November 2026 is the planned end of closed signup, not the expiry of
+a free subscription. Stripe promotion codes can be issued manually and redeemed
+inside subscription checkout; do not automatically issue coupons on approval.
+Mezair-operated coding agents are a separate fixed monthly add-on, currently
+disabled, with their own recurring price and entitlement. The amount and included
+usage must be defined before enabling checkout or execution. This compute is not
+included in the hosted Sync subscription.
+
+Owner modules: hosted admission/account/billing routes, website account and
+checkout surfaces, public signup copy and internal production deployment plan.
+Verify pending/unapproved signup denial, approved-but-unsubscribed restrictions,
+confirmed payment access and Stripe promotion-code checkout parameters. Live
+WorkOS/Stripe acceptance and deployment remain separate from automated tests.
+
+### C13: Isolated Mezair hosted environments
+
+Staging and production use independent Mezair Worker, Durable Object, D1, R2 and
+WorkOS identities pinned in the hosted target manifests. The operator authorized
+permanent teardown of the preceding Anvil staging resources; no retained staging
+account, subscription or encrypted state is imported into the new environments.
+Credential values stay outside tracked source and use distinct environment and
+service/operator audiences. Keep production credential freshness checks intact.
+Production CI compares SHA-256 credential fingerprints from the protected
+environment configuration, including individual HMAC values across audiences;
+it never needs the staging credential bundle. Refresh that comparison reference
+whenever staging credentials rotate. Local deployments may still compare the
+independent staging secret source directly. Missing or malformed references fail
+closed, and a fingerprint file cannot supply deployable backend credentials.
+
+The Mesh deployment recipe retains the backend source's compatibility flags and
+observability settings in generated configurations. Hosted runtime logs redact
+query strings. Production deployment is a manual workflow restricted to `main`
+and the `mezair-production` environment, with a provider-evidence reference.
+Bootstrap deployment keeps checkout, hosted coding agents and managed tunnels
+disabled. Admission approval never substitutes for subscription entitlement.
+WorkOS staging has public signup and its waitlist disabled for internal testing;
+production retains waitlist approval.
+
+Owner modules: hosted target manifests and deployment workflows, the Cloudflare
+Mesh recipe and hosted Worker configuration. Verify target isolation, generated
+runtime settings, migrations, descriptors and signed-channel rejection across
+environments. Live bootstrap evidence and remaining operator actions are recorded
+in `docs/hosted-environment-cutover.md`; full customer/payment/device acceptance
+remains distinct from provisioning.

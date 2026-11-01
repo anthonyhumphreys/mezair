@@ -1,7 +1,7 @@
 # Hosted Sync and Mesh rollout checklist
 
-The Mezair-hosted Sync and Mesh beta requires a paid entitlement or a redeemed
-beta code. Local use and self-hosted deployments carry no Mezair subscription
+The Mezair-hosted Sync and Mesh closed beta requires waitlist approval to sign up
+and a valid subscription to use hosted Sync & Mesh. Local use and self-hosted deployments carry no Mezair subscription
 charge. Mezair Cloud Agents are a separate paid service and stay disabled by
 default. This checklist records release gates; it is not evidence that staging
 or production passed them and does not authorize production resource changes.

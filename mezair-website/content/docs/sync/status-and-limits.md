@@ -10,12 +10,11 @@ order: 120
 
 # Status and limits
 
-Sync & Mesh, including LAN-first Mesh routing, is in beta through
-30 November 2026.
+Sync & Mesh, including LAN-first Mesh routing, is in beta.
 
 ## Availability and connections
 
-- **Mezair-hosted access is invite-only.** Invited testers receive a time-limited beta code. Paid signup is not open yet. You can [self-host the backend](/docs/sync/self-deploy) without a Mezair subscription; your infrastructure provider bills you directly.
+- **Mezair-hosted signup is invite-only until full public launch.** Approval lets you create an account and subscribe; hosted Sync & Mesh requires an active subscription. Paid signup is not open yet. You can [self-host the backend](/docs/sync/self-deploy) without a Mezair subscription; your infrastructure provider bills you directly.
 - **Live output needs a reachable host.** The account service coordinates jobs, but the machine running a job must be reachable for live traffic. Managed HTTPS routes require separate setup and use a provider proxy.
 - **Routing depends on the client.** Desktop, the daemon and native mobile prefer LAN addresses, then other private routes, HTTPS and managed ingress. The browser workspace uses HTTPS. See [LAN-first Mesh routes](/docs/sync/lan-first-routes).
 - **Mesh requires a backend connection.** LAN routing still uses backend admission and authorization. It does not provide offline Mesh.

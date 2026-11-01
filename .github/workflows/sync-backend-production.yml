@@ -1,0 +1,134 @@
+name: Hosted Sync production backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider_evidence:
+        description: "Reference to the reviewed live staging provider checks for this release"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-backend-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: mezair-production
+    defaults:
+      run:
+        working-directory: mezair-app/cloud/backend
+    env:
+      CI: true
+      MEZAIR_DEPLOYMENT_ENV: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            mezair-app/cloud/backend/pnpm-lock.yaml
+            mezair-cloud/pnpm-lock.yaml
+      - name: Install backend and deployment CLI dependencies
+        run: |
+          pnpm install --ignore-workspace --frozen-lockfile
+          pnpm --dir ../../../mezair-cloud install --frozen-lockfile
+      - name: Verify backend and deployment guards
+        run: |
+          pnpm typecheck
+          pnpm test
+          pnpm test:hosted-deploy
+          node scripts/verify-hosted-config.mjs --self-check
+      - name: Build deployment CLI
+        working-directory: mezair-cloud
+        run: pnpm build
+      - name: Prepare isolated production configuration
+        env:
+          HOSTED_SERVICE_KEYS: ${{ secrets.HOSTED_SERVICE_KEYS }}
+          HOSTED_OPERATOR_KEYS: ${{ secrets.HOSTED_OPERATOR_KEYS }}
+          WORKOS_API_KEY: ${{ secrets.WORKOS_API_KEY }}
+          WORKOS_WEBHOOK_SECRET: ${{ secrets.WORKOS_WEBHOOK_SECRET }}
+          STAGING_SECRET_FINGERPRINTS_JSON: ${{ vars.STAGING_SECRET_FINGERPRINTS_JSON }}
+        run: |
+          node --input-type=module <<'JS'
+          import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+          import { dirname } from 'node:path';
+          import { validateManifest, mergeTargetVars, validateBackendSecrets, assertProductionSecretsAreFresh } from './scripts/hosted-deploy.mjs';
+          const manifest = JSON.parse(readFileSync('hosted-targets.example.json', 'utf8'));
+          const target = validateManifest(manifest, 'production');
+          const secrets = Object.fromEntries(
+            ['HOSTED_SERVICE_KEYS', 'HOSTED_OPERATOR_KEYS', 'WORKOS_API_KEY', 'WORKOS_WEBHOOK_SECRET']
+              .filter(name => process.env[name])
+              .map(name => [name, process.env[name]]),
+          );
+          validateBackendSecrets(secrets, target, 'production');
+          const stagingFingerprints = JSON.parse(process.env.STAGING_SECRET_FINGERPRINTS_JSON || '{}');
+          manifest.stagingSecretFingerprintsFile = '.wrangler/staging-secret-fingerprints.json';
+          for (const [path, data] of [
+            [target.secrets.backendFile, secrets],
+            [manifest.stagingSecretFingerprintsFile, stagingFingerprints],
+            ['.wrangler/hosted-targets.json', manifest],
+          ]) {
+            mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+            writeFileSync(path, JSON.stringify(data), { mode: 0o600 });
+          }
+          assertProductionSecretsAreFresh(manifest, secrets);
+          const directory = `.wrangler/mesh/${target.workerName}`;
+          mkdirSync(directory, { recursive: true });
+          writeFileSync(`${directory}/vars.json`, JSON.stringify(mergeTargetVars({
+            HOSTED_CHECKOUT_ENABLED: 'false',
+            MEZAIR_CLOUD_AGENTS_ENABLED: 'false',
+            MEZAIR_MESH_MANAGED_ENDPOINTS: 'false',
+          }, target)), { mode: 0o600 });
+          writeFileSync(`${directory}/wrangler.jsonc`, JSON.stringify({
+            name: target.workerName,
+            account_id: target.accountId,
+            d1_databases: [{ binding: 'HOSTED_DB', database_name: target.databaseName, database_id: target.databaseId }],
+          }), { mode: 0o600 });
+          JS
+          pnpm hosted:deploy -- --environment production plan --json
+      - name: Validate, migrate, deploy and install production secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_API_TOKEN }}
+          PROVIDER_EVIDENCE: ${{ inputs.provider_evidence }}
+        run: |
+          [[ -n "$CLOUDFLARE_API_TOKEN" ]] || { echo 'Missing CLOUDFLARE_DEPLOY_API_TOKEN'; exit 1; }
+          pnpm hosted:deploy -- --environment production apply --dry-run --json
+          pnpm hosted:deploy -- --environment production migrate --json
+          pnpm hosted:deploy -- --environment production apply --evidence "$PROVIDER_EVIDENCE" --json
+          pnpm hosted:deploy -- --environment production secrets --json
+      - name: Verify production descriptor and secret names
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_API_TOKEN }}
+        run: |
+          pnpm exec wrangler secret list --format json --config .wrangler/mesh/mezair-sync-hosted-production/wrangler.jsonc > .wrangler/production-secret-names.json
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          const target = JSON.parse(readFileSync('.wrangler/hosted-targets.json', 'utf8')).environments.production;
+          const names = new Set(JSON.parse(readFileSync('.wrangler/production-secret-names.json', 'utf8')).map(secret => secret.name));
+          for (const name of ['HOSTED_SERVICE_KEYS', 'WORKOS_API_KEY', 'WORKOS_WEBHOOK_SECRET']) {
+            if (!names.has(name)) throw new Error(`Missing installed secret: ${name}`);
+          }
+          const response = await fetch(`${target.baseUrl}/.well-known/mezair-backend`);
+          if (!response.ok) throw new Error(`Production descriptor returned ${response.status}`);
+          const descriptor = await response.json();
+          if (descriptor.deploymentId !== target.deploymentId ||
+              descriptor.auth?.publicClientId !== target.workos.desktopClientId ||
+              !descriptor.authModes?.includes('workos-device') ||
+              descriptor.authModes?.includes('enrollment-code')) {
+            throw new Error('Production descriptor identity does not match the selected target');
+          }
+          console.log('Verified isolated production identity and installed secret names.');
+          JS

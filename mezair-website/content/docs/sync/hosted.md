@@ -11,8 +11,8 @@ order: 110
 # Mezair-hosted sync
 
 Mezair-hosted Sync & Mesh runs the backend for you. Access is currently an
-invite-only beta: invited testers receive a time-limited code without providing
-a payment method. Paid signup and production hosting are not available yet.
+invite-only beta. Waitlist approval lets you create an account and subscribe;
+hosted Sync & Mesh requires an active subscription. Paid signup and production hosting are not available yet.
 [Request beta access](/waitlist) to join.
 
 Planned prices are £8.99 a month or £89.90 a year for one person, and £12 per
@@ -43,11 +43,15 @@ in Settings → Sync & Mesh. See [Devices and sign-in](/docs/sync/devices).
 Signing in to the website does not enroll a Desktop device. Each device has
 its own revocable credential.
 
-## Beta codes and billing
+## Beta access and billing
 
-Redeem your invitation code on the [billing page](/account/billing). A code is
-single-use across accounts and grants access until the expiry in your invitation.
-A waitlist approval allows sign-in; the beta code grants hosted write access.
+Once your waitlist request is approved, follow the invitation email and finish
+signup with the approved email address. Choose a subscription on the
+[billing page](/account/billing) and complete Stripe checkout. Approval permits
+signup; hosted Sync & Mesh starts when the subscription is confirmed.
+
+Signup is invite-only until full public launch. If you have a Stripe promotion
+code, apply it during checkout.
 
 When paid signup opens, a personal subscription or an assigned paid team seat
 will provide hosted access. Team checkout requires an organisation owner and
@@ -67,7 +71,7 @@ stop. See [Status and limits](/docs/sync/status-and-limits).
 | --- | --- |
 | [Account](/account) | Check access and the limits that apply to your account. |
 | [Devices](/account/devices) | Rename and revoke enrolled devices. |
-| [Billing](/account/billing) | Redeem beta codes, review a subscription and manage payments. |
+| [Billing](/account/billing) | Choose a subscription, check hosted access and manage payments. |
 | [Organisations](/account/organizations) | Manage membership, invitations, roles and team billing. |
 | [Data](/account/data) | Export your data or request account deletion. |
 

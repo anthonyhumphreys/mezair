@@ -8,8 +8,8 @@ acceptance limits.
 ## Product boundary
 
 - Sync is optional per workspace, and Local is the default for a new workspace. Local use and
-  self-hosted deployments carry no Mezair subscription charge. The Mezair-hosted beta gates writes on
-  a paid entitlement or a redeemed beta code. Checkout stays closed in staging, and production
+  self-hosted deployments carry no Mezair subscription charge. The Mezair-hosted closed beta requires waitlist approval for signup
+  and a valid subscription for hosted writes. Stripe promotion codes are issued manually; approval does not grant a free subscription. Checkout stays closed in staging, and production
   hosted access is not available. Users choose when to sync portable workspace definitions,
   repository references, preferences, templates, agent definitions, and bootstrap instructions.
 - Workspace Sync does not copy repository contents, `.git`, dirty changes, or machine-local paths.
@@ -30,7 +30,7 @@ acceptance limits.
   Availability does not enable workspace Sync or Mesh job execution without user opt-in.
   Automatic backend deployments preserve the saved staging provisioning setting; production
   provisioning remains off. This is not general availability. The hosted backend still requires a
-  paid entitlement or beta code for writes. A separate
+  valid subscription for writes. A separate
   private network is not a prerequisite for physical testing through managed tunnels.
 
 ## Device setup and trust

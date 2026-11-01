@@ -2,7 +2,7 @@ name: Hosted Sync staging backend
 
 on:
   push:
-    branches: [develop, feature/sync-mesh--foundations]
+    branches: [develop]
     paths:
       - .github/workflows/sync-backend-staging.yml
       - mezair-app/cloud/backend/**
@@ -25,8 +25,7 @@ concurrency:
 
 jobs:
   deploy:
-    # The feature branch is allowed for the initial PR #91 rehearsal only.
-    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/feature/sync-mesh--foundations'
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: mezair-staging
@@ -153,14 +152,14 @@ jobs:
           curl --fail --silent --show-error --retry 3 \
             https://mezair-sync-hosted-staging.still-glitter-7d20.workers.dev/.well-known/mezair-backend \
             > .wrangler/staging-descriptor.json
-          jq -e '
+          jq -e --slurpfile targets hosted-targets.ci.json '
             .descriptorVersion == 1 and
             (.protocols | index("mezair-backend/1")) and
             (.profiles | index("sync/2")) and
             (.profiles | index("mesh/2")) and
             (.authModes | index("workos-device")) and
             (.authModes | index("enrollment-code") | not) and
-            .auth.publicClientId == "client_01M2XPX4PF98H2P7HCNRBZATTE"
+            .auth.publicClientId == $targets[0].environments.staging.workos.desktopClientId
           ' .wrangler/staging-descriptor.json
       - name: Record staging deployment
         env:

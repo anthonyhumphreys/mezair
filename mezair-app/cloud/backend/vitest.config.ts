@@ -8,6 +8,7 @@ import { defineConfig } from 'vitest/config';
 // FIFO on method + pathname; an unstubbed call fails loudly, and no test
 // traffic can reach the real api.stripe.com.
 const stripeStubQueue: { method: string; path: string; status: number; body: unknown }[] = [];
+const stripeStubCalls: { method: string; path: string; params: Record<string, string> }[] = [];
 const workosStubQueue: { method: string; path: string; status: number; body: unknown }[] = [];
 const workosStubCalls: { method: string; path: string }[] = [];
 
@@ -87,15 +88,24 @@ async function hostedProviderStubOutbound(request: Request): Promise<Response> {
   }
   if (url.pathname === '/__stripe-stub/reset' && request.method === 'POST') {
     stripeStubQueue.length = 0;
+    stripeStubCalls.length = 0;
     return json({ pending: 0 });
   }
   if (url.pathname === '/__stripe-stub/pending' && request.method === 'GET') {
     return json({ pending: stripeStubQueue });
   }
+  if (url.pathname === '/__stripe-stub/calls' && request.method === 'GET') {
+    return json({ calls: stripeStubCalls });
+  }
   if (request.headers.get('authorization') !== 'Bearer sk_test_fake') {
     return json({ error: { message: 'stripe-stub: missing or wrong bearer' } }, 401);
   }
   const key = `${request.method} ${url.pathname}`;
+  stripeStubCalls.push({
+    method: request.method,
+    path: url.pathname,
+    params: Object.fromEntries(new URLSearchParams(await request.text())),
+  });
   const index = stripeStubQueue.findIndex((rule) => `${rule.method} ${rule.path}` === key);
   if (index === -1) {
     return json({ error: { message: `stripe-stub: no queued response for ${key}` }, status: 500 });

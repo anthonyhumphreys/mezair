@@ -403,6 +403,7 @@ describe('fresh database schema', () => {
         'github_pat',
         'github_username',
         'telemetry_enabled',
+        'usage_statistics_enabled',
         'llm_gateway_api_key',
         'llm_gateway_billing_mode',
       ]) {
@@ -528,7 +529,7 @@ describe('fresh database schema', () => {
         ).map((column) => column.name),
       );
 
-      expect(SCHEMA_VERSION).toBe(117);
+      expect(SCHEMA_VERSION).toBe(118);
       for (const column of [
         'local_llm_mode',
         'local_llm_provider',
@@ -957,6 +958,25 @@ describe('fresh database schema', () => {
         telemetry_enabled: number;
       };
       expect(row.telemetry_enabled).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('does not infer usage-statistics consent from existing crash-report consent', () => {
+    const db = new Database(':memory:');
+    try {
+      db.exec(
+        'CREATE TABLE settings (id INTEGER PRIMARY KEY, telemetry_enabled INTEGER NOT NULL DEFAULT 0)',
+      );
+      db.exec('INSERT INTO settings (id, telemetry_enabled) VALUES (1, 1)');
+      applyMigration(db, MIGRATIONS[118]);
+      expect(
+        db.prepare('SELECT telemetry_enabled, usage_statistics_enabled FROM settings').get(),
+      ).toEqual({
+        telemetry_enabled: 1,
+        usage_statistics_enabled: 0,
+      });
     } finally {
       db.close();
     }

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { Archivo, JetBrains_Mono } from "next/font/google";
 import { PrivateAnalytics } from "@/components/site/private-analytics";
 import { ThemeScript } from "@/components/site/theme-script";
@@ -120,7 +121,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         <a href="#main-content" className="skip-link">Skip to content</a>
         {children}
-        <PrivateAnalytics />
+        <Suspense fallback={null}><PrivateAnalytics /></Suspense>
       </body>
     </html>
   );

@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 117;
+export const SCHEMA_VERSION = 118;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS factory_definitions (
@@ -542,6 +542,7 @@ CREATE TABLE IF NOT EXISTS settings (
   github_username TEXT,
   cloud_features_enabled INTEGER NOT NULL DEFAULT 0,
   telemetry_enabled INTEGER NOT NULL DEFAULT 0,
+  usage_statistics_enabled INTEGER NOT NULL DEFAULT 0,
   llm_gateway_api_key BLOB,
   llm_gateway_billing_mode TEXT NOT NULL DEFAULT 'devpass',
   updated_at TEXT DEFAULT (datetime('now'))
@@ -4182,6 +4183,7 @@ DROP TABLE share_ticket_publications;
 ALTER TABLE share_ticket_publications_v117 RENAME TO share_ticket_publications;
 CREATE INDEX idx_share_ticket_publications_share ON share_ticket_publications(share_record_id);
 `,
+  118: `ALTER TABLE settings ADD COLUMN usage_statistics_enabled INTEGER NOT NULL DEFAULT 0;`,
 };
 
 // Development builds could stamp v68 or v69 without the sync table migration.

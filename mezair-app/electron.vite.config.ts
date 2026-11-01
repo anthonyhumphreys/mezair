@@ -1,9 +1,11 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { loadEnv } from 'vite';
 import { meshBuildDefines } from './scripts/mesh-build-config.mjs';
 
 const buildBrand = process.env.MEZAIR_BRAND ?? process.env.npm_config_brand ?? '';
+const posthogEnv = loadEnv(process.env.NODE_ENV ?? 'production', process.cwd(), 'MEZAIR_POSTHOG_');
 const updateOrigin = process.env.MEZAIR_UPDATE_ORIGIN ?? '';
 const rawDeploymentEnv = process.env.MEZAIR_DEPLOYMENT_ENV;
 const deploymentEnv = (rawDeploymentEnv === undefined ? 'staging' : rawDeploymentEnv)
@@ -35,6 +37,12 @@ const define = {
 };
 const mainDefine = {
   ...define,
+  'process.env.MEZAIR_POSTHOG_PROJECT_TOKEN': JSON.stringify(
+    process.env.MEZAIR_POSTHOG_PROJECT_TOKEN ?? posthogEnv.MEZAIR_POSTHOG_PROJECT_TOKEN ?? '',
+  ),
+  'process.env.MEZAIR_POSTHOG_HOST': JSON.stringify(
+    process.env.MEZAIR_POSTHOG_HOST ?? posthogEnv.MEZAIR_POSTHOG_HOST ?? '',
+  ),
   ...meshBuildDefines({
     machineEndpoints: process.env.MEZAIR_MESH_MACHINE_ENDPOINTS,
     managedEndpoints: process.env.MEZAIR_MESH_MANAGED_ENDPOINTS,

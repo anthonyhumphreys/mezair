@@ -30,6 +30,29 @@ pnpm build
 pnpm typecheck
 ```
 
+## Website analytics
+
+PostHog replaces the previous Vercel Analytics integration. Configure
+`NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` and `NEXT_PUBLIC_POSTHOG_HOST` in `.env.local`
+and the hosting provider before building. Use the project's public ingestion
+token and regional ingestion host, never a personal API key. Missing configuration
+disables analytics and its consent controls.
+
+The site asks before initializing PostHog. Visitors can decline or change their
+choice through **Analytics preferences** in the footer. Do Not Track and Global
+Privacy Control suppress collection. The SDK keeps identifiers in memory, creates
+no person profiles, and disables autocapture, replay, surveys, performance capture,
+and remote feature configuration.
+
+Only public-page `$pageview` events and `download_clicked` events are sent, with
+`surface=website`. Downloads include only a fixed platform label. Account, auth,
+artifact shares, and local review pages are excluded. Queries, fragments,
+referrers, titles, and arbitrary SDK properties are removed before transmission.
+These counts cover consenting visits, not unique people or successful installs.
+
+Run `pnpm test:analytics` for URL exclusion checks. Desktop event names and setup
+are documented in `../mezair-app/docs/analytics.md`.
+
 ## Documentation
 
 Docs are discovered from Markdown frontmatter:

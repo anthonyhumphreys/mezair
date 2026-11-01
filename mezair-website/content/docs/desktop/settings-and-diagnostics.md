@@ -77,11 +77,17 @@ For supported upgraded clients, the app selects an encrypted live route to an en
 
 The panel itself is covered in [Sync and Mesh](/docs/desktop/sync-and-mesh); the encryption, sync, job, handoff, and self-deploy mechanics behind it are in the [Sync & Mesh docs](/docs/sync/overview).
 
-## Updates and crash reporting
+## Updates, crash reporting, and usage statistics
 
 Packaged Desktop builds initialize the update service and use the configured release feed for the platform. Availability and installation behavior depend on the packaged target and release configuration, not the development server.
 
 Crash reporting is opt-in. When enabled, Mezair sends crash reports to Sentry. The UI states that reports exclude screenshots, interaction history, and attached file contents. Keep secrets out of error messages regardless.
+
+Anonymous usage statistics have a separate switch in **Settings → Privacy → Help improve Mezair**. Both switches start off. Enabling crash reports does not enable usage statistics.
+
+With usage statistics enabled, packaged builds send app launches and fixed feature events (onboarding steps, composer availability, change summaries, applied changes, opened pull requests, and repository indexing milestones) to PostHog in the EU. Events include the app version, platform, and processor architecture. They exclude event payloads, prompts, code, repository names, file paths, credentials, and account details. There are no session recordings or person profiles. A fresh random identifier groups events within each app launch; it is not saved or linked to your account. These statistics measure app launches and events, not unique installations.
+
+Turning usage statistics off takes effect immediately and discards pending events. Historical local diagnostics are not uploaded when you opt in. Development builds do not send usage statistics.
 
 ## Runtime Diagnostics
 

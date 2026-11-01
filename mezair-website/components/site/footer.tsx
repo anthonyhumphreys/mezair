@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AnalyticsPreferencesButton } from "./private-analytics";
 import { MezairMark } from "@/components/site/mezair-mark";
 import { githubRepositoryUrl, latestDesktopDmgUrl, products, releasesUrl, repositoryUrl } from "@/lib/site";
 
@@ -65,6 +66,7 @@ export function SiteFooter() {
       <div className="border-t">
         <div className="page-shell flex flex-col gap-2 py-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <p>MIT licensed. © {new Date().getFullYear()} Anthony Humphreys.</p>
+          <AnalyticsPreferencesButton />
           <Link href={githubRepositoryUrl} className="hover:text-foreground">
             Source on GitHub
           </Link>

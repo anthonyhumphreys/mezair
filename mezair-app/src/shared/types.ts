@@ -2878,6 +2878,7 @@ export interface AppSettings {
   githubUsername?: string;
   cloudFeaturesEnabled: boolean;
   telemetryEnabled: boolean;
+  usageStatisticsEnabled: boolean;
   theme: AppTheme;
   userRole?: UserRole;
   /** ST8: keep every tool visible/openable regardless of the chosen role. */

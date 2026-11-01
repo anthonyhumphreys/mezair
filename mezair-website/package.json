@@ -13,11 +13,11 @@
     "test:shares": "node --experimental-strip-types --test scripts/share-viewer.test.mjs",
     "test:browser-workspace": "node --experimental-strip-types --test scripts/browser-workspace.test.mjs",
     "validate:docs": "node scripts/validate-docs.mjs",
-    "test:deployment-env": "node --test scripts/deployment-env.test.mjs"
+    "test:deployment-env": "node --test scripts/deployment-env.test.mjs",
+    "test:analytics": "node --experimental-strip-types --test scripts/analytics.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.4.0",
-    "@vercel/analytics": "^2.0.1",
     "@workos-inc/authkit-nextjs": "4.3.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -26,6 +26,7 @@
     "lucide-react": "^0.468.0",
     "marked": "^15.0.12",
     "next": "^16.4.3",
+    "posthog-js": "^1.444.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "sanitize-html": "^2.18.1",

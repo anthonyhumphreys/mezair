@@ -1,4 +1,5 @@
 import { getDb } from '../db/database.js';
+import { captureUsageStatistic } from './usage-statistics.service.js';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   ACTIVATION_EVENT_NAMES,
@@ -12,9 +13,9 @@ import {
 
 /**
  * Local-first activation metrics (§7 Measurement). Events are written to the
- * `activation_events` SQLite table and are NEVER transmitted — they exist only
- * for local funnel analysis and are independent of the crash-reporting consent
- * flag (`telemetryEnabled` only gates Sentry).
+ * `activation_events` SQLite table. Payloads, run IDs, journey IDs and historic
+ * rows stay local. With separate usage-statistics consent, only a fixed event
+ * name is also counted in PostHog; `telemetryEnabled` still only gates Sentry.
  */
 
 /** The `metrics:track` IPC handler allowlists these local-only events. */
@@ -158,6 +159,7 @@ export function trackActivationEvent(
          VALUES (?, ?, ?, ?, ?)`,
       )
       .run(eventName, serialized, APP_RUN_ID, journeyId, new Date().toISOString());
+    captureUsageStatistic(eventName);
   } catch (err) {
     console.warn('[Metrics] Failed to record activation event:', err);
   }

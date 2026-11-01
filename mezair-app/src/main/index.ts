@@ -98,7 +98,11 @@ import {
 } from './services/mobile-companion.service.js';
 import { cleanupStatusBar, initializeStatusBar } from './services/statusbar.service.js';
 import { cleanupSimulatorPreview } from './services/simulator-preview.service.js';
-import { isTelemetryEnabled } from './services/settings.service.js';
+import { isTelemetryEnabled, isUsageStatisticsEnabled } from './services/settings.service.js';
+import {
+  initializeUsageStatistics,
+  shutdownUsageStatistics,
+} from './services/usage-statistics.service.js';
 import { initializeTelemetry } from './services/telemetry.service.js';
 import { initializeAppUpdater } from './services/app-updater.service.js';
 import { registerExternalLinkHandling } from './services/external-link.service.js';
@@ -403,6 +407,13 @@ app.whenReady().then(() => {
     app.dock?.hide();
     return;
   }
+  initializeUsageStatistics({
+    enabled: isUsageStatisticsEnabled(),
+    packaged: app.isPackaged,
+    version: app.getVersion(),
+    token: process.env.MEZAIR_POSTHOG_PROJECT_TOKEN,
+    host: process.env.MEZAIR_POSTHOG_HOST,
+  });
 
   initializeStatusBar(brand);
   if (!previewBuild) initializeAppUpdater();
@@ -525,7 +536,16 @@ app.on('window-all-closed', () => {
 });
 
 // Only tear down services after every window has accepted quitting.
-app.on('will-quit', () => {
+let usageStatisticsStopped = false;
+app.on('will-quit', (event) => {
+  if (!usageStatisticsStopped) {
+    event.preventDefault();
+    void shutdownUsageStatistics().finally(() => {
+      usageStatisticsStopped = true;
+      app.quit();
+    });
+    return;
+  }
   shutdownAutomationRuntime();
   shutdownFactoryRuntime();
   cleanupChatSessions();

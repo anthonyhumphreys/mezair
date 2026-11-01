@@ -11,6 +11,7 @@ import type {
   LlmGatewayBillingMode,
   WorkItemConnection,
 } from '../../shared/types.js';
+import { setUsageStatisticsEnabled } from './usage-statistics.service.js';
 import {
   DEFAULT_CODEX_MODEL,
   DEFAULT_CODEX_REASONING_EFFORT,
@@ -87,6 +88,7 @@ interface SettingsRow {
   github_username: string | null;
   cloud_features_enabled: number | null;
   telemetry_enabled: number | null;
+  usage_statistics_enabled: number | null;
 }
 
 const APP_THEMES: AppTheme[] = [
@@ -430,6 +432,7 @@ export function getSettings(): AppSettings {
     githubUsername: row.github_username ?? undefined,
     cloudFeaturesEnabled: row.cloud_features_enabled === 1,
     telemetryEnabled: row.telemetry_enabled === 1,
+    usageStatisticsEnabled: row.usage_statistics_enabled === 1,
     defaultRepoPath: row.default_repo_path ?? undefined,
     theme: normaliseTheme(row.theme),
   };
@@ -692,6 +695,13 @@ export function updateSettings(partial: Partial<AppSettings>): void {
     setClauses.push('telemetry_enabled = ?');
     values.push(partial.telemetryEnabled ? 1 : 0);
   }
+  if (partial.usageStatisticsEnabled !== undefined) {
+    if (typeof partial.usageStatisticsEnabled !== 'boolean') {
+      throw new Error('Usage statistics consent must be a boolean.');
+    }
+    setClauses.push('usage_statistics_enabled = ?');
+    values.push(partial.usageStatisticsEnabled ? 1 : 0);
+  }
   if (partial.theme !== undefined) {
     setClauses.push('theme = ?');
     values.push(normaliseTheme(partial.theme));
@@ -702,6 +712,9 @@ export function updateSettings(partial: Partial<AppSettings>): void {
   setClauses.push("updated_at = datetime('now')");
   const sql = `UPDATE settings SET ${setClauses.join(', ')} WHERE id = 1`;
   db.prepare(sql).run(...values);
+  if (partial.usageStatisticsEnabled !== undefined) {
+    setUsageStatisticsEnabled(partial.usageStatisticsEnabled);
+  }
 
   // Emit sync intent only when an allowlisted (portable) field changed;
   // secrets, endpoints, paths, and connector config never leave the device.
@@ -811,6 +824,7 @@ function defaultSettings(): AppSettings {
     githubUsername: undefined,
     cloudFeaturesEnabled: false,
     telemetryEnabled: false,
+    usageStatisticsEnabled: false,
     theme: 'system',
   };
 }
@@ -821,6 +835,13 @@ export function isTelemetryEnabled(): boolean {
   const row = getDb().prepare('SELECT telemetry_enabled FROM settings WHERE id = 1').get() as
     { telemetry_enabled: number | null } | undefined;
   return row?.telemetry_enabled === 1;
+}
+
+export function isUsageStatisticsEnabled(): boolean {
+  const row = getDb()
+    .prepare('SELECT usage_statistics_enabled FROM settings WHERE id = 1')
+    .get() as { usage_statistics_enabled: number | null } | undefined;
+  return row?.usage_statistics_enabled === 1;
 }
 
 export function resetOnboardingState(): void {

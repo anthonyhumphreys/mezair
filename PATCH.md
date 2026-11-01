@@ -752,3 +752,37 @@ Verification from `mezair-app/`: run both Desktop TypeScript projects, lint,
 regression tests, then the Desktop suite and build. Live probes must use
 minimal prompts and preserve the user's model preference; the initial
 Haiku stream smoke check used a single `OK` response.
+
+### C15: Consented anonymous website and Desktop statistics
+
+Status: active
+Owner projects: `mezair-app`, `mezair-website`
+
+PostHog usage statistics require separate explicit consent. Existing Sentry
+crash-reporting consent never grants analytics consent. Desktop migration 118
+defaults the local, non-synced statistics flag to off for new and existing users.
+Only packaged Desktop builds with configured public ingestion credentials can
+send fixed event names and version/platform/architecture properties. Keep local
+metric payloads, historic rows, repository/workspace/thread/journey IDs, prompts,
+files, paths, credentials and account information local. Rotate the random
+analytics ID each launch and on renewed consent; never persist or identify it.
+Apply opt-out immediately, abort delivery and discard the pending queue.
+
+The website initializes PostHog only after browser consent and respects DNT/GPC.
+Use memory-only identifiers, manual public page views and download platform
+labels. Exclude account/auth, artifact share and local review routes, including
+when navigating from a public page. Strip queries, fragments, referrers, titles
+and SDK-added properties through a fresh allowlist before sending. Keep C6's
+share keys out of every analytics path. Disable replay, autocapture, profiles,
+surveys and remote feature configuration. Configure tokens/hosts through build
+environment values; missing configuration disables collection.
+
+Owners: Desktop `usage-statistics.service.ts`, settings/schema, startup/shutdown
+and `metrics.service.ts`; website `instrumentation-client.ts`,
+`website-analytics.ts`, `analytics-policy.ts` and `private-analytics.tsx`.
+Event definitions and setup are in `mezair-app/docs/analytics.md`.
+
+Verify the Desktop usage-statistics, telemetry, metrics and schema suites, both
+TypeScript projects, lint and build. Verify website `test:analytics`, share URL
+tests, typecheck and build, plus browser requests before consent, after consent,
+after withdrawal and on excluded routes.

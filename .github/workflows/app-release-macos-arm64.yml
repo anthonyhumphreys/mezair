@@ -39,6 +39,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       MEZAIR_DEPLOYMENT_ENV: production
+      MEZAIR_POSTHOG_PROJECT_TOKEN: ${{ vars.MEZAIR_POSTHOG_PROJECT_TOKEN }}
+      MEZAIR_POSTHOG_HOST: ${{ vars.MEZAIR_POSTHOG_HOST }}
       MEZAIR_PRODUCTION_HOSTED_BACKEND_URL: ${{ vars.MEZAIR_PRODUCTION_HOSTED_BACKEND_URL }}
       MEZAIR_MACOS_SIGNING_MODE: ${{ inputs.macos_signing || 'unsigned' }}
       # Auto-update publication stays parked until Developer ID signing is available.

@@ -357,8 +357,8 @@ export const SETTINGS_CATEGORIES: SettingsCategoryMeta[] = [
       {
         id: 'telemetry',
         title: 'Help improve Mezair',
-        description: 'Crash reporting.',
-        keywords: ['telemetry', 'crash', 'sentry', 'privacy'],
+        description: 'Optional crash reports and anonymous usage statistics.',
+        keywords: ['telemetry', 'crash', 'sentry', 'privacy', 'analytics', 'posthog', 'statistics'],
       },
     ],
     component: PrivacyCategory,

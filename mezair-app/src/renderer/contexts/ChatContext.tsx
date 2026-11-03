@@ -715,7 +715,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           ? { parentThreadId: thread.sideQuestionOfThreadId, sideThreadId: thread.id }
           : null,
       );
-      const nextEntries = chatMessagesToEntries(history);
+      const nextEntries = chatMessagesToEntries([
+        ...history,
+        ...Array.from(historyResolutionsRef.current?.messages.values() ?? []),
+      ]);
+      if (historyPageRef.current?.threadId === thread.id)
+        historyPageRef.current.entries = [...nextEntries];
       const liveSession = liveSessionsByThreadIdRef.current[thread.id];
       const liveOutput = liveSession ? liveOutputBySessionIdRef.current[liveSession.id] : null;
       for (const segment of liveOutput?.segments ?? []) {

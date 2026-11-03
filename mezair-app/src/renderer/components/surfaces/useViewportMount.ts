@@ -6,14 +6,22 @@ import { useEffect, useState, type RefObject } from 'react';
  */
 export function useViewportMount(
   ref: RefObject<HTMLElement | null>,
-  { rootMargin = '800px 0px', disabled = false }: { rootMargin?: string; disabled?: boolean } = {},
+  {
+    rootMargin = '800px 0px',
+    disabled = false,
+    enabled = true,
+  }: {
+    rootMargin?: string;
+    disabled?: boolean;
+    enabled?: boolean;
+  } = {},
 ): boolean {
   const [mounted, setMounted] = useState(
     disabled || typeof window === 'undefined' || typeof IntersectionObserver === 'undefined',
   );
 
   useEffect(() => {
-    if (mounted) return;
+    if (mounted || !enabled) return;
     const element = ref.current;
     if (!element) return;
     const observer = new IntersectionObserver(
@@ -27,7 +35,7 @@ export function useViewportMount(
     );
     observer.observe(element);
     return () => observer.disconnect();
-  }, [mounted, ref, rootMargin]);
+  }, [mounted, ref, rootMargin, enabled]);
 
   return mounted;
 }

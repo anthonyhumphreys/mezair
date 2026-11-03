@@ -54,7 +54,8 @@ export async function highlightCode(
     ALLOWED_TAGS: ['pre', 'code', 'span'],
     ALLOWED_ATTR: ['class', 'style'],
   });
-  if (code.length <= 12_000) cache.set(key, html);
+  // Capacity/timeouts/errors are transient; let the next owner retry highlighting.
+  if (code.length <= 12_000 && result !== wrapPlaintext(code)) cache.set(key, html);
   return html;
 }
 

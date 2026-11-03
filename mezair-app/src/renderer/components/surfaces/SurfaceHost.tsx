@@ -77,13 +77,15 @@ export function SurfaceHost({ intent: incoming }: { intent: AgentUISurfaceIntent
   const supersedingId = resolveSupersedingId(intent, context.surfaces);
   const handleRef = useRef<HTMLButtonElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const mounted = useViewportMount(bodyRef);
   const surfaceId = intent.id;
   const [minimised, toggleMinimised] = useSurfaceMinimised(
     surfaceId,
     intent.presentation.collapsed,
   );
   const windowOpen = context.isWindowOpen(intent.id);
+  const mounted = useViewportMount(bodyRef, {
+    enabled: !minimised && !windowOpen && !supersedingId,
+  });
   const actions = useSurfaceActions(intent);
   const comments = useSurfaceComments(
     intent.id,

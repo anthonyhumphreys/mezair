@@ -125,7 +125,7 @@ export function FactoriesView() {
   const [keyRegistrationBusy, setKeyRegistrationBusy] = useState<string | null>(null);
   const [runCursor, setRunCursor] = useState<FactoryRunCursor | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const moreInFlight = useRef(false);
+  const moreInFlight = useRef<{ factoryId: string; generation: number } | null>(null);
   const pageStarted = useRef(false);
   const [runs, setRuns] = useState<FactoryRun[]>([]);
   const [runSummaries, setRunSummaries] = useState<
@@ -194,10 +194,12 @@ export function FactoriesView() {
 
   const loadRuns = useCallback(
     async (factoryId: string) => {
-      if (moreInFlight.current && runsFactoryRef.current === factoryId) return;
+      if (moreInFlight.current?.factoryId === factoryId) return;
       const generation = ++runGenerationRef.current;
       // Only clear when switching factories; polling must not blank the list.
       if (runsFactoryRef.current !== factoryId) {
+        moreInFlight.current = null;
+        setLoadingMore(false);
         setRuns([]);
         setRunsLoadedAt(null);
         setRunCursor(null);
@@ -208,7 +210,7 @@ export function FactoriesView() {
       try {
         const [page, summary] = await Promise.all([
           readRunPage(factoryId),
-          window.mezair.factories.getRunSummary?.(factoryId),
+          window.mezair.factories.getRunSummary?.(factoryId).catch(() => undefined),
         ]);
         let nextRuns = page.runs;
         const selectedId = selectedRunRef.current;
@@ -225,7 +227,10 @@ export function FactoriesView() {
         setRunsLoadedAt(Date.now());
         setRunSummaries((current) => ({
           ...current,
-          [factoryId]: summary ?? summarizeRuns(nextRuns),
+          [factoryId]: summary ?? {
+            ...summarizeRuns(nextRuns),
+            complete: page.complete && !page.cursor,
+          },
         }));
         const runId = selectedRunRef.current;
         if (!runId || !nextRuns.some((item) => item.id === runId)) {
@@ -255,9 +260,10 @@ export function FactoriesView() {
 
   const loadMoreRuns = async () => {
     const factoryId = selectedFactoryRef.current;
-    if (!factoryId || !runCursor || moreInFlight.current) return;
+    if (!factoryId || !runCursor || moreInFlight.current?.factoryId === factoryId) return;
     const generation = runGenerationRef.current;
-    moreInFlight.current = true;
+    const owner = { factoryId, generation };
+    moreInFlight.current = owner;
     setLoadingMore(true);
     try {
       const page = await readRunPage(factoryId, runCursor);
@@ -266,10 +272,13 @@ export function FactoriesView() {
       setRuns((current) => mergeRunPages(current, page.runs));
       setRunCursor(page.cursor);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not load more runs.');
+      if (generation === runGenerationRef.current && selectedFactoryRef.current === factoryId)
+        setError(cause instanceof Error ? cause.message : 'Could not load more runs.');
     } finally {
-      moreInFlight.current = false;
-      setLoadingMore(false);
+      if (moreInFlight.current === owner) {
+        moreInFlight.current = null;
+        setLoadingMore(false);
+      }
     }
   };
 
@@ -1392,7 +1401,7 @@ function FactoryFloor({
               <div className="shrink-0 border-b border-border-subtle px-4 py-2">
                 <StationBoard loads={loads} selected={stationFilter} onSelect={onStationFilter} />
               </div>
-              {runsLoaded && runs.length === 0 ? (
+              {runsLoaded && runs.length === 0 && !hasMore ? (
                 <EmptyRuns
                   factory={factory}
                   canManage={canManage}
@@ -1404,6 +1413,7 @@ function FactoryFloor({
                   <RunList
                     factory={factory}
                     runs={runs}
+                    hasMore={hasMore}
                     loaded={runsLoaded}
                     selectedId={selectedRun?.id ?? null}
                     stationFilter={stationFilter}
@@ -1455,6 +1465,7 @@ function FactoryFloor({
 function RunList({
   factory,
   runs,
+  hasMore,
   loaded,
   selectedId,
   stationFilter,
@@ -1464,6 +1475,7 @@ function RunList({
 }: {
   factory: FactoryDefinition;
   runs: FactoryRun[];
+  hasMore: boolean;
   loaded: boolean;
   selectedId: string | null;
   stationFilter: FactoryStationId | null;
@@ -1513,9 +1525,13 @@ function RunList({
   if (!runs.length)
     return (
       <div className="px-5 py-8">
-        <p className="text-sm font-medium text-text-primary">No issues on the line yet</p>
+        <p className="text-sm font-medium text-text-primary">
+          {hasMore ? 'More runs are available' : 'No issues on the line yet'}
+        </p>
         <p className="mt-1 max-w-prose text-xs leading-5 text-text-tertiary">
-          {factory.status === 'active' ? (
+          {hasMore ? (
+            'Load more runs to continue browsing shared history.'
+          ) : factory.status === 'active' ? (
             <>{factoryIntakeDescription(factory.definition)} appear here on the next check.</>
           ) : (
             'Activate the factory to start claiming matching issues.'

@@ -223,6 +223,7 @@ export async function checkAdvanced() {
       );
     renderComposer(0);
     await settle();
+    check(composerRenders > 0, 'Composer render instrumentation must observe the initial mount');
     composerRenders = 0;
     for (let n = 1; n <= 60; n++) renderComposer(n);
     check(

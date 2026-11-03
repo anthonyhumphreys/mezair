@@ -16,6 +16,11 @@ if (mode === 'bundle') {
     );
 } else if (mode === 'native') {
   if (!before.complete || !after.complete) failures.push('Native evidence is incomplete');
+  if (before.launches.length !== 3 || after.launches.length !== 3)
+    failures.push('Three native cold launches per revision are required');
+  if (!after.highlightCheck) failures.push('Native worker verification is missing');
+  if (before.error || before.rendererErrors?.length || after.error || after.rendererErrors?.length)
+    failures.push('Native candidate recorded a profiling or renderer error');
   limit(
     'cold first-run regression',
     median(after.launches.map((x) => x.launchToInteractiveMs)),
@@ -27,9 +32,10 @@ if (mode === 'bundle') {
     median(before.launches.map((x) => x.idleRssBytes)) * 1.15,
   );
   limit('sampled streaming process-tree RSS', after.sampledPeakRssBytes, 1.25 * 1024 ** 3);
-  if (after.soakElapsedMs < 1800000)
+  if (!Number.isFinite(after.soakElapsedMs) || after.soakElapsedMs < 1800000)
     failures.push('Candidate streaming soak must last at least 30 minutes');
   const samples = after.samples.filter((x) => x.elapsedMs > 300000);
+  if (samples.length < 2) failures.push('At least two post-warmup native samples are required');
   const early = samples.slice(0, Math.max(1, Math.floor(samples.length / 4))),
     late = samples.slice(-Math.max(1, Math.floor(samples.length / 4)));
   limit(

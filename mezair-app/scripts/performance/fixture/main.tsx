@@ -101,6 +101,8 @@ const root = createRoot(document.getElementById('root')!);
 Object.assign(window, {
   async runPerformanceScenario(options: { turns?: number } = {}) {
     const turnCount = options.turns ?? 100;
+    if (!Number.isSafeInteger(turnCount) || turnCount < 1)
+      throw new Error('Performance history must contain a positive integer number of turns.');
     let entries = history(turnCount);
     const render = () =>
       flushSync(() =>
@@ -243,7 +245,8 @@ Object.assign(window, {
   async checkNativeHighlight() {
     const { highlightCode } = await import('../../../src/renderer/components/chat/shiki');
     const html = await highlightCode('const nativeProbe: string = "ready";', 'ts');
-    if (!html.includes('color') || !html.includes('span')) throw new Error('Native syntax worker did not highlight.');
+    if (!html.includes('color') || !html.includes('span'))
+      throw new Error('Native syntax worker did not highlight.');
     return 'Native packaged renderer syntax highlighting passed';
   },
   async checkDashboard() {

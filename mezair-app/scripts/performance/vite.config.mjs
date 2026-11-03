@@ -15,6 +15,8 @@ export default defineConfig({
       enforce: 'pre',
       transform(source, id) {
         if (!id.endsWith('/chat/ChatInput.tsx')) return;
+        if (!source.includes('}: ChatInputProps) {'))
+          throw new Error('ChatInput render-count instrumentation marker is missing.');
         return source.replace(
           '}: ChatInputProps) {',
           `}: ChatInputProps) {

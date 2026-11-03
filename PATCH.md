@@ -625,6 +625,11 @@ the UI labels those counts as recent shared runs. Full run reads remain availabl
 by id, including runs outside that window. No plaintext run-stage index was added
 to the hosted backend.
 
+Summary failures retain an independently authorised run page; fallback counts
+are incomplete when its cursor indicates more history. Load-more requests and
+their errors belong to the selected factory generation, so leaving one factory
+releases its presentation guard without affecting another factory's pages.
+
 The dual-provider delivery and Mezair role change passed the full desktop suite
 (3,417 passed, 12 skipped), then 70 focused tests after the final current-head
 review and continuation guards. Node/web/backend TypeScript checks, lint,

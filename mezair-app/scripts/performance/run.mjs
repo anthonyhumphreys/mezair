@@ -184,8 +184,7 @@ try {
         cpu: cpus()[0].model,
       },
       scenarioTurns: Number(process.env.PERF_TURNS ?? 100),
-      methodology:
-        'Production Vite build; headless Chrome with background throttling disabled; five fresh browser contexts; forced GC before and after; synthetic 100-turn history with 30 operations per turn; 60 streamed updates; 200 composition updates; 20 scroll events in one frame. Renderer-only measurements, not whole Electron process memory or provider latency.',
+      methodology: `Production Vite build; headless Chrome with background throttling disabled; ${runs.length} fresh browser contexts; forced GC before and after; synthetic ${Number(process.env.PERF_TURNS ?? 100)}-turn history with 30 operations per turn; 60 streamed updates; 200 composition updates; 20 scroll events in one frame. Renderer-only measurements, not whole Electron process memory or provider latency.`,
       comparison:
         variants.length > 1
           ? 'Alternating before/after builds in the same browser session; order reversed every pair.'

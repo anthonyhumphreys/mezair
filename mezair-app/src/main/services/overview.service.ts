@@ -1484,6 +1484,9 @@ export async function loadOverviewModule(
   const key = JSON.stringify({
     generation: cacheGeneration,
     scope,
+    repoIds: resolveOverviewScope(scope, module.config ?? {})
+      .repos.map((repo) => repo.id)
+      .sort(),
     type: module.type,
     rows: module.rows,
     config: module.config,

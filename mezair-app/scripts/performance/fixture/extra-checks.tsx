@@ -15,6 +15,10 @@ import { DiffViewer } from '../../../src/renderer/components/chat/DiffViewer';
 import { MarkdownRenderer } from '../../../src/renderer/components/chat/MarkdownRenderer';
 import { StreamedMermaidPreview } from '../../../src/renderer/components/chat/StreamedMermaidPreview';
 import { SurfaceWindow } from '../../../src/renderer/components/surfaces/SurfaceWindow';
+import { SurfaceHost } from '../../../src/renderer/components/surfaces/SurfaceHost';
+import { SurfacesProvider } from '../../../src/renderer/components/surfaces/SurfacesProvider';
+import { useSurfaces } from '../../../src/renderer/components/surfaces/surfaces-context';
+import { MemoryRouter } from 'react-router-dom';
 import { syntheticArtifactSurfaceId } from '../../../src/renderer/components/surfaces/surface-utils';
 import type { AgentUISurfaceIntent } from '../../../src/shared/agent-ui-intents';
 const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
@@ -198,6 +202,54 @@ export async function checkExtra() {
       createdAt: '',
       updatedAt: '',
     };
+    render(
+      <SurfaceHost
+        intent={{ ...intent, presentation: { ...intent.presentation, collapsed: true } }}
+      />,
+    );
+    await frame();
+    check(!host.textContent?.includes('Synthetic'), 'Initially folded preview releases its body');
+    host.querySelector<HTMLButtonElement>('[aria-label="Restore"]')!.click();
+    for (let attempt = 0; attempt < 30 && !host.textContent?.includes('Synthetic'); attempt++)
+      await delay(20);
+    check(
+      host.textContent?.includes('Synthetic'),
+      'Restoring an initially folded preview observes and mounts its new body',
+    );
+    host.querySelector<HTMLButtonElement>('[aria-label="Minimise"]')!.click();
+    await frame();
+    check(!host.textContent?.includes('Synthetic'), 'Folding releases the restored preview');
+    render(null);
+    passed.push('initially folded surface restores its body and releases it when folded again');
+    function SurfaceJumpProbe() {
+      const context = useSurfaces();
+      return (
+        <button data-surface-jump onClick={() => context.scrollToSurface(intent.id)}>
+          {context.stageSurfaceId ?? 'Jump'}
+        </button>
+      );
+    }
+    render(
+      <MemoryRouter>
+        <SurfacesProvider
+          threadId="fixture"
+          workspaceName="Fixture"
+          transcriptSurfaces={[]}
+          intents={[intent]}
+          artifacts={[]}
+        >
+          <SurfaceJumpProbe />
+        </SurfacesProvider>
+      </MemoryRouter>,
+    );
+    host.querySelector<HTMLButtonElement>('[data-surface-jump]')!.click();
+    await frame();
+    check(
+      host.querySelector('[data-surface-jump]')?.textContent === intent.id,
+      'A surface outside loaded history must open its known stage',
+    );
+    render(null);
+    passed.push('surfaces outside loaded history open their known stage');
     for (let n = 0; n < 5; n++) {
       let popup: Window | undefined;
       render(

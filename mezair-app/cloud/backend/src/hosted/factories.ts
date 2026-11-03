@@ -896,7 +896,8 @@ export async function handleFactoryOperation(
       return malformed();
     const cursor = isRecord(page) ? page.cursor : null;
     if (
-      cursor &&
+      cursor !== null &&
+      cursor !== undefined &&
       (!isRecord(cursor) ||
         cursor.factoryId !== row.id ||
         typeof cursor.updatedAt !== 'string' ||

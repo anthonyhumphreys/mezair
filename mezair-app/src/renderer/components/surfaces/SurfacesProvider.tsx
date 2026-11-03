@@ -203,6 +203,15 @@ export function SurfacesProvider({
     [openWindows],
   );
 
+  const scrollToSurface = useCallback(
+    (surfaceId: string) => {
+      if (!transcriptSurfaces.some((surface) => surface.id === surfaceId) && getSurface(surfaceId))
+        openStage(surfaceId);
+      else scrollToSurfaceElement(surfaceId);
+    },
+    [transcriptSurfaces, getSurface, openStage],
+  );
+
   const value = useMemo<SurfacesContextValue>(
     () => ({
       threadId,
@@ -220,7 +229,7 @@ export function SurfacesProvider({
       openWindow,
       focusWindow,
       closeWindow,
-      scrollToSurface: scrollToSurfaceElement,
+      scrollToSurface,
       discardArtifact,
       blockedWindowId,
     }),
@@ -236,6 +245,7 @@ export function SurfacesProvider({
       openStage,
       openWindow,
       resolve,
+      scrollToSurface,
       stageSurfaceId,
       stageTargetId,
       readOnly,

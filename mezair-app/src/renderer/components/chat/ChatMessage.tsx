@@ -2107,6 +2107,7 @@ export function AssistantMessage({
 
 export function UserMessage({
   content,
+  disclosureId = 'user-message',
   attachments,
   delivery,
   deliveryError,
@@ -2115,6 +2116,7 @@ export function UserMessage({
   onBranch,
 }: {
   content: string;
+  disclosureId?: string;
   attachments?: ChatAttachment[];
   /** Delivery is separate from whether the agent completed the requested work. */
   delivery?: 'queued' | 'delivered' | 'failed' | 'uncertain';
@@ -2124,7 +2126,7 @@ export function UserMessage({
   onBranch?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
-  const [expanded, setExpanded] = useTranscriptDisclosure('user-message');
+  const [expanded, setExpanded] = useTranscriptDisclosure(disclosureId);
   const collapsible = shouldCollapseUserMessage(content);
   const lineCount = content.split('\n').length;
 

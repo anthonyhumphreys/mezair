@@ -342,6 +342,7 @@ const ChatTranscriptTurn = memo(function ChatTranscriptTurn({
           return (
             <UserMessage
               key={item.key}
+              disclosureId={item.key}
               content={item.entry.content}
               attachments={item.entry.attachments}
               delivery={item.entry.delivery}

@@ -1345,6 +1345,16 @@ it('pages encrypted run snapshots with stable tie cursors and rechecks membershi
   });
   expect(second.ok).toBe(true);
   expect(second.body.cursor).toBeNull();
+  for (const cursor of [false, 0, ''])
+    expect(
+      (
+        await call('factory.run.list', {
+          factoryId: 'factory_paged',
+          githubToken: 'github-test-token',
+          page: { limit: 50, cursor },
+        })
+      ).ok,
+    ).toBe(false);
   expect(new Set([...runs, ...(second.body.runs as typeof runs)].map((x) => x.id)).size).toBe(105);
   expect(
     (

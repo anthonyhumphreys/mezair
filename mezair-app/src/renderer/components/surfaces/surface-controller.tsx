@@ -104,9 +104,17 @@ export function useSurfaceActions(intent: AgentUISurfaceIntent) {
 
 export function useSurfaceComments(surfaceId: string, enabled: boolean) {
   const [comments, setComments] = useState<SurfaceComment[]>([]);
+  const [countSnapshot, setCountSnapshot] = useState({ surfaceId, openCount: 0 });
   const [error, setError] = useState<string | null>(null);
   const supported = enabled && !isSyntheticSurfaceId(surfaceId);
   const generation = useRef(0);
+  useEffect(() => {
+    if (supported)
+      setCountSnapshot({
+        surfaceId,
+        openCount: comments.filter((item) => item.status === 'open').length,
+      });
+  }, [surfaceId, supported, comments]);
 
   const refresh = useCallback(async () => {
     if (!supported) return;
@@ -163,7 +171,7 @@ export function useSurfaceComments(surfaceId: string, enabled: boolean) {
   return {
     supported,
     comments,
-    openCount: comments.filter((comment) => comment.status === 'open').length,
+    openCount: countSnapshot.surfaceId === surfaceId ? countSnapshot.openCount : 0,
     error,
     refresh,
     add,

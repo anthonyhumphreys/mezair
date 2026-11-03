@@ -21,6 +21,11 @@ cpSync('scripts/performance', join(target, 'mezair-app/scripts/performance'), { 
 const fixture = join(target, 'mezair-app/scripts/performance/fixture/main.tsx');
 writeFileSync(
   fixture,
-  readFileSync(fixture, 'utf8').replace(/  async checkAdvanced\(\) \{[\s\S]*?\n  \},\n/, ''),
+  readFileSync(fixture, 'utf8')
+    .replace(/\r\n/g, '\n')
+    .replace(/  async checkAdvanced\(\) \{[\s\S]*?\n  \},\n/, ''),
 );
 console.log(JSON.stringify({ revision, root: target }));
+
+if (readFileSync(fixture, 'utf8').includes("import('./advanced-checks')"))
+  throw Error('Baseline fixture still imports candidate-only checks.');

@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { lazy, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { MemoryRouter } from 'react-router-dom';
@@ -15,6 +15,10 @@ import { ArtifactPreview } from '../../../src/renderer/components/chat/ArtifactP
 import type { ChatArtifact } from '../../../src/shared/types';
 import { SketchFrame } from '../../../src/renderer/components/surfaces/kinds/sketch/SketchFrame';
 import { preloadable } from '../../../src/renderer/utils/preloadable';
+import {
+  ErrorBoundary,
+  DeferredLoadError,
+} from '../../../src/renderer/components/layout/ErrorBoundary';
 import { ChatInput } from '../../../src/renderer/components/chat/ChatInput';
 import type { ChatEntry } from '../../../src/renderer/contexts/ChatContext';
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -299,6 +303,18 @@ export async function checkAdvanced() {
       createdAt: '',
       updatedAt: '',
     } as ChatArtifact;
+    const OriginalObserver = window.MutationObserver;
+    const observers = new Set<MutationObserver>();
+    window.MutationObserver = class extends OriginalObserver {
+      observe(target: Node, options?: MutationObserverInit) {
+        observers.add(this);
+        super.observe(target, options);
+      }
+      disconnect() {
+        observers.delete(this);
+        super.disconnect();
+      }
+    };
     try {
       for (let cycle = 0; cycle < 30; cycle++) {
         flushSync(() =>
@@ -317,21 +333,56 @@ export async function checkAdvanced() {
         flushSync(() => root.render(null));
         await settle(2);
         check(
-          host.querySelectorAll('iframe').length === 0 && urls.size === 0,
+          host.querySelectorAll('iframe').length === 0 && urls.size === 0 && observers.size === 0,
           'Closing previews must release every frame and blob URL',
         );
       }
     } finally {
       URL.createObjectURL = created;
       URL.revokeObjectURL = revoked;
+      window.MutationObserver = OriginalObserver;
     }
     disposeHighlightResources();
-    passed.push('30 rich preview cycles release sketch/PDF frames and blob URLs');
+    passed.push('30 rich preview cycles release frames, blob URLs and theme observers');
+    let closed = false;
+    const Broken = lazy(() => Promise.reject(new Error('Synthetic lazy import failure')));
+    flushSync(() =>
+      root.render(
+        <>
+          <p>Shell still available</p>
+          <ErrorBoundary
+            fallback={
+              <DeferredLoadError
+                label="Probe"
+                onClose={() => {
+                  closed = true;
+                }}
+              />
+            }
+          >
+            <Broken />
+          </ErrorBoundary>
+        </>,
+      ),
+    );
+    await settle();
+    check(
+      host.textContent?.includes('Shell still available') && host.querySelector('[role=alert]'),
+      'Failed deferred views must leave the shell mounted',
+    );
+    [...host.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Close')!
+      .click();
+    check(closed, 'Failed optional views must remain dismissible');
+    passed.push('failed deferred imports leave shell controls available');
+    flushSync(() => root.render(null));
+    const extra = await (await import('./extra-checks')).checkExtra();
     samples.sort((a, b) => a - b);
     return {
       passed,
       markdownP95Ms: samples[Math.floor(samples.length * 0.95)],
       composerRendersDuring60Updates: composerRenders,
+      extra,
     };
   } finally {
     root.unmount();

@@ -58,9 +58,9 @@ export function loadChatHistoryPage(request: ChatHistoryPageRequest): ChatHistor
   const snapshotRowId =
     before?.snapshotRowId ??
     (
-      db
-        .prepare('SELECT coalesce(max(rowid),0) AS last FROM chat_messages WHERE thread_id=?')
-        .get(request.threadId) as { last: number }
+      db.prepare('SELECT coalesce(max(rowid),0) AS last FROM chat_messages').get() as {
+        last: number;
+      }
     ).last;
   const rows = db
     .prepare(

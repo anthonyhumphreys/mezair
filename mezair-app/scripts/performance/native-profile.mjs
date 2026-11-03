@@ -19,7 +19,7 @@ const report = {
   measuredAt: new Date().toISOString(),
   environment: { platform: platform(), arch: arch(), cpu: cpus()[0].model },
   methodology:
-    'Unsigned packaged app, isolated fresh profile for each of three launches. Launch-to-interactive waits for the production welcome heading, role controls and two animation frames. Idle RSS is sampled 15 seconds later. Profiling disables background throttling through the main-process inspector so screen sleep/occlusion cannot stall animation-frame samples. Sum of OS working sets/RSS for the app process tree (shared pages can count more than once). Five-second sampled peak, no forced GC. Main process remains running during a synthetic production-renderer stream; no model/provider is invoked.',
+    'Unsigned packaged app, isolated fresh profile for each of three launches. Launch-to-interactive waits for the production welcome heading, role controls and two animation frames. Idle RSS is sampled 15 seconds later. Profiling disables background throttling through the main-process inspector so screen sleep/occlusion cannot stall animation-frame samples. Sum of OS working sets/RSS for the app process tree (shared pages can count more than once). Five-second sampled peak, no forced GC. A profiling-only display-sleep blocker and 16-ms timer-paced animation callbacks keep the memory soak running independently of display vsync; renderer latency is measured separately with native animation frames. Main process remains running during a synthetic production-renderer stream; no model/provider is invoked.',
   launches: [],
   samples: [],
   complete: false,
@@ -108,13 +108,14 @@ for (let launch = 0; launch < 3; launch++) {
       const deadline = Date.now() + 60000;
       const check = () => {
         const windows = electron.BrowserWindow.getAllWindows();
-        if (windows.length) { windows.forEach((window) => window.webContents.setBackgroundThrottling(false)); resolve(true); }
+        if (windows.length) { electron.powerSaveBlocker.start('prevent-display-sleep'); windows.forEach((window) => window.webContents.setBackgroundThrottling(false)); resolve(true); }
         else if (Date.now() > deadline) reject(new Error('Native window was not created'));
         else setTimeout(check, 25);
       };
       electron.app.whenReady().then(check);
     })`,
     );
+    const coldWindowAvailableMs = performance.now() - start;
     cdp.onEvent((event) => {
       if (
         event.method === 'Runtime.exceptionThrown' ||
@@ -153,6 +154,7 @@ for (let launch = 0; launch < 3; launch++) {
     await delay(15000);
     const idle = await memory(child.pid);
     report.launches.push({
+      coldWindowAvailableMs,
       launchToInteractiveMs,
       idleRssBytes: idle.rssBytes,
       processes: idle.processes,
@@ -168,6 +170,15 @@ for (let launch = 0; launch < 3; launch++) {
       await cdp.evaluate(
         sessionId,
         `new Promise((resolve,reject)=>{const deadline=Date.now()+30000;const check=()=>typeof window.runPerformanceScenario==='function'?resolve(true):Date.now()>deadline?reject(new Error('Stream fixture did not load')):setTimeout(check,25);check()})`,
+      );
+      // Memory soak uses timer-paced frames, independent of display vsync or screen lock.
+      // Cold startup above still uses native animation frames.
+      await cdp.evaluate(
+        sessionId,
+        `(() => {
+        window.requestAnimationFrame = (callback) => setTimeout(() => callback(performance.now()), 16);
+        window.cancelAnimationFrame = (id) => clearTimeout(id);
+      })()`,
       );
       report.highlightCheck = await cdp.evaluate(sessionId, 'window.checkNativeHighlight()');
       save();

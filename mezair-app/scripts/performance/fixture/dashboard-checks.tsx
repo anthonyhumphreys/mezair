@@ -98,6 +98,7 @@ export async function checkDashboard() {
     render();
     await settle();
     check(requests.length === 5, 'Changing row limits must reload the module');
+    check(requests[4].input.module.rows === 10, 'The new row limit must reach the service');
     root.unmount();
     requests[4].resolve(result('unmounted'));
     await settle();
@@ -111,7 +112,7 @@ export async function checkDashboard() {
       'clear cross-workspace results',
       'reject old workspace response',
       'reload row limit',
-      'dispose pending read',
+      'unmounted view stays empty',
     ];
   } finally {
     if (host.childNodes.length) root.unmount();

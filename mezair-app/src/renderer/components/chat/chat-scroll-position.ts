@@ -6,8 +6,7 @@ const CHAT_SCROLL_KEY_PREFIX = 'mezair.chat-scroll.v1:';
 const CHAT_SCROLL_INDEX_KEY = 'mezair.chat-scroll-index.v1';
 
 export type ChatScrollPosition =
-  | { mode: 'bottom' }
-  | { mode: 'offset'; scrollTop: number; anchor?: ChatScrollAnchor };
+  { mode: 'bottom' } | { mode: 'offset'; scrollTop: number; anchor?: ChatScrollAnchor };
 
 export interface ChatScrollAnchor {
   turnKey: string;
@@ -83,8 +82,8 @@ export function writeChatScrollPosition(
   storage: Storage | null,
   scopeKey: string | null,
   position: ChatScrollPosition,
-): void {
-  if (!storage || !scopeKey) return;
+): boolean {
+  if (!storage || !scopeKey) return false;
 
   const key = chatScrollStorageKey(scopeKey);
   const record: StoredChatScrollPosition =
@@ -107,8 +106,10 @@ export function writeChatScrollPosition(
     );
     for (const evictedKey of evictedKeys) storage.removeItem(evictedKey);
     storage.setItem(CHAT_SCROLL_INDEX_KEY, JSON.stringify(nextKeys));
+    return true;
   } catch {
     // Treat sessionStorage as a best-effort cache; chat scrolling must keep working without it.
+    return false;
   }
 }
 

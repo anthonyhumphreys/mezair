@@ -7,7 +7,14 @@ const median = (items) => [...items].sort((a, b) => a - b)[Math.floor(items.leng
 function limit(name, value, maximum) {
   if (!Number.isFinite(value) || value > maximum) failures.push(`${name}: ${value} > ${maximum}`);
 }
-if (mode === 'native') {
+if (mode === 'bundle') {
+  for (const key of Object.keys(before.journeys))
+    limit(
+      `${key} static JavaScript growth`,
+      after.journeys[key].rawBytes,
+      before.journeys[key].rawBytes * 1.02,
+    );
+} else if (mode === 'native') {
   if (!before.complete || !after.complete) failures.push('Native evidence is incomplete');
   limit(
     'cold first-run regression',

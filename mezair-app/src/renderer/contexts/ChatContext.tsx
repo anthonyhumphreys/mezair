@@ -1,3 +1,4 @@
+import { ChatStateChannels } from './ChatChannels';
 import { isPendingChatUserEntry } from '../utils/chat-entry-order';
 import { createChatNavigationRequests } from '../utils/chat-navigation-request';
 import {
@@ -94,7 +95,7 @@ export type ChatEntry = (
   | { kind: 'event'; event: CodexEvent }
 ) & { timestamp?: string; historyId?: string; historyEndId?: string };
 
-interface ChatContextValue {
+export interface ChatContextValue {
   personas: Persona[];
   activePersona: Persona | null;
   session: CodexSession | null;
@@ -369,9 +370,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       intent.lifecycle !== 'expired' &&
       intent.payload.lifecycle !== 'archived',
   );
-  const activePlan = activePlanIntent
-    ? planIntentToSnapshot(activePlanIntent)
-    : (activeThread?.activePlan ?? null);
+  const activePlan = useMemo(
+    () =>
+      activePlanIntent
+        ? planIntentToSnapshot(activePlanIntent)
+        : (activeThread?.activePlan ?? null),
+    [activePlanIntent, activeThread?.activePlan],
+  );
   const activeGoal = activeThread?.activeGoal ?? null;
 
   useEffect(() => {
@@ -3812,84 +3817,85 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     () => ({ activeRepos: activeReposState, launchPreparedChat }),
     [activeReposState, launchPreparedChat],
   );
+  const chatValue: ChatContextValue = {
+    personas,
+    activePersona,
+    session,
+    entries,
+    repos,
+    activeRepo: activeRepoState,
+    activeRepos: activeReposState,
+    governanceDocs,
+    selectedGovernanceDocs,
+    scaffoldModeActive,
+    scaffoldStatus,
+    busy,
+    error,
+    model,
+    modelProvider,
+    modelOptions,
+    modelPickerPreferences,
+    reasoningLevel,
+    reasoningOptions,
+    threads: scopedThreads,
+    activeThread,
+    isTemporaryChat,
+    startTemporaryChat,
+    resumeTemporaryChat,
+    showWorkspaceChat,
+    endTemporaryChat,
+    activeThreadId: activeThread?.id ?? null,
+    historyReady,
+    historyHasEarlier: historyCursor?.threadId === activeThreadId,
+    historyLoadingEarlier,
+    loadEarlierHistory,
+    threadViewSnapshot,
+    sideQuestion,
+    liveThreadStatuses,
+    collaborationMode,
+    activePlan,
+    agentUIIntents,
+    activeGoal,
+    activeArtifacts,
+    discardArtifact,
+    shareArtifact,
+    unshareArtifact,
+    chatLayout,
+    setActiveRepo,
+    setActiveRepos,
+    setSelectedGovernanceDocs,
+    send,
+    steer,
+    followUp,
+    startSideQuestion,
+    returnFromSideQuestion,
+    switchPersona,
+    interrupt,
+    stopSession: stopSessionLive,
+    startNewSession,
+    ensureChatThread,
+    loadHistory: loadHistoryFn,
+    clearHistory: clearHistoryFn,
+    setModel: updateModel,
+    setReasoningLevel: updateReasoningLevel,
+    selectThread,
+    renameThread,
+    settleThread,
+    deleteThread,
+    forkThread,
+    setCollaborationMode,
+    setChatLayout,
+    selectWorkItemThread,
+    startWorkItemThread,
+    launchPreparedChat,
+  };
   return (
-    <ChatContext.Provider
-      value={{
-        personas,
-        activePersona,
-        session,
-        entries,
-        repos,
-        activeRepo: activeRepoState,
-        activeRepos: activeReposState,
-        governanceDocs,
-        selectedGovernanceDocs,
-        scaffoldModeActive,
-        scaffoldStatus,
-        busy,
-        error,
-        model,
-        modelProvider,
-        modelOptions,
-        modelPickerPreferences,
-        reasoningLevel,
-        reasoningOptions,
-        threads: scopedThreads,
-        activeThread,
-        isTemporaryChat,
-        startTemporaryChat,
-        resumeTemporaryChat,
-        showWorkspaceChat,
-        endTemporaryChat,
-        activeThreadId: activeThread?.id ?? null,
-        historyReady,
-        historyHasEarlier: historyCursor?.threadId === activeThreadId,
-        historyLoadingEarlier,
-        loadEarlierHistory,
-        threadViewSnapshot,
-        sideQuestion,
-        liveThreadStatuses,
-        collaborationMode,
-        activePlan,
-        agentUIIntents,
-        activeGoal,
-        activeArtifacts,
-        discardArtifact,
-        shareArtifact,
-        unshareArtifact,
-        chatLayout,
-        setActiveRepo,
-        setActiveRepos,
-        setSelectedGovernanceDocs,
-        send,
-        steer,
-        followUp,
-        startSideQuestion,
-        returnFromSideQuestion,
-        switchPersona,
-        interrupt,
-        stopSession: stopSessionLive,
-        startNewSession,
-        ensureChatThread,
-        loadHistory: loadHistoryFn,
-        clearHistory: clearHistoryFn,
-        setModel: updateModel,
-        setReasoningLevel: updateReasoningLevel,
-        selectThread,
-        renameThread,
-        settleThread,
-        deleteThread,
-        forkThread,
-        setCollaborationMode,
-        setChatLayout,
-        selectWorkItemThread,
-        startWorkItemThread,
-        launchPreparedChat,
-      }}
-    >
-      <ChatNavigationContext.Provider value={navigationValue}>
-        <ChatActionsContext.Provider value={actionsValue}>{children}</ChatActionsContext.Provider>
-      </ChatNavigationContext.Provider>
+    <ChatContext.Provider value={chatValue}>
+      <ChatStateChannels value={chatValue}>
+        <ChatNavigationContext.Provider value={navigationValue}>
+          <ChatActionsContext.Provider value={actionsValue}>{children}</ChatActionsContext.Provider>
+        </ChatNavigationContext.Provider>
+      </ChatStateChannels>
     </ChatContext.Provider>
   );
 }

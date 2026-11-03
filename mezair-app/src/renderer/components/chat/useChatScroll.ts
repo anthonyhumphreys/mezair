@@ -48,8 +48,8 @@ export function useChatScroll({
     const value = JSON.stringify(state.position);
     if (lastPersistedRef.current?.key === state.key && lastPersistedRef.current.value === value)
       return;
-    writeChatScrollPosition(getSessionStorage(), state.key, state.position);
-    lastPersistedRef.current = { key: state.key, value };
+    if (writeChatScrollPosition(getSessionStorage(), state.key, state.position))
+      lastPersistedRef.current = { key: state.key, value };
   }, []);
 
   const captureCurrentPosition = useCallback(

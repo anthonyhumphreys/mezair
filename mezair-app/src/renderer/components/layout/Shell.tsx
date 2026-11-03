@@ -4,6 +4,7 @@ import { useShortcuts } from '../../hooks/useShortcuts';
 import { SHORTCUTS, shortcutFor, shortcutMatches } from '../../utils/shortcuts';
 import { useChatNavigation } from '../../contexts/ChatContext';
 import { Sidebar } from './Sidebar';
+import { ErrorBoundary, DeferredLoadError } from './ErrorBoundary';
 import { StatusBar } from './StatusBar';
 import { WorkspaceCreator } from '../workspace/WorkspaceCreator';
 import { useWorkspace, repoIsMapped } from '../../contexts/WorkspaceContext';
@@ -292,9 +293,17 @@ export function Shell({ connectionStatus, userRole, cloudFeaturesEnabled }: Shel
               </div>
             </div>
             {(terminalMounted || terminalOpen) && (
-              <Suspense fallback={null}>
-                <TerminalPanel isOpen={terminalOpen} onClose={() => setTerminalOpen(false)} />
-              </Suspense>
+              <ErrorBoundary
+                fallback={
+                  terminalOpen ? (
+                    <DeferredLoadError label="Terminal" onClose={() => setTerminalOpen(false)} />
+                  ) : null
+                }
+              >
+                <Suspense fallback={null}>
+                  <TerminalPanel isOpen={terminalOpen} onClose={() => setTerminalOpen(false)} />
+                </Suspense>
+              </ErrorBoundary>
             )}
           </main>
         </div>
@@ -340,16 +349,27 @@ export function Shell({ connectionStatus, userRole, cloudFeaturesEnabled }: Shel
           />
         )}
         {commandPaletteOpen && (
-          <Suspense fallback={null}>
-            <CommandPalette
-              open={commandPaletteOpen}
-              onClose={() => setCommandPaletteOpen(false)}
-              userRole={userRole}
-              cloudFeaturesEnabled={cloudFeaturesEnabled}
-              onToggleTerminal={toggleTerminal}
-              onCreateWorkspace={() => setShowCreator(true)}
-            />
-          </Suspense>
+          <ErrorBoundary
+            fallback={
+              <div className="fixed inset-0 z-50 grid place-items-center bg-bg-primary/95">
+                <DeferredLoadError
+                  label="Command palette"
+                  onClose={() => setCommandPaletteOpen(false)}
+                />
+              </div>
+            }
+          >
+            <Suspense fallback={null}>
+              <CommandPalette
+                open={commandPaletteOpen}
+                onClose={() => setCommandPaletteOpen(false)}
+                userRole={userRole}
+                cloudFeaturesEnabled={cloudFeaturesEnabled}
+                onToggleTerminal={toggleTerminal}
+                onCreateWorkspace={() => setShowCreator(true)}
+              />
+            </Suspense>
+          </ErrorBoundary>
         )}
       </div>
     </SidebarActivityProvider>

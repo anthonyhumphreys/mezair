@@ -2,11 +2,11 @@ name: Mezair journey performance
 on:
   pull_request:
     paths:
-      - 'mezair-app/src/**'
-      - 'mezair-app/scripts/performance/**'
-      - 'mezair-app/package.json'
-      - 'mezair-app/pnpm-lock.yaml'
-      - '.github/workflows/app-performance.yml'
+      - "mezair-app/src/**"
+      - "mezair-app/scripts/performance/**"
+      - "mezair-app/package.json"
+      - "mezair-app/pnpm-lock.yaml"
+      - ".github/workflows/app-performance.yml"
   workflow_dispatch:
 permissions:
   contents: read
@@ -17,7 +17,7 @@ env:
   CI: true
   # Immutable first-pass reference; update deliberately when accepting new budgets.
   PERF_BASE_REF: 258009240b2322049a37658e4393bc8dd1a5aaf6
-  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
 jobs:
   renderer:
     name: Paired renderer budgets (Ubuntu 24.04)
@@ -46,6 +46,11 @@ jobs:
       - name: Build both production fixtures
         run: |
           node scripts/performance/prepare-baseline.mjs "$PERF_BASE_REF" "$RUNNER_TEMP/perf-baseline"
+          pnpm --dir "$RUNNER_TEMP/perf-baseline/mezair-app" exec electron-vite build
+          node scripts/performance/bundle-metrics.mjs "$RUNNER_TEMP/perf-baseline/mezair-app/out/renderer" docs/performance/ci-bundles-before.json
+          pnpm exec electron-vite build
+          node scripts/performance/bundle-metrics.mjs out/renderer docs/performance/ci-bundles-after.json
+          node scripts/performance/check-budgets.mjs docs/performance/ci-bundles-before.json docs/performance/ci-bundles-after.json bundle
           PERF_OUT_DIR="$RUNNER_TEMP/perf-before" pnpm --dir "$RUNNER_TEMP/perf-baseline/mezair-app" exec vite build --config scripts/performance/vite.config.mjs
           PERF_OUT_DIR="$RUNNER_TEMP/perf-after" pnpm exec vite build --config scripts/performance/vite.config.mjs
       - name: Alternate five pairs in the same browser and enforce budgets
@@ -53,8 +58,9 @@ jobs:
           CHROME_PATH: /usr/bin/google-chrome
           PERF_FIXTURE_ROOT: ${{ runner.temp }}/perf-after
           PERF_COMPARE_ROOT: ${{ runner.temp }}/perf-before
-          PERF_TURNS: '1000'
-          PERF_CHECKS: '1'
+          PERF_TURNS: "1000"
+          PERF_CHECKS: "1"
+          PERF_RICH: "1"
         run: |
           node scripts/performance/run.mjs docs/performance/ci-after.json docs/performance/ci-before.json
           node scripts/performance/check-budgets.mjs docs/performance/ci-before.json docs/performance/ci-after.json

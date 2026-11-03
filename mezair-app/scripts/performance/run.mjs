@@ -15,6 +15,8 @@ const browser = spawn(
     '--headless=new',
     '--no-sandbox',
     '--disable-gpu',
+    '--disable-popup-blocking',
+    ...(process.env.PERF_RICH ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : []),
     '--remote-debugging-pipe',
     '--disable-background-networking',
     '--disable-component-update',
@@ -31,7 +33,7 @@ const browser = spawn(
   ],
   { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] },
 );
-const browserExited = new Promise((resolve) => browser.once('exit', resolve));
+const browserExited = new Promise((resolve) => browser.once('close', resolve));
 let sequence = 0;
 let buffer = '';
 const pending = new Map();
@@ -84,6 +86,10 @@ const evaluate = async (sessionId, expression) => {
 };
 
 try {
+  await new Promise((resolve, reject) => {
+    browser.once('spawn', resolve);
+    browser.once('error', reject);
+  });
   const version = await command('Browser.getVersion');
   const variants = [
     {
@@ -150,6 +156,7 @@ try {
         writeFileSync(process.env.PERF_SCREENSHOT, Buffer.from(screenshot.data, 'base64'));
       }
       if (process.env.PERF_CHECKS && run === 0 && variant.current) {
+        await evaluate(sessionId, `window.__PERF_RICH__=${Boolean(process.env.PERF_RICH)}`);
         variant.checks = {
           chat: await evaluate(sessionId, 'window.checkTranscript()'),
           dashboard: await evaluate(sessionId, 'window.checkDashboard()'),
@@ -194,7 +201,22 @@ try {
   console.error(error);
   process.exitCode = 1;
 } finally {
-  await command('Browser.close').catch(() => {});
+  if (browser.pid && browser.exitCode === null) {
+    await Promise.race([
+      command('Browser.close').catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 3000).unref()),
+    ]);
+    await Promise.race([
+      browserExited,
+      new Promise((resolve) => setTimeout(resolve, 3000).unref()),
+    ]);
+    if (browser.exitCode === null) browser.kill();
+  }
+  for (const request of pending.values()) {
+    clearTimeout(request.timeout);
+    request.reject(new Error('Browser closed'));
+  }
+  pending.clear();
   await browserExited;
   rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }

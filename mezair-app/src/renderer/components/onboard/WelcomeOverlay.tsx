@@ -3,6 +3,7 @@ import { useBrand } from '../../contexts/BrandContext';
 import type { UserRole } from '../../../shared/types';
 import { RoleOptionList } from './RolePickerOverlay';
 import { OnboardingPreviewBar } from './OnboardingPreviewBar';
+import { ErrorBoundary, DeferredLoadError } from '../layout/ErrorBoundary';
 import { preloadable } from '../../utils/preloadable';
 
 const connectorImport = preloadable(() => import('./ConnectorSetupOverlay'));
@@ -104,121 +105,133 @@ export function WelcomeOverlay({
   };
 
   return (
-    <Suspense
+    <ErrorBoundary
       fallback={
-        <div
-          role="status"
-          className="flex h-screen items-center justify-center bg-bg-primary text-sm text-text-secondary"
-        >
-          Loading setup…
+        <div className="h-screen bg-bg-primary">
+          <DeferredLoadError label="Setup" />
         </div>
       }
     >
-      {step === 'role' ? (
-        <div
-          className={`flex h-screen flex-col overflow-y-auto bg-bg-primary ${
-            preview ? 'py-24' : 'py-14'
-          }`}
-        >
-          <div className="titlebar-drag fixed inset-x-0 top-0 h-10" />
-          {preview && onExitPreview && <OnboardingPreviewBar onExit={onExitPreview} />}
-          <div className="mx-auto my-auto w-full max-w-md shrink-0 space-y-6 px-6">
-            <div className="text-center">
-              <h1 className="text-2xl font-bold text-accent">Welcome to {brand.appName}</h1>
-              <p className="mt-1 text-eyebrow font-semibold uppercase tracking-wider text-text-tertiary">
-                Step 1 of 3
-              </p>
-              <p className="mt-2 text-sm text-text-secondary">Choose your starting tools.</p>
-            </div>
-
-            <div
-              onPointerOverCapture={() => connectorImport.warm()}
-              onFocusCapture={() => connectorImport.warm()}
-            >
-              <RoleOptionList onSelect={(role) => void handleRole(role)} />
-            </div>
+      <Suspense
+        fallback={
+          <div
+            role="status"
+            className="flex h-screen items-center justify-center bg-bg-primary text-sm text-text-secondary"
+          >
+            Loading setup…
           </div>
-        </div>
-      ) : (
-        <div
-          className={step === 'agent' ? 'block' : 'hidden'}
-          onPointerOverCapture={(event) => {
-            if (
-              (event.target as HTMLElement).closest('button')?.textContent?.match(/continue|later/i)
-            )
-              syncImport.warm();
-          }}
-          onFocusCapture={(event) => {
-            if (
-              (event.target as HTMLElement).closest('button')?.textContent?.match(/continue|later/i)
-            )
-              syncImport.warm();
-          }}
-        >
-          <ConnectorSetupOverlay
-            preview={preview}
-            onExitPreview={onExitPreview}
-            sections={['llm']}
-            stepLabel="Step 2 of 3"
-            title="Connect a coding agent"
-            subtitle="Choose the account you want to use for chat and coding. You can add work items and documents later, when you need them."
-            onBack={() => move('agent', 'back')}
-            onSetUpLater={() => {
-              if (!preview)
-                trackActivation('onboarding_step_completed', { step: 'agent', choice: 'later' });
-              move('agent', 'continue');
-            }}
-            onContinue={() => {
-              if (!preview) trackActivation('onboarding_step_completed', { step: 'agent' });
-              move('agent', 'continue');
-            }}
-          />
-        </div>
-      )}
+        }
+      >
+        {step === 'role' ? (
+          <div
+            className={`flex h-screen flex-col overflow-y-auto bg-bg-primary ${
+              preview ? 'py-24' : 'py-14'
+            }`}
+          >
+            <div className="titlebar-drag fixed inset-x-0 top-0 h-10" />
+            {preview && onExitPreview && <OnboardingPreviewBar onExit={onExitPreview} />}
+            <div className="mx-auto my-auto w-full max-w-md shrink-0 space-y-6 px-6">
+              <div className="text-center">
+                <h1 className="text-2xl font-bold text-accent">Welcome to {brand.appName}</h1>
+                <p className="mt-1 text-eyebrow font-semibold uppercase tracking-wider text-text-tertiary">
+                  Step 1 of 3
+                </p>
+                <p className="mt-2 text-sm text-text-secondary">Choose your starting tools.</p>
+              </div>
 
-      {step === 'sync' && (
-        <div
-          className={`flex h-screen flex-col overflow-y-auto bg-bg-primary ${
-            preview ? 'py-24' : 'py-14'
-          }`}
-        >
-          <div className="titlebar-drag fixed inset-x-0 top-0 h-10" />
-          {preview && onExitPreview && <OnboardingPreviewBar onExit={onExitPreview} />}
-          <div className="mx-auto my-auto w-full max-w-xl shrink-0 space-y-5 px-6">
-            <div className="text-center">
-              <p className="text-eyebrow font-semibold uppercase tracking-wider text-text-tertiary">
-                Step 3 of 3
-              </p>
-              <h1 className="mt-1 text-2xl font-bold text-text-primary">
-                Use more than one device?
-              </h1>
-              <p className="mt-2 text-sm leading-relaxed text-text-secondary">
-                Sync is optional. Keep working on this device without a Mezair account, or connect
-                an account to share your workspace setup with your other devices.
-              </p>
-            </div>
-
-            <SyncMeshSetupCard
-              preview={preview}
-              onUseOnDevice={() => completeSyncStep('use-on-this-device', 'local')}
-              onContinue={() => completeSyncStep('continue', 'sync')}
-              onRecoveryCodePendingChange={setRecoveryCodePending}
-              onBusyChange={setSyncBusy}
-            />
-
-            <div className="flex justify-start">
-              <button
-                type="button"
-                onClick={() => move('sync', 'back')}
-                disabled={recoveryCodePending || syncBusy}
-                className="rounded-lg border border-border px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary disabled:cursor-not-allowed disabled:opacity-50"
+              <div
+                onPointerOverCapture={() => connectorImport.warm()}
+                onFocusCapture={() => connectorImport.warm()}
               >
-                Back to agent setup
-              </button>
+                <RoleOptionList onSelect={(role) => void handleRole(role)} />
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </Suspense>
+        ) : (
+          <div
+            className={step === 'agent' ? 'block' : 'hidden'}
+            onPointerOverCapture={(event) => {
+              if (
+                (event.target as HTMLElement)
+                  .closest('button')
+                  ?.textContent?.match(/continue|later/i)
+              )
+                syncImport.warm();
+            }}
+            onFocusCapture={(event) => {
+              if (
+                (event.target as HTMLElement)
+                  .closest('button')
+                  ?.textContent?.match(/continue|later/i)
+              )
+                syncImport.warm();
+            }}
+          >
+            <ConnectorSetupOverlay
+              preview={preview}
+              onExitPreview={onExitPreview}
+              sections={['llm']}
+              stepLabel="Step 2 of 3"
+              title="Connect a coding agent"
+              subtitle="Choose the account you want to use for chat and coding. You can add work items and documents later, when you need them."
+              onBack={() => move('agent', 'back')}
+              onSetUpLater={() => {
+                if (!preview)
+                  trackActivation('onboarding_step_completed', { step: 'agent', choice: 'later' });
+                move('agent', 'continue');
+              }}
+              onContinue={() => {
+                if (!preview) trackActivation('onboarding_step_completed', { step: 'agent' });
+                move('agent', 'continue');
+              }}
+            />
+          </div>
+        )}
+
+        {step === 'sync' && (
+          <div
+            className={`flex h-screen flex-col overflow-y-auto bg-bg-primary ${
+              preview ? 'py-24' : 'py-14'
+            }`}
+          >
+            <div className="titlebar-drag fixed inset-x-0 top-0 h-10" />
+            {preview && onExitPreview && <OnboardingPreviewBar onExit={onExitPreview} />}
+            <div className="mx-auto my-auto w-full max-w-xl shrink-0 space-y-5 px-6">
+              <div className="text-center">
+                <p className="text-eyebrow font-semibold uppercase tracking-wider text-text-tertiary">
+                  Step 3 of 3
+                </p>
+                <h1 className="mt-1 text-2xl font-bold text-text-primary">
+                  Use more than one device?
+                </h1>
+                <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                  Sync is optional. Keep working on this device without a Mezair account, or connect
+                  an account to share your workspace setup with your other devices.
+                </p>
+              </div>
+
+              <SyncMeshSetupCard
+                preview={preview}
+                onUseOnDevice={() => completeSyncStep('use-on-this-device', 'local')}
+                onContinue={() => completeSyncStep('continue', 'sync')}
+                onRecoveryCodePendingChange={setRecoveryCodePending}
+                onBusyChange={setSyncBusy}
+              />
+
+              <div className="flex justify-start">
+                <button
+                  type="button"
+                  onClick={() => move('sync', 'back')}
+                  disabled={recoveryCodePending || syncBusy}
+                  className="rounded-lg border border-border px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Back to agent setup
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Suspense>
+    </ErrorBoundary>
   );
 }

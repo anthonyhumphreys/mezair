@@ -169,6 +169,8 @@ for (let launch = 0; launch < 3; launch++) {
         sessionId,
         `new Promise((resolve,reject)=>{const deadline=Date.now()+30000;const check=()=>typeof window.runPerformanceScenario==='function'?resolve(true):Date.now()>deadline?reject(new Error('Stream fixture did not load')):setTimeout(check,25);check()})`,
       );
+      report.highlightCheck = await cdp.evaluate(sessionId, 'window.checkNativeHighlight()');
+      save();
       const soakStart = performance.now();
       let nextSample = 0;
       let cycles = 0;
@@ -184,7 +186,6 @@ for (let launch = 0; launch < 3; launch++) {
       }
       report.soakElapsedMs = performance.now() - soakStart;
       report.streamCycles = cycles;
-      report.highlightCheck = await cdp.evaluate(sessionId, 'window.checkNativeHighlight()');
     }
   } catch (error) {
     report.error = String(error);

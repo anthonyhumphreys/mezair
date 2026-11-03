@@ -8,7 +8,8 @@ if (!/^[a-f0-9]{40}$/.test(revision ?? '') || !destination)
 const root = resolve('..'),
   target = resolve(destination);
 mkdirSync(target, { recursive: true });
-execFileSync('tar', ['-x', '-C', target], {
+execFileSync('tar', ['-x'], {
+  cwd: target,
   input: execFileSync('git', ['archive', revision], { cwd: root, maxBuffer: 128 * 1024 * 1024 }),
 });
 symlinkSync(

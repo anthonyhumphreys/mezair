@@ -168,6 +168,9 @@ export async function checkExtra() {
         'A real diagram must finish rendering',
       );
       const image = host.querySelector<HTMLImageElement>('img[alt="Lifecycle image"]');
+      image?.scrollIntoView({ block: 'center' });
+      const imageDeadline = performance.now() + 3000;
+      while (image && !image.complete && performance.now() < imageDeadline) await delay(25);
       check(image?.complete && image.naturalWidth > 0, 'A real image must load');
       render(null);
       await frame();

@@ -92,7 +92,7 @@ export type ChatEntry = (
     }
   | { kind: 'thinking'; content: string; id?: string }
   | { kind: 'event'; event: CodexEvent }
-) & { timestamp?: string; historyId?: string };
+) & { timestamp?: string; historyId?: string; historyEndId?: string };
 
 interface ChatContextValue {
   personas: Persona[];
@@ -1625,7 +1625,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           event.type === 'agent_ui_intent_resolved' ||
           event.type === 'follow_up_delivery')
       ) {
-        const key = `${event.type}:${event.resolvedRequestId ?? event.agentUIIntentId ?? event.followUpRequestId ?? ''}`;
+        const key = `${event.type}:${event.sessionId ?? ''}:${event.resolvedRequestId ?? event.agentUIIntentId ?? event.followUpRequestId ?? ''}`;
         historyResolutionsRef.current.messages.set(key, {
           id: `live:${key}`,
           role: 'system',
@@ -4350,6 +4350,12 @@ export function chatMessagesToEntries(history: ChatMessage[]): ChatEntry[] {
         // Persisted reasoning reloads as the same coalescing 'thinking' entry
         // kind the live stream produces.
         const next = appendLiveStreamEntry(entries, 'thinking', event.text);
+        const last = next.length - 1;
+        next[last] = {
+          ...next[last],
+          historyId: next[last].historyId ?? message.id,
+          historyEndId: message.id,
+        };
         entries.splice(0, entries.length, ...next);
         continue;
       }

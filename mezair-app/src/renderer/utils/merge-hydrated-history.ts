@@ -1,6 +1,7 @@
 import type { ChatEntry } from '../contexts/ChatContext';
 
 function identity(entry: ChatEntry): string | undefined {
+  if (entry.kind === 'thinking' && entry.historyEndId) return `thinking:${entry.historyEndId}`;
   if ('id' in entry && entry.id) return `${entry.kind}:${entry.id}`;
   if (entry.kind === 'event') {
     const event = entry.event;
@@ -24,7 +25,18 @@ export function mergeHydratedHistory(
     if (!key || !old.has(key)) return [entry];
     const latest = live.get(key);
     if (!latest) return [];
-    return [latest === old.get(key) ? entry : latest];
+    const previous = old.get(key)!;
+    if (latest === previous) return [entry];
+    if (
+      entry.kind === 'thinking' &&
+      previous.kind === 'thinking' &&
+      latest.kind === 'thinking' &&
+      latest.content.startsWith(previous.content) &&
+      entry.content.endsWith(previous.content)
+    ) {
+      return [{ ...entry, content: entry.content + latest.content.slice(previous.content.length) }];
+    }
+    return [latest];
   });
   const included = new Set(result.map(identity).filter(Boolean));
   for (const entry of current) {

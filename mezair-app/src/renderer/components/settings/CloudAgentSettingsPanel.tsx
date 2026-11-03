@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { pollWhileVisible } from '../../utils/visible-polling';
 import type { ReactNode } from 'react';
 import { Check, Loader2, Plug, Unplug } from 'lucide-react';
 import type { AgentProvider } from '../../../shared/types';
@@ -71,7 +72,7 @@ export function CloudAgentSettingsPanel(): ReactNode {
   useEffect(() => {
     let mounted = true;
     const load = () => {
-      void window.mezair.cloudAgentSettings
+      return window.mezair.cloudAgentSettings
         .get()
         .then((result) => {
           if (mounted) setSnapshot(result);
@@ -80,11 +81,11 @@ export function CloudAgentSettingsPanel(): ReactNode {
           if (mounted) setError(cause instanceof Error ? cause.message : String(cause));
         });
     };
-    load();
-    const timer = connectionInProgress ? window.setInterval(load, 2000) : undefined;
+    const stop = connectionInProgress ? pollWhileVisible(load, 2000) : undefined;
+    if (!connectionInProgress) void load();
     return () => {
       mounted = false;
-      if (timer !== undefined) window.clearInterval(timer);
+      stop?.();
     };
   }, [connectionInProgress]);
 

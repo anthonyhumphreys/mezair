@@ -606,6 +606,13 @@ changes, cross-source dedupe, overlapping claims, refreshed issue content and
 queue-started execution budgets have focused coverage. No live provider write
 was performed.
 
+Factory presentation reads use at most four concurrent requests per directory
+or non-selected-factory summary batch. Selected-run polling and relative-time
+updates pause while the Desktop window is hidden and catch up on return;
+polls do not overlap. Navigation invalidates pending presentation responses and
+queued reads. These are renderer resource limits only: the daemon continues
+authorised execution, and service access checks still govern every read.
+
 The dual-provider delivery and Mezair role change passed the full desktop suite
 (3,417 passed, 12 skipped), then 70 focused tests after the final current-head
 review and continuation guards. Node/web/backend TypeScript checks, lint,

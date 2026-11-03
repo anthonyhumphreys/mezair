@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mezair — Desktop performance report</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #14221f;
+        --muted: #56675f;
+        --line: #dce4dd;
+        --green: #23644b;
+        --mint: #c7e7d4;
+        --paper: #f7f9f5;
+        --old: #95a59b;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font:
+          16px/1.6 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+      main {
+        max-width: 1160px;
+        margin: auto;
+        padding: 48px 42px 70px;
+      }
+      a {
+        color: var(--green);
+        text-underline-offset: 3px;
+      }
+      header {
+        border-top: 5px solid var(--ink);
+        padding-top: 20px;
+      }
+      .mast {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        font:
+          600 12px/1.5 ui-monospace,
+          SFMono-Regular,
+          monospace;
+        letter-spacing: 0.1em;
+      }
+      .kicker {
+        color: var(--green);
+        text-transform: uppercase;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.15em;
+        margin: 0 0 10px;
+      }
+      h1 {
+        font-size: clamp(42px, 6vw, 76px);
+        line-height: 1.02;
+        letter-spacing: -0.055em;
+        margin: 46px 0 24px;
+        font-weight: 650;
+      }
+      h2 {
+        font-size: 29px;
+        letter-spacing: -0.035em;
+        line-height: 1.2;
+        margin: 0 0 16px;
+      }
+      h3 {
+        font-size: 17px;
+        line-height: 1.35;
+        margin: 0 0 7px;
+        letter-spacing: -0.015em;
+      }
+      p {
+        margin: 0 0 15px;
+      }
+      .intro {
+        max-width: 730px;
+        font-size: 20px;
+        line-height: 1.5;
+        color: var(--muted);
+      }
+      .scope {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 25px 0 36px;
+      }
+      .pill {
+        font-size: 12px;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 5px 12px;
+        background: #fff;
+      }
+      .hero {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        background: var(--ink);
+        color: #fff;
+        border-radius: 5px;
+        overflow: hidden;
+        margin: 28px 0 20px;
+      }
+      .stat {
+        padding: 27px 30px;
+        border-right: 1px solid #ffffff24;
+      }
+      .stat:last-child {
+        border: 0;
+      }
+      .stat strong {
+        display: block;
+        font-size: 48px;
+        line-height: 1.1;
+        letter-spacing: -0.05em;
+        color: var(--mint);
+      }
+      .stat b {
+        display: block;
+        font-size: 14px;
+        margin: 12px 0 4px;
+      }
+      .stat span {
+        font:
+          12px/1.6 ui-monospace,
+          SFMono-Regular,
+          monospace;
+        color: #bfcfc5;
+      }
+      .note {
+        font-size: 13px;
+        color: var(--muted);
+        max-width: 900px;
+      }
+      .section {
+        border-top: 1px solid var(--line);
+        margin-top: 46px;
+        padding-top: 30px;
+      }
+      .section-head {
+        display: grid;
+        grid-template-columns: 100px 1fr;
+        gap: 20px;
+        margin-bottom: 24px;
+      }
+      .section-id {
+        color: var(--green);
+        font:
+          13px/1.6 ui-monospace,
+          monospace;
+      }
+      .section-head p {
+        max-width: 800px;
+        color: var(--muted);
+        margin: 0;
+      }
+      .table-wrap {
+        overflow: auto;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-variant-numeric: tabular-nums;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 15px 20px;
+        border-bottom: 1px solid var(--line);
+      }
+      thead th {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 600;
+        background: #f0f4ef;
+      }
+      tbody tr:last-child th,
+      tbody tr:last-child td {
+        border: 0;
+      }
+      tbody th {
+        font-weight: 500;
+        width: 43%;
+      }
+      td {
+        white-space: nowrap;
+      }
+      th small {
+        display: block;
+        font-size: 11px;
+        color: var(--muted);
+        font-weight: 400;
+        margin-top: 3px;
+      }
+      .after {
+        font-weight: 650;
+        color: var(--green);
+        background: #f3f8f3;
+      }
+      .good {
+        color: var(--green);
+        font-weight: 600;
+      }
+      .caution {
+        color: #9c5528;
+        font-weight: 600;
+      }
+      .callout {
+        border-left: 3px solid var(--green);
+        padding: 12px 18px;
+        background: #eaf2e9;
+        margin-top: 20px;
+        font-size: 14px;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+      .card {
+        border: 1px solid var(--line);
+        background: #fff;
+        padding: 23px 25px;
+        border-radius: 4px;
+      }
+      .card p {
+        font-size: 14px;
+        color: var(--muted);
+        margin: 0;
+      }
+      .card .tag {
+        font:
+          11px ui-monospace,
+          monospace;
+        color: var(--green);
+        display: block;
+        margin-bottom: 15px;
+      }
+      .card.chat {
+        grid-column: 1/-1;
+        background: #edf4ed;
+      }
+      .changes {
+        padding-left: 20px;
+        font-size: 14px;
+        color: var(--muted);
+        margin: 10px 0 0;
+      }
+      .changes li {
+        margin-bottom: 7px;
+      }
+      .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
+      }
+      .bar-row {
+        margin: 17px 0;
+      }
+      .bar-label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 13px;
+        margin-bottom: 5px;
+      }
+      .track {
+        height: 13px;
+        background: #e7ece7;
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .bar {
+        height: 100%;
+        background: var(--old);
+      }
+      .bar.new {
+        background: var(--green);
+      }
+      .legend {
+        display: flex;
+        gap: 20px;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 12px;
+      }
+      .dot {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        margin-right: 5px;
+        background: var(--old);
+      }
+      .dot.new {
+        background: var(--green);
+      }
+      .steps {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0 28px;
+        counter-reset: steps;
+      }
+      .steps li {
+        display: flex;
+        gap: 16px;
+        border-top: 1px solid var(--line);
+        padding: 22px 0;
+        break-inside: avoid;
+      }
+      .step-no {
+        font:
+          14px ui-monospace,
+          monospace;
+        color: var(--green);
+        padding-top: 3px;
+      }
+      .steps p {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 0;
+      }
+      .checks {
+        columns: 2;
+        padding-left: 20px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .checks li {
+        margin-bottom: 7px;
+        break-inside: avoid;
+      }
+      .verify {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 9px;
+        margin-bottom: 20px;
+      }
+      .verify span {
+        background: #e5efe4;
+        border: 1px solid #cfdfcd;
+        border-radius: 3px;
+        color: #2c593c;
+        padding: 7px 12px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      details {
+        border: 1px solid var(--line);
+        padding: 14px 18px;
+        margin-top: 20px;
+        background: #fff;
+        font-size: 13px;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      pre {
+        overflow: auto;
+        background: #edf1ec;
+        padding: 16px;
+        font:
+          12px/1.7 ui-monospace,
+          SFMono-Regular,
+          monospace;
+      }
+      code {
+        font:
+          12px ui-monospace,
+          SFMono-Regular,
+          monospace;
+        overflow-wrap: anywhere;
+      }
+      footer {
+        border-top: 1px solid var(--line);
+        margin-top: 40px;
+        padding-top: 18px;
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      @media (max-width: 700px) {
+        main {
+          padding: 24px 20px 40px;
+        }
+        .mast {
+          font-size: 10px;
+        }
+        .hero,
+        .cards,
+        .two-col,
+        .steps {
+          grid-template-columns: 1fr;
+        }
+        .stat {
+          border-right: 0;
+          border-bottom: 1px solid #ffffff24;
+          padding: 23px;
+        }
+        .stat strong {
+          font-size: 40px;
+        }
+        .card.chat {
+          grid-column: auto;
+        }
+        .section-head {
+          grid-template-columns: 1fr;
+          gap: 6px;
+        }
+        .checks {
+          columns: 1;
+        }
+        th,
+        td {
+          padding: 12px;
+        }
+        .intro {
+          font-size: 18px;
+        }
+        footer {
+          display: block;
+        }
+      }
+      @media print {
+        body {
+          background: white;
+          font-size: 11px;
+        }
+        main {
+          padding: 15px;
+          max-width: none;
+        }
+        .hero,
+        .card {
+          break-inside: avoid;
+        }
+        .hero {
+          print-color-adjust: exact;
+        }
+        .section {
+          margin-top: 26px;
+          padding-top: 20px;
+        }
+        h1 {
+          font-size: 50px;
+        }
+        .stat strong {
+          font-size: 35px;
+        }
+        .steps {
+          display: block;
+        }
+        .steps li {
+          padding: 12px 0;
+        }
+        a {
+          color: inherit;
+        }
+        details {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="mast">
+          <span>MEZAIR / ENGINEERING</span><span>DESKTOP PERFORMANCE · 03 NOV 2026</span>
+        </div>
+        <h1>Less work.<br />Smoother chat.</h1>
+        <p class="intro">
+          A performance pass across the journeys people use most, with the largest effort on keeping
+          chat responsive and reducing retained memory.
+        </p>
+        <div class="scope">
+          <span class="pill">First run &amp; onboarding</span><span class="pill">Chat</span
+          ><span class="pill">Settings</span><span class="pill">Software factories</span
+          ><span class="pill">Dashboards</span>
+        </div>
+        <div class="hero">
+          <div class="stat">
+            <strong>72%</strong><b>less streamed-update work</b><span>6.9 ms → 1.9 ms</span>
+          </div>
+          <div class="stat">
+            <strong>30%</strong><b>less retained renderer heap</b><span>12.10 MiB → 8.50 MiB</span>
+          </div>
+          <div class="stat">
+            <strong>32%</strong><b>less initial JavaScript</b><span>2,008.9 kB → 1,372.1 kB</span>
+          </div>
+        </div>
+        <p class="note">
+          Chat figures come from a synthetic 100-turn production-renderer fixture. Initial
+          JavaScript is a production bundle measurement. These are scoped measurements; they do not
+          establish whole-app RSS or live provider latency.
+        </p>
+      </header>
+      <section class="section">
+        <div class="section-head">
+          <span class="section-id">01 / CHAT</span>
+          <div>
+            <h2>Keep the live turn light.</h2>
+            <p>
+              Settled turns retain their derived objects and component state. Collapsed processing
+              cards allocate no routine operation rows. Scroll events share one frame of work and
+              find the visible turn with a binary search.
+            </p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Measurement</th>
+                <th>Before</th>
+                <th>After</th>
+                <th>Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">
+                  Streamed update · median<small>Synchronous React update and layout work</small>
+                </th>
+                <td>6.9 ms</td>
+                <td class="after">1.9 ms</td>
+                <td><span class="good">72.5% less</span></td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  Streamed update · P95<small>Median of the five per-run P95 values</small>
+                </th>
+                <td>9.8 ms</td>
+                <td class="after">3.5 ms</td>
+                <td><span class="good">64.3% less</span></td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  200 composition updates<small
+                    >Whole batch, including immutable input copies</small
+                  >
+                </th>
+                <td>37.5 ms</td>
+                <td class="after">5.5 ms</td>
+                <td><span class="good">85.3% less</span></td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  Retained renderer heap<small
+                    >Scenario heap minus idle heap, after forced GC</small
+                  >
+                </th>
+                <td>12.10 MiB</td>
+                <td class="after">8.50 MiB</td>
+                <td><span class="good">29.8% less</span></td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  Mounted DOM elements<small>Same visible transcript and collapsed controls</small>
+                </th>
+                <td>8,721</td>
+                <td class="after">5,721</td>
+                <td><span class="good">34.4% less</span></td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  Scroll geometry reads<small>20 scroll events at the same history position</small>
+                </th>
+                <td>1,220</td>
+                <td class="after">7</td>
+                <td><span class="good">99.4% less</span></td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  Cold transcript mount<small
+                    >First synchronous mount; separate from app startup</small
+                  >
+                </th>
+                <td>103.4 ms</td>
+                <td class="after">90.9 ms</td>
+                <td><span class="good">12.1% less</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout">
+          <strong>99 of 100 turn objects reused on a live update.</strong> Hidden routine rows fell
+          from 3,000 to zero. Approval and question controls remain mounted when needed; opening a
+          processing card still reveals its operations. Cold mount also improved in the paired run.
+        </div>
+      </section>
+      <section class="section">
+        <div class="section-head">
+          <span class="section-id">02 / LOADING</span>
+          <div>
+            <h2>Load tools when they are needed.</h2>
+            <p>
+              The terminal, command palette and later onboarding screens move behind dynamic
+              imports. Settings keeps its category-level loading. Every listed journey inherits the
+              smaller shell.
+            </p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>First-visit JavaScript · raw</th>
+                <th>Before</th>
+                <th>After</th>
+                <th>Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">First run / initial shell</th>
+                <td>2,008.9 kB</td>
+                <td class="after">1,372.1 kB</td>
+                <td><span class="good">31.7% less</span></td>
+              </tr>
+              <tr>
+                <th scope="row">Chat</th>
+                <td>4,303.7 kB</td>
+                <td class="after">3,673.9 kB</td>
+                <td><span class="good">14.6% less</span></td>
+              </tr>
+              <tr>
+                <th scope="row">Settings · appearance</th>
+                <td>2,069.5 kB</td>
+                <td class="after">1,433.5 kB</td>
+                <td><span class="good">30.7% less</span></td>
+              </tr>
+              <tr>
+                <th scope="row">Software factories</th>
+                <td>2,223.6 kB</td>
+                <td class="after">1,588.9 kB</td>
+                <td><span class="good">28.5% less</span></td>
+              </tr>
+              <tr>
+                <th scope="row">Home dashboard</th>
+                <td>2,140.3 kB</td>
+                <td class="after">1,505.1 kB</td>
+                <td><span class="good">29.7% less</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note" style="margin-top: 12px">
+          Unique static import closures, including the shell; overlapping files count once per
+          journey. Deferred features still ship in the application. Initial gzip size: 395.7 kB →
+          264.0 kB. No network-speed or native-startup claim is inferred from bundle size.
+        </p>
+      </section>
+      <section class="section">
+        <div class="section-head">
+          <span class="section-id">03 / CHANGES</span>
+          <div><h2>What changed in each journey.</h2></div>
+        </div>
+        <div class="cards">
+          <article class="card chat">
+            <span class="tag">CHAT · PRIMARY FOCUS</span>
+            <h3>Stop rebuilding completed work.</h3>
+            <ul class="changes">
+              <li>
+                A transcript-local composer only recomposes turns whose immutable entries or live
+                state changed; it retains one history rather than caching every visited thread.
+              </li>
+              <li>
+                Memoized turn rows preserve expanded processing state. File-change and later-edit
+                guards stay current when a later turn changes a file.
+              </li>
+              <li>
+                Collapsed routine work is unmounted. Questions, approvals and other surfaced
+                interactions remain visible.
+              </li>
+              <li>
+                Scroll capture runs once per frame, skips turn geometry at the bottom and avoids
+                identical session-storage writes. Reader position, jump-to-live and reduced motion
+                remain supported.
+              </li>
+              <li>
+                A separate memoized navigation context keeps transcript bytes out of shell,
+                status-bar, activity and palette subscriptions.
+              </li>
+            </ul>
+          </article>
+          <article class="card">
+            <span class="tag">FIRST RUN &amp; ONBOARDING</span>
+            <h3>Defer later setup screens.</h3>
+            <p>
+              Agent connection and Sync setup UI load when their steps are reached. The terminal
+              loads at first use and retains its workspace state afterward. Scaffold polling pauses
+              while hidden and refreshes on return.
+            </p>
+          </article>
+          <article class="card">
+            <span class="tag">SETTINGS</span>
+            <h3>Keep connection refreshes controlled.</h3>
+            <p>
+              Cloud-agent connection-progress polling is visibility-aware and waits for the previous
+              request to settle. Sync setup uses the same non-overlapping poller. The existing lazy
+              category loading and unsaved-edit protections remain in place.
+            </p>
+          </article>
+          <article class="card">
+            <span class="tag">SOFTWARE FACTORIES</span>
+            <h3>Bound presentation reads.</h3>
+            <p>
+              Directory and non-selected-factory summary batches each use at most four concurrent
+              reads. Selected-run polling and relative clocks pause while hidden. Navigation fences
+              late responses and skips obsolete queued reads. Authorised daemon execution continues
+              independently.
+            </p>
+          </article>
+          <article class="card">
+            <span class="tag">DASHBOARDS</span>
+            <h3>Coalesce refreshes; reject stale results.</h3>
+            <p>
+              Equivalent in-flight reads share a promise. An explicit refresh can bypass a cached
+              initial read; older responses cannot overwrite it. Polling resumes on visibility,
+              clocks pause while hidden, and workspace/configuration changes invalidate pending
+              results.
+            </p>
+          </article>
+        </div>
+      </section>
+      <section class="section">
+        <div class="section-head">
+          <span class="section-id">04 / EVIDENCE</span>
+          <div>
+            <h2>Repeatable checks, explicit limits.</h2>
+            <p>
+              Baseline source <code>ead4fe2a85ffb7b752cc61670adb4a7e8449600e</code>; after source is
+              this PR. Before and after renderer builds were measured in alternating order in one
+              browser session.
+            </p>
+          </div>
+        </div>
+        <div class="verify">
+          <span>3,429 tests passed · 12 skipped</span><span>Node + web TypeScript passed</span
+          ><span>ESLint passed</span><span>Production build passed</span
+          ><span>15 browser assertions passed</span>
+        </div>
+        <div class="two-col">
+          <div>
+            <h3>Measurement protocol</h3>
+            <p class="note">
+              Chrome/156.0.8078.80; Apple M3; darwin 27.0.0 arm64. Five fresh browser contexts per
+              version, production Vite output, background throttling disabled and reduced motion
+              enabled. Each context renders 100 turns with 30 routine operations per turn, then
+              applies 60 live-answer updates. Heap is collected before and after the scenario; the
+              reported value subtracts the idle heap.
+            </p>
+            <p class="note">
+              Composition additionally runs 200 updates. Scroll geometry counts use 20 synthetic
+              scroll events at a fixed position. Table values are medians across the five runs. The
+              per-run P95 uses the 60 streamed updates; it is not a field input-latency metric.
+            </p>
+          </div>
+          <div>
+            <h3>What still needs real-device evidence</h3>
+            <p class="note">
+              This fixture does not exercise packaged Electron startup, native processes, whole-app
+              RSS, external providers, network latency, rich surfaces, attachments or large diffs.
+              No live account, factory, Git publication or deployment is exercised. Cold-mount
+              timing is reported separately and should not be read as native startup time.
+            </p>
+            <p class="note">
+              The full test suite initially encountered blocked loopback sockets in the sandbox. It
+              passed with local test sockets allowed. The final shell/shortcut changes also passed
+              111 focused journey tests.
+            </p>
+          </div>
+        </div>
+        <details>
+          <summary>Browser behaviour checks</summary>
+          <ul class="checks">
+            <li>expand operations</li>
+            <li>preserve expansion during streaming</li>
+            <li>preserve reader offset</li>
+            <li>jump to live</li>
+            <li>follow pinned response</li>
+            <li>replace history</li>
+            <li>single initial read</li>
+            <li>coalesce forced refreshes</li>
+            <li>manual cache bypass</li>
+            <li>reject stale refresh</li>
+            <li>resize without fetching</li>
+            <li>clear cross-workspace results</li>
+            <li>reject old workspace response</li>
+            <li>reload row limit</li>
+            <li>dispose pending read</li>
+          </ul>
+        </details>
+        <details>
+          <summary>Raw data and reproduction</summary>
+          <p>
+            <a href="journeys-before.json">Renderer before</a> ·
+            <a href="journeys-after.json">Renderer after</a> ·
+            <a href="bundles-before.json">Bundles before</a> ·
+            <a href="bundles-after.json">Bundles after</a> ·
+            <a href="README.md">Full method and baseline instructions</a>
+          </p>
+          <pre>
+cd mezair-app
+pnpm exec vite build --config scripts/performance/vite.config.mjs
+PERF_CHECKS=1 node scripts/performance/run.mjs /tmp/mezair-after.json
+node scripts/performance/bundle-metrics.mjs out/renderer /tmp/mezair-bundles.json</pre>
+          <p>
+            The runner uses an installed Chromium browser and a disposable local profile. The
+            fixture and runner add no runtime dependency to the shipped app.
+          </p>
+        </details>
+      </section>
+      <section class="section">
+        <div class="section-head">
+          <span class="section-id">05 / NEXT</span>
+          <div>
+            <h2>Ten steps to improve further.</h2>
+            <p>Ordered work for the next pass, with a concrete outcome for each step.</p>
+          </div>
+        </div>
+        <ol class="steps">
+          <li data-next-step>
+            <span class="step-no">01</span>
+            <div>
+              <h3>Measure native startup and whole-app memory</h3>
+              <p>
+                Record cold launch, time to interactive, idle RSS and a 30-minute streaming soak in
+                the packaged Electron app on Apple Silicon and Windows. Set device-specific budgets
+                before the next release.
+              </p>
+            </div>
+          </li>
+          <li data-next-step>
+            <span class="step-no">02</span>
+            <div>
+              <h3>Window long transcript histories</h3>
+              <p>
+                Mount only nearby completed turns, while retaining selection, keyboard navigation,
+                search and saved anchors. Target a bounded DOM for 1,000-turn histories instead of
+                growth with every turn.
+              </p>
+            </div>
+          </li>
+          <li data-next-step>
+            <span class="step-no">03</span>
+            <div>
+              <h3>Render streaming Markdown in stable blocks</h3>
+              <p>
+                Reuse settled paragraphs and code fences inside the live answer. Benchmark long
+                code, tables and incomplete fences; aim for P95 update work below 8 ms on the
+                reference machine.
+              </p>
+            </div>
+          </li>
+          <li data-next-step>
+            <span class="step-no">04</span>
+            <div>
+              <h3>Move highlighting off the UI thread</h3>
+              <p>
+                Use one cancellable worker, deduplicate language loads, and discard obsolete
+                results. Exercise multiple code blocks streaming together and keep the existing
+                byte-bounded cache.
+              </p>
+            </div>
+          </li>
+          <li data-next-step>
+            <span class="step-no">05</span>
+            <div>
+              <h3>Page stored histories and factory runs</h3>
+              <p>
+                Add cursor-based chat history and a factory summary endpoint so rails do not fetch
+                full run histories. Measure IPC bytes, SQLite time and peak allocation with large
+                workspaces.
+              </p>
+            </div>
+          </li>
+          <li data-next-step>
+            <span class="step-no">06</span>
+            <div>
+              <h3>Narrow the remaining chat subscriptions</h3>
+              <p>
+                Separate composer commands, model preferences, artifacts and live execution state.
+                Profile background chat while editing Settings and require unrelated views to stay
+                idle between status transitions.
+              </p>
+            </div>
+          </li>
+          <li data-next-step>
+            <span class="step-no">07</span>
+            <div>
+              <h3>Share dashboard reads across modules</h3>
+              <p>
+                Deduplicate equivalent queries across panels and cap expensive source refreshes in
+                the main process. Preserve per-workspace keys, explicit cache bypass and
+                stale-success fallback.
+              </p>
+            </div>
+          </li>
+          <li data-next-step>
+            <span class="step-no">08</span>
+            <div>
+              <h3>Warm likely tools on user intent</h3>
+              <p>
+                Preload the terminal, palette or next setup step on focus or hover after the shell
+                is ready. Measure first-use latency and keep speculative loading out of the critical
+                startup path.
+              </p>
+            </div>
+          </li>
+          <li data-next-step>
+            <span class="step-no">09</span>
+            <div>
+              <h3>Audit rich-surface resource release</h3>
+              <p>
+                Soak-test diagrams, large diffs, document previews, images and pop-outs. Release
+                observers, object URLs, workers, WebGL contexts and retained artifact bytes when
+                their owners close.
+              </p>
+            </div>
+          </li>
+          <li data-next-step>
+            <span class="step-no">10</span>
+            <div>
+              <h3>Gate regressions in CI</h3>
+              <p>
+                Run this fixture and large/rich variants on a pinned runner, retain raw samples and
+                compare paired builds. Start with budgets for bundle growth, retained heap, DOM
+                count and streamed P95, then add real-device input latency.
+              </p>
+            </div>
+          </li>
+        </ol>
+      </section>
+      <footer>
+        <span>Mezair · Desktop journey performance pass</span
+        ><span>Measured 2026-11-03T07:27:53.215Z · standalone HTML / no external assets</span>
+      </footer>
+    </main>
+  </body>
+</html>

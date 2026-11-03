@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type RefObject } from 'react';
+import { memo, useCallback, useMemo, useRef, useState, type RefObject } from 'react';
 import { AlertTriangle, ArrowDown } from 'lucide-react';
 import type { AgentProvider, RepoInfo } from '../../../shared/types';
 import { buildChatTurnTimeline, type ComposedChatTurn } from './chat-turns';
@@ -8,17 +8,55 @@ import { AssistantMessage, TurnWorkMessage, UserMessage } from './ChatMessage';
 import { ChatErrorNotice, type ChatErrorProviderOption } from './ChatErrorNotice';
 import { ChatPaneState, type ChatPaneKind } from './ChatPaneState';
 import { TurnChangesFooter, TurnUsageFooter } from './TurnChangesFooter';
-import { collectTurnFileChanges } from './chat-turn-changes';
+import { createLaterEditedPathsCollector } from './chat-transcript-data';
 import { getChatTurnLiveState } from './chat-view-utils';
 import { ChatRunOutcomeFooter } from './ChatRunOutcomeFooter';
 import {
   getPendingQuestionTarget,
   shouldShowRunOutcomeFooter,
   summarizeChatTurnRun,
+  type ChatQuestionTarget,
 } from './chat-run-outcome';
 import { stripFindingMarkers } from '../../utils/finding-parser';
 import type { StarterPrompt } from '../../utils/starter-prompts';
 import { ChatDelegations } from './ChatDelegations';
+
+const EMPTY_REPOS: RepoInfo[] = [];
+
+interface ChatTranscriptProps {
+  paneKind: ChatPaneKind;
+  scaffoldRootPath?: string;
+  blockedReason?: string;
+  onOpenWorkspace?: () => void;
+  personaId: string;
+  hasRepos: boolean;
+  hasGovernanceDocs: boolean;
+  isDbExpertPersona: boolean;
+  /** C2 — repo-grounded prompts; the empty state falls back to persona sets. */
+  starterPrompts?: StarterPrompt[];
+  onSuggestionClick: (prompt: string) => void;
+  scaffoldBusyMessage?: string;
+  turns: ComposedChatTurn[];
+  activeThreadId: string | null;
+  changeReviewThreadId?: string;
+  busy: boolean;
+  isBaPersona: boolean;
+  personaName: string;
+  personaColour: string;
+  onBranch?: (sourceIndex: number) => void;
+  onReuseMessage: (sourceIndex: number, content: string) => void;
+  changesRepos: RepoInfo[];
+  changesPreferredRepoId?: string | null;
+  error: string | null;
+  errorRetryLabel?: string;
+  errorProviders: ChatErrorProviderOption[];
+  onErrorRetry?: () => void;
+  onSwitchProvider?: (provider: AgentProvider) => void;
+  messagesContainerRef: RefObject<HTMLDivElement | null>;
+  messagesEndRef: RefObject<HTMLDivElement | null>;
+  showJumpToLatest: boolean;
+  onJumpToLatest: () => void;
+}
 
 /**
  * Scrollable transcript column — extracted from ChatView (Phase 5 split).
@@ -58,40 +96,7 @@ export function ChatTranscript({
   messagesEndRef,
   showJumpToLatest,
   onJumpToLatest,
-}: {
-  paneKind: ChatPaneKind;
-  scaffoldRootPath?: string;
-  blockedReason?: string;
-  onOpenWorkspace?: () => void;
-  personaId: string;
-  hasRepos: boolean;
-  hasGovernanceDocs: boolean;
-  isDbExpertPersona: boolean;
-  /** C2 — repo-grounded prompts; the empty state falls back to persona sets. */
-  starterPrompts?: StarterPrompt[];
-  onSuggestionClick: (prompt: string) => void;
-  scaffoldBusyMessage?: string;
-  turns: ComposedChatTurn[];
-  activeThreadId: string | null;
-  changeReviewThreadId?: string;
-  busy: boolean;
-  isBaPersona: boolean;
-  personaName: string;
-  personaColour: string;
-  onBranch?: (sourceIndex: number) => void;
-  onReuseMessage: (sourceIndex: number, content: string) => void;
-  changesRepos: RepoInfo[];
-  changesPreferredRepoId?: string | null;
-  error: string | null;
-  errorRetryLabel?: string;
-  errorProviders: ChatErrorProviderOption[];
-  onErrorRetry?: () => void;
-  onSwitchProvider?: (provider: AgentProvider) => void;
-  messagesContainerRef: RefObject<HTMLDivElement | null>;
-  messagesEndRef: RefObject<HTMLDivElement | null>;
-  showJumpToLatest: boolean;
-  onJumpToLatest: () => void;
-}) {
+}: ChatTranscriptProps) {
   const [reviewRequest, setReviewRequest] = useState<{
     threadId: string | null;
     turnKey: string;
@@ -101,29 +106,23 @@ export function ChatTranscript({
   const reviewRequestSequence = useRef(0);
   const pendingQuestionTarget = getPendingQuestionTarget(turns);
   const centered = paneKind !== 'transcript';
-  const liveTurnIndex = turns.length - 1;
-  const laterEditedPathsByTurn = useMemo(() => {
-    const result = new Map<string, string[]>();
-    const seen = new Set<string>();
-    for (let index = turns.length - 1; index >= 0; index -= 1) {
-      const turn = turns[index];
-      result.set(turn.key, [...seen]);
-      for (const change of collectTurnFileChanges([...turn.work, ...turn.trailingWork])) {
-        seen.add(change.filePath);
-      }
-    }
-    return result;
-  }, [turns]);
-
-  const requestFileReview = (turnKey: string, filePath: string) => {
-    reviewRequestSequence.current += 1;
-    setReviewRequest({
-      threadId: activeThreadId,
-      turnKey,
-      filePath,
-      requestId: reviewRequestSequence.current,
-    });
-  };
+  const collectLaterPaths = useMemo(createLaterEditedPathsCollector, []);
+  const laterEditedPathsByTurn = useMemo(
+    () => collectLaterPaths(turns),
+    [collectLaterPaths, turns],
+  );
+  const requestFileReview = useCallback(
+    (turnKey: string, filePath: string) => {
+      reviewRequestSequence.current += 1;
+      setReviewRequest({
+        threadId: activeThreadId,
+        turnKey,
+        filePath,
+        requestId: reviewRequestSequence.current,
+      });
+    },
+    [activeThreadId],
+  );
 
   return (
     <div className="relative min-h-0 flex-1">
@@ -164,127 +163,33 @@ export function ChatTranscript({
 
           {turns.length > 0 && (
             <div className="w-full space-y-6">
-              {turns.map((turn, turnIndex) => {
-                const liveState = getChatTurnLiveState({
-                  busy,
-                  isLatest: turnIndex === liveTurnIndex,
-                  hasWork: turn.work.length > 0,
-                  hasAnswer: Boolean(turn.answer),
-                  hasTrailingWork: turn.trailingWork.length > 0,
-                });
-                const turnComplete = liveState === null;
-                const timeline = buildChatTurnTimeline(turn);
-                const lastWorkIndex = timeline.findLastIndex((item) => item.kind === 'work');
-                const runSummary = summarizeChatTurnRun(turn, {
-                  busy: busy && turnIndex === liveTurnIndex,
-                  pendingTarget: pendingQuestionTarget,
-                });
-
-                return (
-                  <section
-                    key={`${activeThreadId ?? 'new'}:${turn.key}`}
-                    data-chat-turn-key={turn.key}
-                    className="w-full space-y-4"
-                    aria-label={`Turn ${turnIndex + 1}`}
-                  >
-                    {turn.user && (
-                      <UserMessage
-                        content={turn.user.content}
-                        attachments={turn.user.attachments}
-                        delivery={turn.user.delivery}
-                        deliveryError={turn.user.deliveryError}
-                        deliveryIntent={turn.user.deliveryIntent}
-                        onEdit={() => onReuseMessage(turn.user!.sourceIndex, turn.user!.content)}
-                        onBranch={onBranch ? () => onBranch(turn.user!.sourceIndex) : undefined}
-                      />
-                    )}
-                    {timeline.map((item, index) => {
-                      if (item.kind === 'work') {
-                        const currentWork = index === lastWorkIndex;
-                        return (
-                          <TurnWorkMessage
-                            key={item.key}
-                            items={item.items}
-                            active={currentWork && liveState !== null}
-                            outcome={turnComplete ? turn.runOutcome : undefined}
-                            waiting={currentWork && runSummary?.state === 'awaiting-user'}
-                            answering={liveState === 'responding'}
-                            startedAt={turn.startedAt}
-                            endedAt={turn.endedAt}
-                          />
-                        );
-                      }
-                      if (item.kind === 'pending-message')
-                        return (
-                          <UserMessage
-                            key={item.key}
-                            content={item.entry.content}
-                            attachments={item.entry.attachments}
-                            delivery={item.entry.delivery}
-                            deliveryError={item.entry.deliveryError}
-                            deliveryIntent={item.entry.deliveryIntent}
-                            onEdit={() =>
-                              onReuseMessage(item.entry.sourceIndex, item.entry.content)
-                            }
-                          />
-                        );
-                      if (item.kind === 'surface')
-                        return <SurfaceHost key={item.key} intent={item.intent} />;
-                      if (item.kind === 'receipt')
-                        return (
-                          <div key={item.key} className="max-w-[72ch]">
-                            <QuestionIntentSurface intent={item.intent} />
-                          </div>
-                        );
-                      return (
-                        <AssistantMessage
-                          key={item.key}
-                          content={item.entry.content}
-                          transformContent={isBaPersona ? stripFindingMarkers : undefined}
-                          label={personaName}
-                          colour={personaColour}
-                          active={liveState === 'responding'}
-                          onBranch={onBranch ? () => onBranch(item.entry.sourceIndex) : undefined}
-                        />
-                      );
-                    })}
-                    {lastWorkIndex < 0 && !turn.answer && liveState && (
-                      <TurnWorkMessage items={[]} active startedAt={turn.startedAt} />
-                    )}
-                    {/* H5 — usage/context/cost rollup for the turn. */}
-                    {turn.usage && <TurnUsageFooter usage={turn.usage} />}
-                    {runSummary && shouldShowRunOutcomeFooter(runSummary) && (
-                      <ChatRunOutcomeFooter
-                        summary={runSummary}
-                        repos={changesRepos}
-                        preferredRepoId={changesPreferredRepoId}
-                        onReviewFile={
-                          turnComplete
-                            ? (filePath) => requestFileReview(turn.key, filePath)
-                            : undefined
-                        }
-                      />
-                    )}
-                    {/* CH2 — settled turns surface their file changes. */}
-                    {turnComplete && (turn.answer || turn.runOutcome || runSummary?.changes) && (
-                      <TurnChangesFooter
-                        workItems={[...turn.work, ...turn.trailingWork]}
-                        repos={changesRepos}
-                        preferredRepoId={changesPreferredRepoId}
-                        threadId={changeReviewThreadId}
-                        turnId={turn.key}
-                        laterTurnEditedPaths={laterEditedPathsByTurn.get(turn.key)}
-                        reviewRequest={
-                          reviewRequest?.threadId === activeThreadId &&
-                          reviewRequest.turnKey === turn.key
-                            ? reviewRequest
-                            : undefined
-                        }
-                      />
-                    )}
-                  </section>
-                );
-              })}
+              {turns.map((turn, turnIndex) => (
+                <ChatTranscriptTurn
+                  key={`${activeThreadId ?? 'new'}:${turn.key}`}
+                  turn={turn}
+                  turnIndex={turnIndex}
+                  activeThreadId={activeThreadId}
+                  changeReviewThreadId={changeReviewThreadId}
+                  busy={busy && turnIndex === turns.length - 1}
+                  isBaPersona={isBaPersona}
+                  personaName={personaName}
+                  personaColour={personaColour}
+                  onBranch={onBranch}
+                  onReuseMessage={onReuseMessage}
+                  changesRepos={changesRepos.length ? changesRepos : EMPTY_REPOS}
+                  changesPreferredRepoId={changesPreferredRepoId}
+                  pendingQuestionTarget={
+                    pendingQuestionTarget?.turnKey === turn.key ? pendingQuestionTarget : null
+                  }
+                  laterTurnEditedPaths={laterEditedPathsByTurn.get(turn.key)}
+                  reviewRequest={
+                    reviewRequest?.threadId === activeThreadId && reviewRequest.turnKey === turn.key
+                      ? reviewRequest
+                      : undefined
+                  }
+                  requestFileReview={requestFileReview}
+                />
+              ))}
             </div>
           )}
 
@@ -316,3 +221,154 @@ export function ChatTranscript({
     </div>
   );
 }
+
+type ChatTranscriptTurnProps = Pick<
+  ChatTranscriptProps,
+  | 'activeThreadId'
+  | 'changeReviewThreadId'
+  | 'busy'
+  | 'isBaPersona'
+  | 'personaName'
+  | 'personaColour'
+  | 'onBranch'
+  | 'onReuseMessage'
+  | 'changesRepos'
+  | 'changesPreferredRepoId'
+> & {
+  turn: ComposedChatTurn;
+  turnIndex: number;
+  pendingQuestionTarget: ChatQuestionTarget | null;
+  laterTurnEditedPaths?: string[];
+  reviewRequest?: { requestId: number; filePath: string };
+  requestFileReview: (turnKey: string, filePath: string) => void;
+};
+
+// A streamed delta updates the live turn; settled turns retain their DOM and state.
+const ChatTranscriptTurn = memo(function ChatTranscriptTurn({
+  turn,
+  turnIndex,
+  activeThreadId,
+  changeReviewThreadId,
+  busy,
+  isBaPersona,
+  personaName,
+  personaColour,
+  onBranch,
+  onReuseMessage,
+  changesRepos,
+  changesPreferredRepoId,
+  pendingQuestionTarget,
+  laterTurnEditedPaths,
+  reviewRequest,
+  requestFileReview,
+}: ChatTranscriptTurnProps) {
+  const liveState = getChatTurnLiveState({
+    busy,
+    isLatest: true,
+    hasWork: turn.work.length > 0,
+    hasAnswer: Boolean(turn.answer),
+    hasTrailingWork: turn.trailingWork.length > 0,
+  });
+  const turnComplete = liveState === null;
+  const timeline = buildChatTurnTimeline(turn);
+  const lastWorkIndex = timeline.findLastIndex((item) => item.kind === 'work');
+  const runSummary = summarizeChatTurnRun(turn, {
+    busy,
+    pendingTarget: pendingQuestionTarget,
+  });
+
+  return (
+    <section
+      key={`${activeThreadId ?? 'new'}:${turn.key}`}
+      data-chat-turn-key={turn.key}
+      className="w-full space-y-4"
+      aria-label={`Turn ${turnIndex + 1}`}
+    >
+      {turn.user && (
+        <UserMessage
+          content={turn.user.content}
+          attachments={turn.user.attachments}
+          delivery={turn.user.delivery}
+          deliveryError={turn.user.deliveryError}
+          deliveryIntent={turn.user.deliveryIntent}
+          onEdit={() => onReuseMessage(turn.user!.sourceIndex, turn.user!.content)}
+          onBranch={onBranch ? () => onBranch(turn.user!.sourceIndex) : undefined}
+        />
+      )}
+      {timeline.map((item, index) => {
+        if (item.kind === 'work') {
+          const currentWork = index === lastWorkIndex;
+          return (
+            <TurnWorkMessage
+              key={item.key}
+              items={item.items}
+              active={currentWork && liveState !== null}
+              outcome={turnComplete ? turn.runOutcome : undefined}
+              waiting={currentWork && runSummary?.state === 'awaiting-user'}
+              answering={liveState === 'responding'}
+              startedAt={turn.startedAt}
+              endedAt={turn.endedAt}
+            />
+          );
+        }
+        if (item.kind === 'pending-message')
+          return (
+            <UserMessage
+              key={item.key}
+              content={item.entry.content}
+              attachments={item.entry.attachments}
+              delivery={item.entry.delivery}
+              deliveryError={item.entry.deliveryError}
+              deliveryIntent={item.entry.deliveryIntent}
+              onEdit={() => onReuseMessage(item.entry.sourceIndex, item.entry.content)}
+            />
+          );
+        if (item.kind === 'surface') return <SurfaceHost key={item.key} intent={item.intent} />;
+        if (item.kind === 'receipt')
+          return (
+            <div key={item.key} className="max-w-[72ch]">
+              <QuestionIntentSurface intent={item.intent} />
+            </div>
+          );
+        return (
+          <AssistantMessage
+            key={item.key}
+            content={item.entry.content}
+            transformContent={isBaPersona ? stripFindingMarkers : undefined}
+            label={personaName}
+            colour={personaColour}
+            active={liveState === 'responding'}
+            onBranch={onBranch ? () => onBranch(item.entry.sourceIndex) : undefined}
+          />
+        );
+      })}
+      {lastWorkIndex < 0 && !turn.answer && liveState && (
+        <TurnWorkMessage items={[]} active startedAt={turn.startedAt} />
+      )}
+      {/* H5 — usage/context/cost rollup for the turn. */}
+      {turn.usage && <TurnUsageFooter usage={turn.usage} />}
+      {runSummary && shouldShowRunOutcomeFooter(runSummary) && (
+        <ChatRunOutcomeFooter
+          summary={runSummary}
+          repos={changesRepos}
+          preferredRepoId={changesPreferredRepoId}
+          onReviewFile={
+            turnComplete ? (filePath) => requestFileReview(turn.key, filePath) : undefined
+          }
+        />
+      )}
+      {/* CH2 — settled turns surface their file changes. */}
+      {turnComplete && (turn.answer || turn.runOutcome || runSummary?.changes) && (
+        <TurnChangesFooter
+          workItems={[...turn.work, ...turn.trailingWork]}
+          repos={changesRepos}
+          preferredRepoId={changesPreferredRepoId}
+          threadId={changeReviewThreadId}
+          turnId={turn.key}
+          laterTurnEditedPaths={laterTurnEditedPaths}
+          reviewRequest={reviewRequest}
+        />
+      )}
+    </section>
+  );
+});

@@ -17,6 +17,22 @@ afterEach(() => {
 });
 
 describe('visible polling', () => {
+  it('can defer the initial read without losing immediate recovery on return', async () => {
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    stop = pollWhileVisible(refresh, 1000, { immediate: false });
+    expect(refresh).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(refresh).toHaveBeenCalledOnce();
+    documentStub.hidden = true;
+    documentStub.dispatchEvent(new Event('visibilitychange'));
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(refresh).toHaveBeenCalledOnce();
+    documentStub.hidden = false;
+    documentStub.dispatchEvent(new Event('visibilitychange'));
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
   it('pauses when hidden and refreshes immediately on return', async () => {
     const refresh = vi.fn().mockResolvedValue(undefined);
     stop = pollWhileVisible(refresh, 1000);

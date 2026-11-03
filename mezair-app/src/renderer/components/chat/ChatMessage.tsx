@@ -437,11 +437,11 @@ export function TurnWorkMessage({
         )
           return null;
         const surfaced = item.kind === 'event' && isSurfaceEvent(item.event);
+        if (!expanded && !surfaced) return null;
         return (
           <div
             key={workItemKey(item, item.sourceIndex)}
             className="processing-item"
-            hidden={!expanded && !surfaced}
             data-step-status={
               item.kind === 'event' && STEP_OPERATION_TYPES.has(item.event.type)
                 ? getOperationStatus(item.event, liveSteps)

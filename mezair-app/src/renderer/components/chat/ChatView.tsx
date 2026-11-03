@@ -27,7 +27,7 @@ import { useChatScroll } from './useChatScroll';
 import { buildFindingFollowUpPrompt } from './ChatFindingCard';
 import { PendingQuestionPrompt, PlanChip, WorkflowActionConfirmation } from './ChatPromptOverlays';
 import { useChatErrorRecovery } from './useChatErrorRecovery';
-import { composeChatTurns } from './chat-turns';
+import { createChatTurnComposer } from './chat-turns';
 import { buildChatRequestTargetDomId, getPendingQuestionTarget } from './chat-run-outcome';
 import { useChatContext } from '../../contexts/ChatContext';
 import { useWorkspace, repoIsMapped } from '../../contexts/WorkspaceContext';
@@ -352,7 +352,11 @@ export function ChatView({ userRole }: ChatViewProps) {
   }, [entries, isBaPersona]);
 
   const openFindings = findings.filter((f) => !dismissedFindings.has(f.idx));
-  const composedTurns = useMemo(() => composeChatTurns(entries, { active: busy }), [busy, entries]);
+  const composeTurns = useMemo(createChatTurnComposer, []);
+  const composedTurns = useMemo(
+    () => composeTurns(entries, { active: busy }),
+    [busy, composeTurns, entries],
+  );
   const transcriptSurfaces = useMemo(
     () => composedTurns.flatMap((turn) => turn.surfaces.map((surface) => surface.intent)),
     [composedTurns],

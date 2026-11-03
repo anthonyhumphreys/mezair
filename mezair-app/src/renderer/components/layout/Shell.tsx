@@ -2,15 +2,13 @@ import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useShortcuts } from '../../hooks/useShortcuts';
 import { SHORTCUTS, shortcutFor, shortcutMatches } from '../../utils/shortcuts';
-import { useChatContext } from '../../contexts/ChatContext';
+import { useChatNavigation } from '../../contexts/ChatContext';
 import { Sidebar } from './Sidebar';
 import { StatusBar } from './StatusBar';
-import { CommandPalette } from './CommandPalette';
 import { WorkspaceCreator } from '../workspace/WorkspaceCreator';
 import { useWorkspace, repoIsMapped } from '../../contexts/WorkspaceContext';
 import type { UserRole } from '../../../shared/types';
 import { ROLE_FEATURES } from '../../../shared/types';
-import { TerminalPanel } from '../terminal/TerminalPanel';
 
 import { isEditableShortcutTarget, isShellShortcutOptInTarget } from '../../utils/keyboard';
 import { SidebarActivityProvider } from './SidebarActivityCenter';
@@ -25,6 +23,12 @@ import {
 const EditorView = lazy(() =>
   import('../editor/EditorView').then((module) => ({ default: module.EditorView })),
 );
+const TerminalPanel = lazy(() =>
+  import('../terminal/TerminalPanel').then((module) => ({ default: module.TerminalPanel })),
+);
+const CommandPalette = lazy(() =>
+  import('./CommandPalette').then((module) => ({ default: module.CommandPalette })),
+);
 
 interface ShellProps {
   connectionStatus: {
@@ -38,6 +42,8 @@ interface ShellProps {
 
 export function Shell({ connectionStatus, userRole, cloudFeaturesEnabled }: ShellProps) {
   const {
+    activeWorkspace,
+    workspaces,
     activeScaffoldSession,
     repos,
     switchWorkspace,
@@ -47,11 +53,12 @@ export function Shell({ connectionStatus, userRole, cloudFeaturesEnabled }: Shel
     dismissWorkspaceSwitchNotice,
   } = useWorkspace();
   const { overrides: shortcuts } = useShortcuts();
-  const { startNewSession } = useChatContext();
+  const { startNewSession } = useChatNavigation();
   const handledThreadRequest = useRef<string | null>(null);
   const [showCreator, setShowCreator] = useState(false);
   const [editorMounted, setEditorMounted] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalMounted, setTerminalMounted] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [windowChromeState, setWindowChromeState] = useState({ isFullScreen: false });
   const location = useLocation();
@@ -61,11 +68,30 @@ export function Shell({ connectionStatus, userRole, cloudFeaturesEnabled }: Shel
   useEffect(() => {
     if (showingEditor) setEditorMounted(true);
   }, [showingEditor]);
+  useEffect(() => {
+    if (terminalOpen) setTerminalMounted(true);
+  }, [terminalOpen]);
   const reserveTitlebarSpace =
     navigator.platform.includes('Mac') && !windowChromeState.isFullScreen;
   const isToolWindow = new URLSearchParams(location.search).get('toolWindow') === '1';
 
   const toggleTerminal = useCallback(() => setTerminalOpen((prev) => !prev), []);
+
+  // Workspace shortcuts belong to the always-mounted shell. The command
+  // palette is now loaded only when opened.
+  useEffect(() => {
+    if (isToolWindow) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      if (event.key < '1' || event.key > '9' || isEditableShortcutTarget(event.target)) return;
+      const workspace = workspaces[Number(event.key) - 1];
+      if (!workspace || workspace.id === activeWorkspace?.id) return;
+      event.preventDefault();
+      void switchWorkspace(workspace.id);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [workspaces, activeWorkspace?.id, switchWorkspace, isToolWindow]);
 
   // WS7: the "Switched to X" toast auto-dismisses after a few seconds.
   useEffect(() => {
@@ -263,7 +289,11 @@ export function Shell({ connectionStatus, userRole, cloudFeaturesEnabled }: Shel
                 </Suspense>
               </div>
             </div>
-            <TerminalPanel isOpen={terminalOpen} onClose={() => setTerminalOpen(false)} />
+            {(terminalMounted || terminalOpen) && (
+              <Suspense fallback={null}>
+                <TerminalPanel isOpen={terminalOpen} onClose={() => setTerminalOpen(false)} />
+              </Suspense>
+            )}
           </main>
         </div>
         <StatusBar
@@ -307,14 +337,18 @@ export function Shell({ connectionStatus, userRole, cloudFeaturesEnabled }: Shel
             onCancel={() => setShowCreator(false)}
           />
         )}
-        <CommandPalette
-          open={commandPaletteOpen}
-          onClose={() => setCommandPaletteOpen(false)}
-          userRole={userRole}
-          cloudFeaturesEnabled={cloudFeaturesEnabled}
-          onToggleTerminal={toggleTerminal}
-          onCreateWorkspace={() => setShowCreator(true)}
-        />
+        {commandPaletteOpen && (
+          <Suspense fallback={null}>
+            <CommandPalette
+              open={commandPaletteOpen}
+              onClose={() => setCommandPaletteOpen(false)}
+              userRole={userRole}
+              cloudFeaturesEnabled={cloudFeaturesEnabled}
+              onToggleTerminal={toggleTerminal}
+              onCreateWorkspace={() => setShowCreator(true)}
+            />
+          </Suspense>
+        )}
       </div>
     </SidebarActivityProvider>
   );

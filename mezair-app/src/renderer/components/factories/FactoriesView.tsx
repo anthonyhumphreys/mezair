@@ -13,6 +13,9 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useNow } from '../../hooks/useNow';
+import { pollWhileVisible } from '../../utils/visible-polling';
+import { mapWithConcurrency } from '../../utils/map-concurrent';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   factoryWorkflowDrift,
@@ -81,15 +84,6 @@ const GROUP_LABELS: Record<RunGroup, string> = {
   active: 'In progress',
   finished: 'Finished',
 };
-
-function useNow(intervalMs: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
-    return () => window.clearInterval(timer);
-  }, [intervalMs]);
-  return now;
-}
 
 export function FactoriesView() {
   const { activeWorkspace, repos, workspaces } = useWorkspace();
@@ -224,8 +218,10 @@ export function FactoriesView() {
         .then(async (orgs) => {
           if (generation !== loadGenerationRef.current) return;
           setOrganizations(orgs);
-          const entries = await Promise.all(
-            orgs.map((org) => window.mezair.factories.directory(org.id).catch(() => [])),
+          const entries = await mapWithConcurrency(orgs, 4, (org) =>
+            generation === loadGenerationRef.current
+              ? window.mezair.factories.directory(org.id).catch(() => [])
+              : Promise.resolve([]),
           );
           if (generation === loadGenerationRef.current) setDirectory(entries.flat());
         })
@@ -243,15 +239,16 @@ export function FactoriesView() {
           ? currentId
           : (items[0]?.id ?? null);
       // Attention counts for every factory in the rail; the selected one refreshes with its runs.
-      void Promise.all(
-        items
-          .filter((item) => !item.accessPending && item.id !== targetId)
-          .map((item) =>
-            window.mezair.factories
-              .listRuns(item.id)
-              .then((list) => [item.id, summarizeRuns(list)] as const)
-              .catch(() => null),
-          ),
+      void mapWithConcurrency(
+        items.filter((item) => !item.accessPending && item.id !== targetId),
+        4,
+        (item) =>
+          generation !== loadGenerationRef.current
+            ? Promise.resolve(null)
+            : window.mezair.factories
+                .listRuns(item.id)
+                .then((list) => [item.id, summarizeRuns(list)] as const)
+                .catch(() => null),
       ).then((entries) => {
         if (generation !== loadGenerationRef.current) return;
         setRunSummaries((current) => ({
@@ -328,14 +325,15 @@ export function FactoriesView() {
     reload().catch((cause) =>
       setError(cause instanceof Error ? cause.message : 'Could not load software factories.'),
     );
+    return () => {
+      loadGenerationRef.current += 1;
+      runGenerationRef.current += 1;
+    };
   }, [activeWorkspace?.id, reload, setError]);
 
   useEffect(() => {
     if (!selectedFactoryId || !activeWorkspace?.id) return;
-    const timer = window.setInterval(() => {
-      void loadRuns(selectedFactoryId);
-    }, 10_000);
-    return () => window.clearInterval(timer);
+    return pollWhileVisible(() => loadRuns(selectedFactoryId), 10_000, { immediate: false });
   }, [selectedFactoryId, activeWorkspace?.id, loadRuns]);
 
   const startNew = useCallback(

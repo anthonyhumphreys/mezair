@@ -6,6 +6,8 @@ import type {
   OverviewTimeRange,
 } from '../../../shared/overview';
 import { cleanIpcError } from './overview-format';
+import { pollWhileVisible } from '../../utils/visible-polling';
+export { useNow } from '../../hooks/useNow';
 
 const AUTO_REFRESH_MS = 2 * 60_000;
 
@@ -32,6 +34,11 @@ export function useOverviewModuleData(
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const requestId = useRef(0);
+  const inFlight = useRef<{
+    key: string;
+    refresh: boolean;
+    promise: Promise<OverviewModuleResult>;
+  } | null>(null);
   const requestKey = JSON.stringify({
     scope,
     type: module.type,
@@ -39,19 +46,28 @@ export function useOverviewModuleData(
     config: module.config,
     timeRange,
   });
-  const keyRef = useRef(requestKey);
-  keyRef.current = requestKey;
+  const inputRef = useRef({ scope, module, timeRange });
+  inputRef.current = { scope, module, timeRange };
 
   const load = useCallback(
     async (refresh: boolean) => {
       const id = ++requestId.current;
       setRefreshing(true);
       try {
-        const next = await window.mezair.overview.loadModule({
-          ...(JSON.parse(keyRef.current) as { scope: OverviewScope; timeRange: OverviewTimeRange }),
-          module,
-          refresh,
-        });
+        let request = inFlight.current;
+        if (!request || request.key !== requestKey || (refresh && !request.refresh)) {
+          const current = {
+            key: requestKey,
+            refresh,
+            promise: window.mezair.overview.loadModule({ ...inputRef.current, refresh }),
+          };
+          current.promise = current.promise.finally(() => {
+            if (inFlight.current === current) inFlight.current = null;
+          });
+          inFlight.current = current;
+          request = current;
+        }
+        const next = await request.promise;
         if (id !== requestId.current) return;
         setResult(next);
         setError(null);
@@ -66,7 +82,12 @@ export function useOverviewModuleData(
   );
 
   useEffect(() => {
+    setResult(null);
+    setError(null);
     void load(false);
+    return () => {
+      requestId.current += 1;
+    };
   }, [load]);
 
   const previousToken = useRef(refreshToken);
@@ -76,12 +97,10 @@ export function useOverviewModuleData(
     void load(true);
   }, [load, refreshToken]);
 
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void load(false);
-    }, AUTO_REFRESH_MS);
-    return () => window.clearInterval(interval);
-  }, [load]);
+  useEffect(
+    () => pollWhileVisible(() => load(false), AUTO_REFRESH_MS, { immediate: false }),
+    [load],
+  );
 
   return {
     result,
@@ -90,14 +109,4 @@ export function useOverviewModuleData(
     error,
     refresh: () => void load(true),
   };
-}
-
-/** Re-render on an interval so relative times ("4 m ago") stay truthful. */
-export function useNow(intervalMs = 30_000): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), intervalMs);
-    return () => window.clearInterval(interval);
-  }, [intervalMs]);
-  return now;
 }

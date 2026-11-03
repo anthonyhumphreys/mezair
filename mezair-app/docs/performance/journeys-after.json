@@ -1,0 +1,131 @@
+{
+  "measuredAt": "2026-11-03T07:27:53.215Z",
+  "environment": {
+    "chrome": "Chrome/156.0.8078.80",
+    "js": "15.6.75.27",
+    "node": "24.10.0",
+    "platform": "darwin 27.0.0 arm64",
+    "cpu": "Apple M3"
+  },
+  "methodology": "Production Vite build; headless Chrome with background throttling disabled; five fresh browser contexts; forced GC before and after; synthetic 100-turn history with 30 operations per turn; 60 streamed updates; 200 composition updates; 20 scroll events in one frame. Renderer-only measurements, not whole Electron process memory or provider latency.",
+  "comparison": "Alternating before/after builds in the same browser session; order reversed every pair.",
+  "median": {
+    "mountMs": 90.89999997615814,
+    "streamMedianMs": 1.9000000357627869,
+    "streamP95Ms": 3.5,
+    "composeMedianMs": 0,
+    "composeBatchMs": 5.5,
+    "retainedTurns": 99,
+    "domElements": 5721,
+    "hiddenWorkRows": 0,
+    "turnRectReads": 7,
+    "turns": 100,
+    "actionsPerTurn": 30,
+    "streamUpdates": 60,
+    "retainedHeapBytes": 8909496,
+    "totalHeapBytes": 10782572
+  },
+  "runs": [
+    {
+      "mountMs": 103.39999997615814,
+      "streamMedianMs": 2.100000023841858,
+      "streamP95Ms": 3.100000023841858,
+      "composeMedianMs": 0,
+      "composeBatchMs": 9.199999988079071,
+      "retainedTurns": 99,
+      "domElements": 5721,
+      "hiddenWorkRows": 0,
+      "turnRectReads": 7,
+      "turns": 100,
+      "actionsPerTurn": 30,
+      "streamUpdates": 60,
+      "retainedHeapBytes": 8904636,
+      "totalHeapBytes": 10778664
+    },
+    {
+      "mountMs": 88.79999995231628,
+      "streamMedianMs": 1.9000000357627869,
+      "streamP95Ms": 3.5,
+      "composeMedianMs": 0,
+      "composeBatchMs": 5,
+      "retainedTurns": 99,
+      "domElements": 5721,
+      "hiddenWorkRows": 0,
+      "turnRectReads": 7,
+      "turns": 100,
+      "actionsPerTurn": 30,
+      "streamUpdates": 60,
+      "retainedHeapBytes": 8904136,
+      "totalHeapBytes": 10777212
+    },
+    {
+      "mountMs": 88.80000001192093,
+      "streamMedianMs": 2.600000023841858,
+      "streamP95Ms": 4.300000011920929,
+      "composeMedianMs": 0,
+      "composeBatchMs": 6.800000011920929,
+      "retainedTurns": 99,
+      "domElements": 5721,
+      "hiddenWorkRows": 0,
+      "turnRectReads": 7,
+      "turns": 100,
+      "actionsPerTurn": 30,
+      "streamUpdates": 60,
+      "retainedHeapBytes": 8909496,
+      "totalHeapBytes": 10782572
+    },
+    {
+      "mountMs": 90.89999997615814,
+      "streamMedianMs": 1.899999976158142,
+      "streamP95Ms": 3.699999988079071,
+      "composeMedianMs": 0,
+      "composeBatchMs": 5.5,
+      "retainedTurns": 99,
+      "domElements": 5721,
+      "hiddenWorkRows": 0,
+      "turnRectReads": 7,
+      "turns": 100,
+      "actionsPerTurn": 30,
+      "streamUpdates": 60,
+      "retainedHeapBytes": 8909696,
+      "totalHeapBytes": 10783684
+    },
+    {
+      "mountMs": 92.10000002384186,
+      "streamMedianMs": 1.800000011920929,
+      "streamP95Ms": 2.900000035762787,
+      "composeMedianMs": 0,
+      "composeBatchMs": 4.599999964237213,
+      "retainedTurns": 99,
+      "domElements": 5721,
+      "hiddenWorkRows": 0,
+      "turnRectReads": 7,
+      "turns": 100,
+      "actionsPerTurn": 30,
+      "streamUpdates": 60,
+      "retainedHeapBytes": 8909584,
+      "totalHeapBytes": 10783612
+    }
+  ],
+  "checks": {
+    "chat": [
+      "expand operations",
+      "preserve expansion during streaming",
+      "preserve reader offset",
+      "jump to live",
+      "follow pinned response",
+      "replace history"
+    ],
+    "dashboard": [
+      "single initial read",
+      "coalesce forced refreshes",
+      "manual cache bypass",
+      "reject stale refresh",
+      "resize without fetching",
+      "clear cross-workspace results",
+      "reject old workspace response",
+      "reload row limit",
+      "dispose pending read"
+    ]
+  }
+}

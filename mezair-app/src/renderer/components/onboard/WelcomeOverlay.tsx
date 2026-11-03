@@ -1,10 +1,15 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useBrand } from '../../contexts/BrandContext';
 import type { UserRole } from '../../../shared/types';
 import { RoleOptionList } from './RolePickerOverlay';
-import { ConnectorSetupOverlay } from './ConnectorSetupOverlay';
 import { OnboardingPreviewBar } from './OnboardingPreviewBar';
-import { SyncMeshSetupCard } from './SyncMeshSetupCard';
+
+const ConnectorSetupOverlay = lazy(() =>
+  import('./ConnectorSetupOverlay').then((module) => ({ default: module.ConnectorSetupOverlay })),
+);
+const SyncMeshSetupCard = lazy(() =>
+  import('./SyncMeshSetupCard').then((module) => ({ default: module.SyncMeshSetupCard })),
+);
 
 export type WelcomeStep = 'role' | 'agent' | 'sync';
 
@@ -96,7 +101,16 @@ export function WelcomeOverlay({
   };
 
   return (
-    <>
+    <Suspense
+      fallback={
+        <div
+          role="status"
+          className="flex h-screen items-center justify-center bg-bg-primary text-sm text-text-secondary"
+        >
+          Loading setup…
+        </div>
+      }
+    >
       {step === 'role' ? (
         <div
           className={`flex h-screen flex-col overflow-y-auto bg-bg-primary ${
@@ -183,6 +197,6 @@ export function WelcomeOverlay({
           </div>
         </div>
       )}
-    </>
+    </Suspense>
   );
 }

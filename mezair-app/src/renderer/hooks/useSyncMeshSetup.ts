@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { pollWhileVisible } from '../utils/visible-polling';
 import { useCredentialStorage, type CredentialStorageController } from './useCredentialStorage';
 import { presentSetupError } from '../utils/setup-error';
 import type { SyncDeviceSecurityStatus } from '../../shared/sync-device-security';
@@ -223,33 +224,10 @@ export function useSyncMeshSetup({
       (runtime.syncEnabled || runtime.auth.state === 'signed-in');
     if (!shouldPoll) return undefined;
 
-    let active = true;
-    let timer: number | null = null;
-    const clearTimer = (): void => {
-      if (timer !== null) {
-        window.clearTimeout(timer);
-        timer = null;
-      }
-    };
-    const poll = async (): Promise<void> => {
-      if (!active || document.hidden) return;
-      await refreshRuntime();
-      if (active && !document.hidden) {
-        timer = window.setTimeout(() => void poll(), RUNTIME_POLL_INTERVAL_MS);
-      }
-    };
-    const onVisibilityChange = (): void => {
-      clearTimer();
-      if (!document.hidden) void poll();
-    };
-
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    void poll();
+    const stop = pollWhileVisible(refreshRuntime, RUNTIME_POLL_INTERVAL_MS);
     return () => {
-      active = false;
       runtimeRefreshSequence.current += 1;
-      clearTimer();
-      document.removeEventListener('visibilitychange', onVisibilityChange);
+      stop();
     };
   }, [busy, preview, refreshRuntime, runtime?.auth.state, runtime?.syncEnabled]);
 

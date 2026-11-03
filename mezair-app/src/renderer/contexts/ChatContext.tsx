@@ -189,6 +189,19 @@ interface ChatContextValue {
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
+type ChatNavigationValue = Pick<
+  ChatContextValue,
+  | 'threads'
+  | 'activeThread'
+  | 'busy'
+  | 'liveThreadStatuses'
+  | 'startNewSession'
+  | 'startTemporaryChat'
+  | 'isTemporaryChat'
+  | 'resumeTemporaryChat'
+  | 'showWorkspaceChat'
+>;
+const ChatNavigationContext = createContext<ChatNavigationValue | null>(null);
 const MAX_LIVE_COMMAND_OUTPUT_CHARS = 120_000;
 const MAX_LIVE_DIFF_CHARS = 120_000;
 const LIVE_STREAM_FLUSH_MS = 80;
@@ -226,6 +239,13 @@ interface FollowUpAttempt {
 export function useChatContext(): ChatContextValue {
   const ctx = useContext(ChatContext);
   if (!ctx) throw new Error('useChatContext must be used within <ChatProvider>');
+  return ctx;
+}
+
+/** Shell consumers do not subscribe to streamed transcript, reasoning or artifact bytes. */
+export function useChatNavigation(): ChatNavigationValue {
+  const ctx = useContext(ChatNavigationContext);
+  if (!ctx) throw new Error('useChatNavigation must be used within <ChatProvider>');
   return ctx;
 }
 
@@ -3639,6 +3659,31 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     return updated;
   }, []);
 
+  const navigationValue = useMemo<ChatNavigationValue>(
+    () => ({
+      threads: scopedThreads,
+      activeThread,
+      busy,
+      liveThreadStatuses,
+      startNewSession,
+      startTemporaryChat,
+      isTemporaryChat,
+      resumeTemporaryChat,
+      showWorkspaceChat,
+    }),
+    [
+      scopedThreads,
+      activeThread,
+      busy,
+      liveThreadStatuses,
+      startNewSession,
+      startTemporaryChat,
+      isTemporaryChat,
+      resumeTemporaryChat,
+      showWorkspaceChat,
+    ],
+  );
+
   return (
     <ChatContext.Provider
       value={{
@@ -3711,7 +3756,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         launchPreparedChat,
       }}
     >
-      {children}
+      <ChatNavigationContext.Provider value={navigationValue}>
+        {children}
+      </ChatNavigationContext.Provider>
     </ChatContext.Provider>
   );
 }

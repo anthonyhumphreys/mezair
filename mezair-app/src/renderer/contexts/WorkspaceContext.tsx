@@ -21,6 +21,7 @@ import type {
   WorkspaceActivitySummary,
 } from '../../shared/types';
 import { useOptionalRepoIndex } from './RepoIndexContext';
+import { pollWhileVisible } from '../utils/visible-polling';
 
 interface WorkspaceContextValue {
   workspaces: WorkspaceSummary[];
@@ -296,7 +297,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
-      window.mezair.workspace
+      return window.mezair.workspace
         .activityFeed()
         .then((feed) => {
           if (!cancelled) setWorkspaceActivity(feed);
@@ -305,11 +306,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           if (!cancelled) setWorkspaceActivity([]);
         });
     };
-    refresh();
-    const interval = window.setInterval(refresh, 8000);
+    const stop = pollWhileVisible(refresh, 8000);
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      stop();
     };
   }, []);
 
@@ -366,12 +366,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const interval = window.setInterval(() => {
-      void loadActiveWorkspace(activeWorkspace.id);
-      void loadWorkspaces();
-    }, 3000);
-
-    return () => window.clearInterval(interval);
+    return pollWhileVisible(
+      async () => {
+        await Promise.all([loadActiveWorkspace(activeWorkspace.id), loadWorkspaces()]);
+      },
+      3000,
+      { immediate: false },
+    );
   }, [
     activeWorkspace?.id,
     activeScaffoldSession?.id,

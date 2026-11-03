@@ -1,3 +1,4 @@
+import type { FactoryRunPageRequest, FactoryRunPage } from '../../shared/factories.js';
 import {
   createCipheriv,
   createDecipheriv,
@@ -482,7 +483,15 @@ export async function listRemoteFactoryRuns(factoryId: string): Promise<FactoryR
   const result = await rpc<{
     runs: Array<{ id: string; version: number; snapshot: SealedFactorySnapshot | null }>;
   }>('factory.run.list', { factoryId, githubToken: await optionalToken() });
-  return result.runs.flatMap((item) => {
+  return openRemoteRuns(factory, result.runs);
+}
+
+function openRemoteRuns(
+  factory: FactoryDefinition,
+  items: Array<{ id: string; version: number; snapshot: SealedFactorySnapshot | null }>,
+): FactoryRun[] {
+  const factoryId = factory.id;
+  return items.flatMap((item) => {
     if (!item.snapshot) return [];
     try {
       const run = open<FactoryRun>(item.snapshot, factoryId, item.version, orgId(factory));
@@ -507,9 +516,52 @@ export async function getRemoteFactoryRun(
   factoryId: string,
   id: string,
 ): Promise<FactoryRun | null> {
-  const run = (await listRemoteFactoryRuns(factoryId)).find((item) => item.id === id);
-  return run ?? null;
+  const factory = await getRemoteFactory(factoryId);
+  if (!factory) return null;
+  const result = await rpc<{
+    runs: Array<{ id: string; version: number; snapshot: SealedFactorySnapshot | null }>;
+  }>('factory.run.read', { factoryId, runId: id, githubToken: await optionalToken() });
+  return openRemoteRuns(factory, result.runs).find((run) => run.id === id) ?? null;
 }
+
+export async function listRemoteFactoryRunPage(
+  factory: FactoryDefinition,
+  request: FactoryRunPageRequest,
+): Promise<FactoryRunPage> {
+  const limit = request.limit ?? 50;
+  const result = await rpc<{
+    runs: Array<{ id: string; version: number; snapshot: SealedFactorySnapshot | null }>;
+    pageSupported?: boolean;
+    cursor?: FactoryRunPage['cursor'];
+  }>('factory.run.list', {
+    factoryId: factory.id,
+    page: { limit, cursor: request.cursor },
+    githubToken: await optionalToken(),
+  });
+  const runs = openRemoteRuns(factory, result.runs);
+  if (result.pageSupported) return { runs, cursor: result.cursor ?? null, complete: true };
+  // Older servers have an explicit 100-run recent window. Keep compatibility
+  // without pretending that missing encrypted history has been searched.
+  runs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id));
+  const available = request.cursor
+    ? runs.filter(
+        (run) =>
+          run.updatedAt < request.cursor!.updatedAt ||
+          (run.updatedAt === request.cursor!.updatedAt && run.id < request.cursor!.id),
+      )
+    : runs;
+  const page = available.slice(0, limit),
+    last = page.at(-1);
+  return {
+    runs: page,
+    cursor:
+      available.length > limit && last
+        ? { factoryId: factory.id, terminal: 0, updatedAt: last.updatedAt, id: last.id }
+        : null,
+    complete: result.runs.length < 100,
+  };
+}
+
 export async function sendOrganizationFactoryCommand(
   factory: FactoryDefinition,
   command: { id?: string; runId?: string; action: string; expectedHeadSha?: string },

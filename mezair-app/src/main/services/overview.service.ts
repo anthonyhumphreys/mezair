@@ -49,6 +49,8 @@ import { getSettings } from './settings.service.js';
 import { getWorkspaceActivityFeed } from './workspace-activity.service.js';
 import { getActiveProvider } from './workitem-provider.js';
 import { getWorkspacePreferences, listWorkspaces } from './workspace.service.js';
+import { LRUCache } from 'lru-cache';
+import { createAsyncLimit } from '../utils/async-limit.js';
 
 const NETWORK_TTL_MS = 3 * 60_000;
 const LOCAL_TTL_MS = 30_000;
@@ -199,14 +201,33 @@ interface CacheEntry<T> {
   inflight?: Promise<void>;
 }
 
-const pullRequestCache = new Map<string, CacheEntry<CodeReviewPullRequest[]>>();
-const ticketCache = new Map<string, CacheEntry<WorkItem[]>>();
-const docsCache = new Map<string, CacheEntry<DocPage[]>>();
-const gitCache = new Map<string, CacheEntry<GitStatusResult>>();
-const adrCache = new Map<string, CacheEntry<AdrEntry[]>>();
+function sourceCache<T>() {
+  return new LRUCache<string, CacheEntry<T>>({
+    max: 128,
+    maxSize: 4_000_000,
+    sizeCalculation: (entry, key) =>
+      Math.max(
+        1,
+        Buffer.byteLength(JSON.stringify({ ...entry, inflight: undefined })) +
+          Buffer.byteLength(key),
+      ),
+  });
+}
+const pullRequestCache = sourceCache<CodeReviewPullRequest[]>();
+const ticketCache = sourceCache<WorkItem[]>();
+const docsCache = sourceCache<DocPage[]>();
+const gitCache = sourceCache<GitStatusResult>();
+const adrCache = sourceCache<AdrEntry[]>();
+const sourceReads = createAsyncLimit(NETWORK_CONCURRENCY);
+const pendingSources = new Map<object, Map<string, Promise<CacheEntry<unknown>>>>();
+let cacheGeneration = 0;
+const pendingModules = new Map<string, Promise<OverviewModuleResult>>();
 
 /** Test hook: forget cached network results. */
 export function clearOverviewCaches(): void {
+  cacheGeneration += 1;
+  pendingSources.clear();
+  pendingModules.clear();
   for (const cache of [pullRequestCache, ticketCache, docsCache, gitCache, adrCache]) cache.clear();
 }
 
@@ -222,38 +243,45 @@ function errorMessage(error: unknown): string {
 }
 
 async function cachedFetch<T>(
-  cache: Map<string, CacheEntry<T>>,
+  cache: LRUCache<string, CacheEntry<T>>,
   key: string,
   ttlMs: number,
   refresh: boolean,
   fetcher: () => Promise<T>,
 ): Promise<CacheEntry<T>> {
+  const generation = cacheGeneration;
+  let pending = pendingSources.get(cache);
+  if (!pending) pendingSources.set(cache, (pending = new Map()));
+  const existing = pending.get(key);
+  if (existing) return existing as Promise<CacheEntry<T>>;
   const entry = cache.get(key);
-  if (entry?.inflight) {
-    await entry.inflight;
-    return cache.get(key)!;
-  }
   const age = entry ? Date.now() - entry.fetchedAt : Infinity;
   if (entry && !refresh && age < (entry.error ? FAILURE_TTL_MS : ttlMs)) return entry;
 
-  const inflight = (async () => {
+  const inflight = (async (): Promise<CacheEntry<T>> => {
+    let next: CacheEntry<T>;
     try {
-      const value = await fetcher();
+      const value = await sourceReads(fetcher);
       const now = new Date().toISOString();
-      cache.set(key, { value, observedAt: now, lastSuccessAt: now, fetchedAt: Date.now() });
+      next = { value, observedAt: now, lastSuccessAt: now, fetchedAt: Date.now() };
     } catch (error) {
-      cache.set(key, {
+      next = {
         value: entry?.value,
         observedAt: entry?.observedAt,
         lastSuccessAt: entry?.lastSuccessAt,
         error: errorMessage(error),
         fetchedAt: Date.now(),
-      });
+      };
     }
+    if (generation === cacheGeneration) cache.set(key, next);
+    return next;
   })();
-  cache.set(key, { ...(entry ?? { fetchedAt: 0 }), inflight });
-  await inflight;
-  return cache.get(key)!;
+  pending.set(key, inflight as Promise<CacheEntry<unknown>>);
+  try {
+    return await inflight;
+  } finally {
+    if (pending.get(key) === inflight) pending.delete(key);
+  }
 }
 
 async function mapLimit<T, R>(
@@ -1451,6 +1479,32 @@ export async function loadOverviewModule(
   const scope = assertOverviewScope(request.scope);
   const module = request.module;
   if (!OVERVIEW_MODULES[module?.type]) throw new Error('Unknown overview module.');
+  // Identity/authorization are checked before joining a shared read. Width,
+  // title and instance id are presentation-only; forced refresh is a separate key.
+  const key = JSON.stringify({
+    generation: cacheGeneration,
+    scope,
+    type: module.type,
+    rows: module.rows,
+    config: module.config,
+    timeRange: request.timeRange,
+    refresh: request.refresh === true,
+  });
+  const existing = pendingModules.get(key);
+  if (existing) return existing;
+  const pending = loadOverviewModuleUncached({ ...request, scope });
+  pendingModules.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    if (pendingModules.get(key) === pending) pendingModules.delete(key);
+  }
+}
+
+async function loadOverviewModuleUncached(
+  request: OverviewModuleRequest,
+): Promise<OverviewModuleResult> {
+  const { scope, module } = request;
   const ctx = resolveOverviewScope(scope, module.config ?? {});
   const since = timeRangeStart(request.timeRange ?? '7d');
   const refresh = request.refresh === true;

@@ -5,7 +5,10 @@ export function ChatRunTargetSelect({
   run,
   disabled,
 }: {
-  run: ReturnType<typeof useChatRunTarget>;
+  run: Pick<
+    ReturnType<typeof useChatRunTarget>,
+    'target' | 'setTarget' | 'hosted' | 'busy' | 'record' | 'hostedAgentsEnabled' | 'devices'
+  >;
   disabled: boolean;
 }) {
   const Icon = run.hosted ? Cloud : Monitor;

@@ -21,7 +21,7 @@ import { TagFilter } from './TagFilter';
 import { MarkdownRenderer } from '../chat/MarkdownRenderer';
 import { WorkItemCard } from './WorkItemCard';
 import { repoIsMapped, useWorkspace } from '../../contexts/WorkspaceContext';
-import { useChatContext } from '../../contexts/ChatContext';
+import { useChatActions } from '../../contexts/ChatContext';
 import { EmptyState, InlineNotice, ViewHeader } from '../layout/ViewScaffold';
 import { SettingsLink } from '../shared/SettingsLink';
 import { presentSetupError } from '../../utils/setup-error';
@@ -54,7 +54,7 @@ const button =
 export function WorkItemsView() {
   const navigate = useNavigate();
   const { activeWorkspace, featureAvailability, updatePreferences } = useWorkspace();
-  const { activeRepos, launchPreparedChat } = useChatContext();
+  const { activeRepos, launchPreparedChat } = useChatActions();
   const [items, setItems] = useState<WorkItem[]>([]);
   const [iterations, setIterations] = useState<Iteration[]>([]);
   const [selectedIterations, setSelectedIterations] = useState<string[]>([]);

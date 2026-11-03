@@ -1300,3 +1300,81 @@ describe('hosted organisation factories', () => {
     }
   });
 });
+
+it('pages encrypted run snapshots with stable tie cursors and rechecks membership on every page', async () => {
+  const pub = Buffer.alloc(32, 7).toString('base64');
+  expect(
+    (
+      await call('factory.key.register', {
+        organizationId,
+        publicKey: pub,
+        githubToken: 'github-test-token',
+      })
+    ).ok,
+  ).toBe(true);
+  expect((await upsert('factory_paged')).ok).toBe(true);
+  const snapshot = JSON.stringify(
+    sealed({ [userId]: pub, other_user: Buffer.alloc(32, 9).toString('base64') }),
+  );
+  await db.batch(
+    Array.from({ length: 105 }, (_, n) =>
+      db
+        .prepare(
+          'INSERT INTO hosted_factory_runs(factory_id,id,version,payload_digest,snapshot_json,updated_at) VALUES(?,?,1,?,?,1234)',
+        )
+        .bind('factory_paged', `run_${String(n).padStart(3, '0')}`, 'a'.repeat(64), snapshot),
+    ),
+  );
+  const first = await call('factory.run.list', {
+    factoryId: 'factory_paged',
+    githubToken: 'github-test-token',
+    page: { limit: 50 },
+  });
+  expect(first.ok).toBe(true);
+  expect(first.body.pageSupported).toBe(true);
+  const runs = first.body.runs as Array<{
+    id: string;
+    snapshot: { keys: Record<string, unknown> };
+  }>;
+  expect(runs).toHaveLength(50);
+  expect(Object.keys(runs[0].snapshot.keys)).toEqual([userId]);
+  const second = await call('factory.run.list', {
+    factoryId: 'factory_paged',
+    githubToken: 'github-test-token',
+    page: { limit: 100, cursor: first.body.cursor },
+  });
+  expect(second.ok).toBe(true);
+  expect(second.body.cursor).toBeNull();
+  expect(new Set([...runs, ...(second.body.runs as typeof runs)].map((x) => x.id)).size).toBe(105);
+  expect(
+    (
+      await call('factory.run.list', {
+        factoryId: 'factory_paged',
+        githubToken: 'github-test-token',
+        page: { limit: 101 },
+      })
+    ).ok,
+  ).toBe(false);
+  expect(
+    (
+      await call('factory.run.list', {
+        factoryId: 'factory_paged',
+        githubToken: 'github-test-token',
+        page: { limit: 50, cursor: { ...(first.body.cursor as object), factoryId: 'other' } },
+      })
+    ).ok,
+  ).toBe(false);
+  await db
+    .prepare("UPDATE hosted_organization_memberships SET status='inactive' WHERE organization_id=?")
+    .bind(organizationId)
+    .run();
+  expect(
+    (
+      await call('factory.run.list', {
+        factoryId: 'factory_paged',
+        githubToken: 'github-test-token',
+        page: { limit: 50, cursor: first.body.cursor },
+      })
+    ).ok,
+  ).toBe(false);
+});

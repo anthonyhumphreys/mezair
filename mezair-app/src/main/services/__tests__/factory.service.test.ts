@@ -91,6 +91,8 @@ import {
   controlFactoryRun,
   getFactoryRun,
   listFactories,
+  listFactoryRunPage,
+  getFactoryRunSummary,
   previewFactory,
   saveFactory,
 } from '../factory.service.js';
@@ -378,7 +380,7 @@ describe('factory service reviewed activation and remote projections', () => {
       deadlineAt: '',
       receipts: [],
       takeoverThreadId: 'owner-private-thread',
-    } as FactoryRun;
+    } satisfies FactoryRun;
     state.remoteRuns.set(run.id, run);
     const pending = await controlFactoryRun({
       runId: run.id,
@@ -407,4 +409,75 @@ describe('factory service reviewed activation and remote projections', () => {
       expect.any(String),
     );
   });
+});
+
+it('bounds factory hydration, pages active runs before terminal history and computes complete summaries', async () => {
+  const factory = await saved();
+  const insert = state.db.prepare(
+    'INSERT INTO factory_runs(id,factory_id,issue_key,stage,record_json,version,updated_at) VALUES(?,?,?,?,?,1,?)',
+  );
+  const stages: FactoryRun['stage'][] = [
+    'completed',
+    'blocked',
+    'received',
+    'paused',
+    'cancelled',
+    'awaiting-merge-approval',
+    'merging',
+    'waiting-checks',
+  ];
+  const runs: FactoryRun[] = [];
+  for (let n = 0; n < 137; n++) {
+    const at = '2026-01-01T00:00:00.000Z';
+    const run: FactoryRun = {
+      id: `page-${String(n).padStart(3, '0')}`,
+      factoryId: factory.id,
+      stage: stages[n % stages.length],
+      snapshot: factory,
+      updatedAt: at,
+      createdAt: at,
+      receipts: [],
+      version: 1,
+      revision: 1,
+      workspaceId: 'ws',
+      repairRounds: 0,
+      commandsUsed: 0,
+      deadlineAt: at,
+      issue: {
+        number: n,
+        title: 'Synthetic',
+        body: '',
+        url: '',
+        labels: [],
+        state: 'open',
+        createdAt: at,
+        updatedAt: at,
+      },
+      pendingControl: n % 13 === 0 ? 'cancel' : undefined,
+    } satisfies FactoryRun;
+    runs.push(run);
+    insert.run(run.id, factory.id, run.id, run.stage, JSON.stringify(run), at);
+  }
+  const summary = await getFactoryRunSummary(factory.id);
+  expect(summary).toEqual({ total: 137, complete: true, active: 102, attention: 32, live: 31 });
+  let page = await listFactoryRunPage({ factoryId: factory.id, limit: 25 });
+  const found = [...page.runs];
+  expect(page.runs).toHaveLength(25);
+  while (page.cursor) {
+    page = await listFactoryRunPage({ factoryId: factory.id, limit: 25, cursor: page.cursor });
+    found.push(...page.runs);
+  }
+  expect(new Set(found.map((run) => run.id)).size).toBe(137);
+  expect(
+    found
+      .slice(0, summary.active)
+      .every((run) => !['completed', 'cancelled', 'taken-over'].includes(run.stage)),
+  ).toBe(true);
+  await expect(listFactoryRunPage({ factoryId: factory.id, limit: 101 })).rejects.toThrow('limit');
+  await expect(
+    listFactoryRunPage({
+      factoryId: factory.id,
+      cursor: { factoryId: 'other', terminal: 0, id: 'x', updatedAt: '' },
+    }),
+  ).rejects.toThrow('cursor');
 });

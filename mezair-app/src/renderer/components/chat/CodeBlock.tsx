@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { Check, Copy, ChevronDown, ChevronRight } from 'lucide-react';
 import { highlightCode } from './shiki';
+import { useTranscriptDisclosure } from './TranscriptViewState';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { StreamedMermaidPreview } from './StreamedMermaidPreview';
 import { ArtifactFencePlaceholder, SketchFence } from './SurfaceFences';
@@ -63,7 +64,12 @@ export function CodeBlock({ children, className, node, 'data-fenced': isFenced }
 
     return (
       <CodeBlockErrorBoundary code={code}>
-        <FencedCodeBlock language={language || 'text'}>{code}</FencedCodeBlock>
+        <FencedCodeBlock
+          language={language || 'text'}
+          disclosureId={`code-${node?.position?.start?.offset ?? 0}`}
+        >
+          {code}
+        </FencedCodeBlock>
       </CodeBlockErrorBoundary>
     );
   }
@@ -96,14 +102,22 @@ class CodeBlockErrorBoundary extends Component<
   }
 }
 
-function FencedCodeBlock({ language, children }: { language: string; children: ReactNode }) {
+function FencedCodeBlock({
+  language,
+  children,
+  disclosureId,
+}: {
+  language: string;
+  children: ReactNode;
+  disclosureId: string;
+}) {
   const [highlightedResult, setHighlightedResult] = useState<{
     code: string;
     language: string;
     html: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useTranscriptDisclosure(disclosureId);
   const codeBodyId = useId();
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const code = extractText(children).trimEnd();
@@ -120,10 +134,11 @@ function FencedCodeBlock({ language, children }: { language: string; children: R
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
 
     const timeout = window.setTimeout(() => {
       if (visibleCode.length <= MAX_HIGHLIGHTED_CODE_CHARS) {
-        highlightCode(visibleCode, language).then((html) => {
+        highlightCode(visibleCode, language, controller.signal).then((html) => {
           if (!cancelled) setHighlightedResult({ code: visibleCode, language, html });
         });
       }
@@ -131,6 +146,7 @@ function FencedCodeBlock({ language, children }: { language: string; children: R
 
     return () => {
       cancelled = true;
+      controller.abort();
       window.clearTimeout(timeout);
     };
   }, [visibleCode, language]);

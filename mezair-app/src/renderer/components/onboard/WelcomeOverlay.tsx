@@ -3,12 +3,15 @@ import { useBrand } from '../../contexts/BrandContext';
 import type { UserRole } from '../../../shared/types';
 import { RoleOptionList } from './RolePickerOverlay';
 import { OnboardingPreviewBar } from './OnboardingPreviewBar';
+import { preloadable } from '../../utils/preloadable';
 
+const connectorImport = preloadable(() => import('./ConnectorSetupOverlay'));
 const ConnectorSetupOverlay = lazy(() =>
-  import('./ConnectorSetupOverlay').then((module) => ({ default: module.ConnectorSetupOverlay })),
+  connectorImport.load().then((module) => ({ default: module.ConnectorSetupOverlay })),
 );
+const syncImport = preloadable(() => import('./SyncMeshSetupCard'));
 const SyncMeshSetupCard = lazy(() =>
-  import('./SyncMeshSetupCard').then((module) => ({ default: module.SyncMeshSetupCard })),
+  syncImport.load().then((module) => ({ default: module.SyncMeshSetupCard })),
 );
 
 export type WelcomeStep = 'role' | 'agent' | 'sync';
@@ -128,11 +131,30 @@ export function WelcomeOverlay({
               <p className="mt-2 text-sm text-text-secondary">Choose your starting tools.</p>
             </div>
 
-            <RoleOptionList onSelect={(role) => void handleRole(role)} />
+            <div
+              onPointerOverCapture={() => connectorImport.warm()}
+              onFocusCapture={() => connectorImport.warm()}
+            >
+              <RoleOptionList onSelect={(role) => void handleRole(role)} />
+            </div>
           </div>
         </div>
       ) : (
-        <div className={step === 'agent' ? 'block' : 'hidden'}>
+        <div
+          className={step === 'agent' ? 'block' : 'hidden'}
+          onPointerOverCapture={(event) => {
+            if (
+              (event.target as HTMLElement).closest('button')?.textContent?.match(/continue|later/i)
+            )
+              syncImport.warm();
+          }}
+          onFocusCapture={(event) => {
+            if (
+              (event.target as HTMLElement).closest('button')?.textContent?.match(/continue|later/i)
+            )
+              syncImport.warm();
+          }}
+        >
           <ConnectorSetupOverlay
             preview={preview}
             onExitPreview={onExitPreview}

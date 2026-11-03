@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron';
+import { clearOverviewCaches } from '../services/overview.service.js';
 import type { SecretStorageProvider, SecretVaultSetup } from '../../shared/secret-storage.js';
 import {
   configureSecretVault,
@@ -120,6 +121,7 @@ export function registerSettingsHandlers(): void {
       if (cleaned.notionOauthToken === '••••••••') delete cleaned.notionOauthToken;
 
       updateSettings(cleaned);
+      clearOverviewCaches();
       resetLlmClient();
       invalidateAppleLocalModelStatus();
       emitCompanionEvent('settings');

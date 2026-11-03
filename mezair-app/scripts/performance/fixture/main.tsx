@@ -66,9 +66,9 @@ const percentile = (values: number[], fraction: number) =>
     Math.min(values.length - 1, Math.floor(values.length * fraction))
   ];
 
-function history(): ChatEntry[] {
+function history(count = 100): ChatEntry[] {
   const entries: ChatEntry[] = [];
-  for (let turn = 0; turn < 100; turn++) {
+  for (let turn = 0; turn < count; turn++) {
     entries.push({ kind: 'user', id: `user-${turn}`, content: `Review request ${turn + 1}.` });
     for (let action = 0; action < 30; action++) {
       entries.push({
@@ -91,7 +91,7 @@ function history(): ChatEntry[] {
         '- Checked the current behaviour and the expected result.\n'.repeat(8) +
         '\n**Validation:** all synthetic checks passed.\n',
     });
-    if (turn < 99)
+    if (turn < count - 1)
       entries.push({ kind: 'event', event: { type: 'turn_outcome', turnOutcome: 'completed' } });
   }
   return entries;
@@ -99,8 +99,9 @@ function history(): ChatEntry[] {
 
 const root = createRoot(document.getElementById('root')!);
 Object.assign(window, {
-  async runPerformanceScenario() {
-    let entries = history();
+  async runPerformanceScenario(options: { turns?: number } = {}) {
+    const turnCount = options.turns ?? 100;
+    let entries = history(turnCount);
     const render = () =>
       flushSync(() =>
         root.render(
@@ -230,10 +231,20 @@ Object.assign(window, {
       domElements: document.querySelectorAll('*').length,
       hiddenWorkRows: document.querySelectorAll('.processing-item[hidden]').length,
       turnRectReads,
-      turns: 100,
+      turns: turnCount,
       actionsPerTurn: 30,
       streamUpdates: 60,
     };
+  },
+  async checkAdvanced() {
+    flushSync(() => root.render(null));
+    return (await import('./advanced-checks')).checkAdvanced();
+  },
+  async checkNativeHighlight() {
+    const { highlightCode } = await import('../../../src/renderer/components/chat/shiki');
+    const html = await highlightCode('const nativeProbe: string = "ready";', 'ts');
+    if (!html.includes('color') || !html.includes('span')) throw new Error('Native syntax worker did not highlight.');
+    return 'Native packaged renderer syntax highlighting passed';
   },
   async checkDashboard() {
     return (await import('./dashboard-checks')).checkDashboard();

@@ -13,6 +13,7 @@ import { ROLE_FEATURES } from '../../../shared/types';
 import { isEditableShortcutTarget, isShellShortcutOptInTarget } from '../../utils/keyboard';
 import { SidebarActivityProvider } from './SidebarActivityCenter';
 import { PictureInPicture2 } from 'lucide-react';
+import { terminalImport, paletteImport } from '../../utils/tool-preloads';
 import {
   allSidebarNavItems,
   DEMOTED_NAV_ITEMS,
@@ -24,10 +25,10 @@ const EditorView = lazy(() =>
   import('../editor/EditorView').then((module) => ({ default: module.EditorView })),
 );
 const TerminalPanel = lazy(() =>
-  import('../terminal/TerminalPanel').then((module) => ({ default: module.TerminalPanel })),
+  terminalImport.load().then((module) => ({ default: module.TerminalPanel })),
 );
 const CommandPalette = lazy(() =>
-  import('./CommandPalette').then((module) => ({ default: module.CommandPalette })),
+  paletteImport.load().then((module) => ({ default: module.CommandPalette })),
 );
 
 interface ShellProps {
@@ -126,6 +127,7 @@ export function Shell({ connectionStatus, userRole, cloudFeaturesEnabled }: Shel
           toggleTerminal();
           break;
         case 'commandPalette':
+          paletteImport.warm();
           setCommandPaletteOpen((open) => !open);
           break;
         case 'settings':

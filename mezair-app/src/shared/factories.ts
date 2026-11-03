@@ -447,6 +447,31 @@ export interface FactoryRunControlInput {
   takeoverContext?: { workspaceId: string; repoId?: string; personaId: string };
 }
 
+export interface FactoryRunCursor {
+  factoryId: string;
+  terminal: number;
+  updatedAt: string;
+  id: string;
+}
+export interface FactoryRunPageRequest {
+  factoryId: string;
+  cursor?: FactoryRunCursor | null;
+  limit?: number;
+}
+export interface FactoryRunPage {
+  runs: FactoryRun[];
+  cursor: FactoryRunCursor | null;
+  /** False for legacy hosted servers that cannot continue beyond their recent window. */
+  complete: boolean;
+}
+export interface FactoryRunSummary {
+  total: number;
+  active: number;
+  attention: number;
+  live: number;
+  complete: boolean;
+}
+
 /** Desktop/provider boundary: all writes have a durable, stable intent key. */
 export interface FactoryProvider {
   listIssues(factory: FactoryDefinition, since?: string): Promise<FactoryIssue[]>;

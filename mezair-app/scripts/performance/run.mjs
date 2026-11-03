@@ -52,6 +52,12 @@ browser.stdio[4].on('data', (data) => {
   while ((delimiter = buffer.indexOf('\0')) !== -1) {
     const message = JSON.parse(buffer.slice(0, delimiter));
     buffer = buffer.slice(delimiter + 1);
+    if (message.method === 'Runtime.exceptionThrown')
+      console.error(
+        'Renderer exception:',
+        message.params.exceptionDetails.exception?.description ??
+          message.params.exceptionDetails.text,
+      );
     const request = pending.get(message.id);
     if (!request) continue;
     clearTimeout(request.timeout);
@@ -81,7 +87,7 @@ try {
   const version = await command('Browser.getVersion');
   const variants = [
     {
-      root: process.env.PERF_FIXTURE_ROOT ?? '/tmp/mezair-performance-fixture',
+      root: process.env.PERF_FIXTURE_ROOT ?? join(tmpdir(), 'mezair-performance-fixture'),
       output: process.argv[2],
       runs: [],
       current: true,
@@ -96,7 +102,7 @@ try {
       current: false,
       checks: undefined,
     });
-  for (let run = 0; run < 5; run++) {
+  for (let run = 0; run < Number(process.env.PERF_RUNS ?? 5); run++) {
     for (const variant of run % 2 ? [...variants].reverse() : variants) {
       const { browserContextId } = await command('Target.createBrowserContext');
       const { targetId } = await command('Target.createTarget', {
@@ -105,6 +111,7 @@ try {
       });
       const { sessionId } = await command('Target.attachToTarget', { targetId, flatten: true });
       await command('Page.enable', {}, sessionId);
+      await command('Runtime.enable', {}, sessionId);
       await command(
         'Emulation.setEmulatedMedia',
         { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] },
@@ -127,7 +134,10 @@ try {
       );
       await command('HeapProfiler.collectGarbage', {}, sessionId);
       const idle = await command('Runtime.getHeapUsage', {}, sessionId);
-      const metrics = await evaluate(sessionId, 'window.runPerformanceScenario()');
+      const metrics = await evaluate(
+        sessionId,
+        `window.runPerformanceScenario({turns:${Number(process.env.PERF_TURNS ?? 100)}})`,
+      );
       await command('HeapProfiler.collectGarbage', {}, sessionId);
       const heap = await command('Runtime.getHeapUsage', {}, sessionId);
       variant.runs.push({
@@ -143,6 +153,7 @@ try {
         variant.checks = {
           chat: await evaluate(sessionId, 'window.checkTranscript()'),
           dashboard: await evaluate(sessionId, 'window.checkDashboard()'),
+          advanced: await evaluate(sessionId, 'window.checkAdvanced()'),
         };
       }
       await command('Target.disposeBrowserContext', { browserContextId });
@@ -165,6 +176,7 @@ try {
         platform: `${platform()} ${release()} ${arch()}`,
         cpu: cpus()[0].model,
       },
+      scenarioTurns: Number(process.env.PERF_TURNS ?? 100),
       methodology:
         'Production Vite build; headless Chrome with background throttling disabled; five fresh browser contexts; forced GC before and after; synthetic 100-turn history with 30 operations per turn; 60 streamed updates; 200 composition updates; 20 scroll events in one frame. Renderer-only measurements, not whole Electron process memory or provider latency.',
       comparison:

@@ -6,6 +6,9 @@ import type {
   FactoryIssue,
   FactoryReceipt,
   FactoryRun,
+  FactoryRunCursor,
+  FactoryRunPage,
+  FactoryRunSummary,
 } from '../../shared/factories.js';
 
 export class FactoryIssueClaimConflict extends Error {
@@ -74,6 +77,44 @@ export class FactoryStore {
         .prepare('SELECT id FROM factory_runs WHERE factory_id=? ORDER BY updated_at DESC')
         .all(factoryId) as Array<{ id: string }>
     ).map((row) => this.getRun(row.id)!);
+  }
+  runPage(factoryId: string, limit: number, cursor?: FactoryRunCursor | null): FactoryRunPage {
+    const terminal = "CASE WHEN stage IN ('completed','cancelled','taken-over') THEN 1 ELSE 0 END";
+    const rows = this.db
+      .prepare(
+        `SELECT id,updated_at,${terminal} AS terminal FROM factory_runs WHERE factory_id=? ${cursor ? `AND (${terminal}>? OR (${terminal}=? AND (updated_at<? OR (updated_at=? AND id<?))))` : ''} ORDER BY terminal ASC,updated_at DESC,id DESC LIMIT ?`,
+      )
+      .all(
+        factoryId,
+        ...(cursor
+          ? [cursor.terminal, cursor.terminal, cursor.updatedAt, cursor.updatedAt, cursor.id]
+          : []),
+        limit + 1,
+      ) as Array<{ id: string; updated_at: string; terminal: number }>;
+    const page = rows.slice(0, limit);
+    const last = page.at(-1);
+    return {
+      runs: page.map((row) => this.getRun(row.id)!),
+      cursor:
+        rows.length > limit && last
+          ? { factoryId, id: last.id, updatedAt: last.updated_at, terminal: last.terminal }
+          : null,
+      complete: true,
+    };
+  }
+  runSummary(factoryId: string): FactoryRunSummary {
+    const active = "stage NOT IN ('completed','cancelled','taken-over')";
+    const cancelled = "coalesce(json_extract(record_json,'$.pendingControl'),'')='cancel'";
+    const result = this.db
+      .prepare(
+        `SELECT count(*) AS total,
+      coalesce(sum(${active}),0) AS active,
+      coalesce(sum(stage='blocked' OR (stage='awaiting-merge-approval' AND coalesce(json_extract(record_json,'$.snapshot.definition.merge.mode'),'')<>'auto-merge' AND NOT (${cancelled}))),0) AS attention,
+      coalesce(sum(${active} AND stage NOT IN ('blocked','paused','cancelling','awaiting-merge-approval','waiting-checks') AND NOT (${cancelled}) AND NOT (stage='merging' AND coalesce(json_extract(record_json,'$.mergeReceipt.state'),'')='queued')),0) AS live
+      FROM factory_runs WHERE factory_id=?`,
+      )
+      .get(factoryId) as Omit<FactoryRunSummary, 'complete'>;
+    return { ...result, complete: true };
   }
   intake(factory: FactoryDefinition, issue: FactoryIssue, now: Date): FactoryRun {
     const key = factoryIssueKey(factory.definition, issue);

@@ -2,12 +2,7 @@ import type { CodexEvent, CodexSession, CodexSubagentStatus } from '../../shared
 import type { ChatEntry } from '../contexts/ChatContext';
 
 export type ExecutionTopologyNodeStatus =
-  | 'running'
-  | 'waiting'
-  | 'completed'
-  | 'failed'
-  | 'stopped'
-  | 'idle';
+  'running' | 'waiting' | 'completed' | 'failed' | 'stopped' | 'idle';
 
 export interface ExecutionTopologyNode {
   id: string;
@@ -54,6 +49,24 @@ interface ExecutionTopologyInput {
   rootLabel: string;
   rootSummary?: string;
   sessionStates?: Record<string, ExecutionTopologyNodeStatus>;
+}
+
+/** Preserve the activity graph's input identity while only text/tool output streams. */
+export function createExecutionEntriesSelector() {
+  let previous: ChatEntry[] = [];
+  return (entries: ChatEntry[]) => {
+    const relevant = entries.filter(
+      (entry) =>
+        entry.kind === 'user' || (entry.kind === 'event' && entry.event.type === 'subagent_update'),
+    );
+    if (
+      relevant.length === previous.length &&
+      relevant.every((entry, index) => entry === previous[index])
+    )
+      return previous;
+    previous = relevant;
+    return previous;
+  };
 }
 
 export function buildExecutionTopology({

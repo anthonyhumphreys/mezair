@@ -34,6 +34,7 @@ import type {
   CodexEvent,
 } from '../../../shared/types';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { useTranscriptDisclosure } from './TranscriptViewState';
 import { DiffViewer } from './DiffViewer';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { buildEditorUrl } from '../../utils/editor-link';
@@ -369,6 +370,7 @@ export function ActivityGroupMessage({
 
 export function TurnWorkMessage({
   items,
+  disclosureId = 'work',
   active = false,
   outcome,
   waiting = false,
@@ -377,6 +379,7 @@ export function TurnWorkMessage({
   endedAt,
 }: {
   items: ChatTurnWorkItem[];
+  disclosureId?: string;
   active?: boolean;
   outcome?: CodexEvent['turnOutcome'];
   waiting?: boolean;
@@ -385,7 +388,7 @@ export function TurnWorkMessage({
   startedAt?: string;
   endedAt?: string;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useTranscriptDisclosure(disclosureId);
   const resolvedTargets = new Set(
     items.flatMap((item) => {
       if (item.kind !== 'event' || item.event.type !== 'request_resolved') return [];
@@ -2121,7 +2124,7 @@ export function UserMessage({
   onBranch?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useTranscriptDisclosure('user-message');
   const collapsible = shouldCollapseUserMessage(content);
   const lineCount = content.split('\n').length;
 

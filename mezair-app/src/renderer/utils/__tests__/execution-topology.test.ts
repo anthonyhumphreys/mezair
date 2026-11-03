@@ -4,6 +4,7 @@ import type { ChatEntry } from '../../contexts/ChatContext';
 import {
   applyExecutionLifecycle,
   buildExecutionTopology,
+  createExecutionEntriesSelector,
   summarizeAgentWork,
 } from '../execution-topology';
 
@@ -473,4 +474,18 @@ describe('buildExecutionTopology', () => {
       detail: 'Completed',
     });
   });
+});
+
+it('retains activity input across streamed text and tool output and invalidates on user turns', () => {
+  const select = createExecutionEntriesSelector();
+  const user: ChatEntry = { kind: 'user', id: 'question', content: 'Question' };
+  const first = select([user, { kind: 'assistant', content: 'part' }]);
+  expect(
+    select([
+      user,
+      { kind: 'assistant', content: 'part grows' },
+      { kind: 'event', event: { type: 'command_exec', output: 'more' } },
+    ]),
+  ).toBe(first);
+  expect(select([user, { kind: 'user', id: 'next', content: 'Next' }])).not.toBe(first);
 });

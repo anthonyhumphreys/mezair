@@ -613,6 +613,18 @@ polls do not overlap. Navigation invalidates pending presentation responses and
 queued reads. These are renderer resource limits only: the daemon continues
 authorised execution, and service access checks still govern every read.
 
+Factory presentation now exposes bounded run pages (50 by default, 100 maximum)
+and a summary read. Local pages hydrate active runs before terminal history;
+SQLite computes local counts without loading receipts. Hosted pages use the
+existing authorised `factory.run.list` operation with a factory-bound timestamp/
+id cursor and recipient-only encrypted snapshots. Every page rechecks current
+membership/source access; paging introduces no execution or publication authority.
+Remote summaries describe only the decrypted recent window and set `complete:
+false` when history remains. Older backends retain their explicit 100-run window;
+the UI labels those counts as recent shared runs. Full run reads remain available
+by id, including runs outside that window. No plaintext run-stage index was added
+to the hosted backend.
+
 The dual-provider delivery and Mezair role change passed the full desktop suite
 (3,417 passed, 12 skipped), then 70 focused tests after the final current-head
 review and continuation guards. Node/web/backend TypeScript checks, lint,

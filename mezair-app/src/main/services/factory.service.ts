@@ -48,6 +48,11 @@ import {
 import { callLlm } from './llm.service.js';
 import { installAutomationDaemon, isAutomationDaemonMode } from './automation-daemon.service.js';
 import { previewBuild } from '../../shared/preview-build.js';
+import type {
+  FactoryRunPageRequest,
+  FactoryRunPage,
+  FactoryRunSummary,
+} from '../../shared/factories.js';
 
 let runtime: FactoryRuntime | undefined;
 let timer: NodeJS.Timeout | undefined;
@@ -362,8 +367,12 @@ export async function getFactory(id: string): Promise<FactoryDefinition | null> 
   const factory = await findFactory(id);
   return factory ? view(factory) : null;
 }
-async function runView(run: FactoryRun, factory: FactoryDefinition): Promise<FactoryRun> {
-  const allowed = await view(factory);
+async function runView(
+  run: FactoryRun,
+  factory: FactoryDefinition,
+  allowedView?: FactoryDefinition,
+): Promise<FactoryRun> {
+  const allowed = allowedView ?? (await view(factory));
   let result = {
     ...run,
     effectiveRole: allowed.effectiveRole,
@@ -404,6 +413,69 @@ export async function listFactoryRuns(factoryId: string): Promise<FactoryRun[]> 
     ? store().listRuns(factoryId)
     : await access.listRemoteFactoryRuns(factoryId);
   return Promise.all(runs.map((run) => runView(run, factory)));
+}
+export async function listFactoryRunPage(request: FactoryRunPageRequest): Promise<FactoryRunPage> {
+  if (!request || typeof request.factoryId !== 'string') throw new Error('Invalid factory.');
+  const limit = request.limit ?? 50,
+    cursor = request.cursor;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+    throw new Error('Factory page limit must be between 1 and 100.');
+  if (
+    cursor &&
+    (cursor.factoryId !== request.factoryId ||
+      ![0, 1].includes(cursor.terminal) ||
+      typeof cursor.updatedAt !== 'string' ||
+      cursor.updatedAt.length > 100 ||
+      typeof cursor.id !== 'string' ||
+      cursor.id.length > 200)
+  )
+    throw new Error('Invalid factory cursor.');
+  const factory = await findFactory(request.factoryId);
+  if (!factory) throw new Error('Factory not found.');
+  await authorize(factory, 'read-source');
+  const page = localOwner(factory)
+    ? store().runPage(factory.id, limit, cursor)
+    : await access.listRemoteFactoryRunPage(factory, request);
+  const allowed = await view(factory);
+  return {
+    ...page,
+    runs: await Promise.all(page.runs.map((run) => runView(run, factory, allowed))),
+  };
+}
+export async function getFactoryRunSummary(factoryId: string): Promise<FactoryRunSummary> {
+  const factory = await findFactory(factoryId);
+  if (!factory) throw new Error('Factory not found.');
+  await authorize(factory, 'read-source');
+  if (localOwner(factory)) return store().runSummary(factoryId);
+  const page = await access.listRemoteFactoryRunPage(factory, { factoryId, limit: 100 });
+  await authorize(factory, 'read-source');
+  const summary: FactoryRunSummary = {
+    total: page.runs.length,
+    active: 0,
+    attention: 0,
+    live: 0,
+    complete: page.complete && page.cursor === null,
+  };
+  for (const run of page.runs) {
+    if (['completed', 'cancelled', 'taken-over'].includes(run.stage)) continue;
+    summary.active++;
+    if (
+      run.stage === 'blocked' ||
+      (run.stage === 'awaiting-merge-approval' &&
+        run.snapshot.definition.merge.mode !== 'auto-merge' &&
+        run.pendingControl !== 'cancel')
+    )
+      summary.attention++;
+    if (
+      !['blocked', 'paused', 'cancelling', 'awaiting-merge-approval', 'waiting-checks'].includes(
+        run.stage,
+      ) &&
+      run.pendingControl !== 'cancel' &&
+      !(run.stage === 'merging' && run.mergeReceipt?.state === 'queued')
+    )
+      summary.live++;
+  }
+  return summary;
 }
 export async function getFactoryRun(id: string): Promise<FactoryRun | null> {
   const local = store().getRun(id);

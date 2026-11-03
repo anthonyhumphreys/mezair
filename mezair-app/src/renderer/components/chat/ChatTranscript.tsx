@@ -20,11 +20,17 @@ import {
 import { stripFindingMarkers } from '../../utils/finding-parser';
 import type { StarterPrompt } from '../../utils/starter-prompts';
 import { ChatDelegations } from './ChatDelegations';
+import { VirtualChatTurns } from './VirtualChatTurns';
+import { TranscriptViewScope } from './TranscriptViewState';
 
 const EMPTY_REPOS: RepoInfo[] = [];
 
 interface ChatTranscriptProps {
   paneKind: ChatPaneKind;
+  hasEarlier?: boolean;
+  loadingEarlier?: boolean;
+  onLoadEarlier?: () => void;
+  scrollScopeKey?: string | null;
   scaffoldRootPath?: string;
   blockedReason?: string;
   onOpenWorkspace?: () => void;
@@ -66,6 +72,10 @@ interface ChatTranscriptProps {
  */
 export function ChatTranscript({
   paneKind,
+  hasEarlier,
+  loadingEarlier,
+  onLoadEarlier,
+  scrollScopeKey,
   scaffoldRootPath,
   blockedReason,
   onOpenWorkspace,
@@ -130,6 +140,7 @@ export function ChatTranscript({
         ref={messagesContainerRef}
         role="region"
         aria-label="Chat transcript"
+        data-chat-scroll-container
         tabIndex={0}
         className={`h-full overflow-y-auto [scrollbar-gutter:stable] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${centered ? 'flex' : ''}`}
       >
@@ -161,9 +172,24 @@ export function ChatTranscript({
             </div>
           )}
 
+          {hasEarlier && (
+            <button
+              type="button"
+              disabled={loadingEarlier}
+              onClick={onLoadEarlier}
+              className="mx-auto mb-4 block rounded-md border border-border px-3 py-2 text-xs text-text-secondary hover:text-text-primary disabled:opacity-50"
+            >
+              {loadingEarlier ? 'Loading earlier messages…' : 'Load earlier messages'}
+            </button>
+          )}
           {turns.length > 0 && (
-            <div className="w-full space-y-6">
-              {turns.map((turn, turnIndex) => (
+            <VirtualChatTurns
+              key={activeThreadId ?? 'new'}
+              turns={turns}
+              scopeKey={scrollScopeKey ?? activeThreadId}
+              containerRef={messagesContainerRef}
+              pendingTurnKey={pendingQuestionTarget?.turnKey}
+              renderTurn={(turn, turnIndex) => (
                 <ChatTranscriptTurn
                   key={`${activeThreadId ?? 'new'}:${turn.key}`}
                   turn={turn}
@@ -189,8 +215,8 @@ export function ChatTranscript({
                   }
                   requestFileReview={requestFileReview}
                 />
-              ))}
-            </div>
+              )}
+            />
           )}
 
           {activeThreadId && paneKind === 'transcript' && (
@@ -302,6 +328,7 @@ const ChatTranscriptTurn = memo(function ChatTranscriptTurn({
             <TurnWorkMessage
               key={item.key}
               items={item.items}
+              disclosureId={`work-${item.sourceIndex - (turn.user?.sourceIndex ?? 0)}`}
               active={currentWork && liveState !== null}
               outcome={turnComplete ? turn.runOutcome : undefined}
               waiting={currentWork && runSummary?.state === 'awaiting-user'}
@@ -331,15 +358,16 @@ const ChatTranscriptTurn = memo(function ChatTranscriptTurn({
             </div>
           );
         return (
-          <AssistantMessage
-            key={item.key}
-            content={item.entry.content}
-            transformContent={isBaPersona ? stripFindingMarkers : undefined}
-            label={personaName}
-            colour={personaColour}
-            active={liveState === 'responding'}
-            onBranch={onBranch ? () => onBranch(item.entry.sourceIndex) : undefined}
-          />
+          <TranscriptViewScope key={item.key} name={`reply-${item.key}`}>
+            <AssistantMessage
+              content={item.entry.content}
+              transformContent={isBaPersona ? stripFindingMarkers : undefined}
+              label={personaName}
+              colour={personaColour}
+              active={liveState === 'responding'}
+              onBranch={onBranch ? () => onBranch(item.entry.sourceIndex) : undefined}
+            />
+          </TranscriptViewScope>
         );
       })}
       {lastWorkIndex < 0 && !turn.answer && liveState && (

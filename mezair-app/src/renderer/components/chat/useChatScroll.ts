@@ -206,7 +206,9 @@ export function useChatScroll({
     const behavior: ScrollBehavior = reducedMotion ? 'auto' : 'smooth';
     forcedPinnedScrollRef.current = behavior === 'smooth';
     lastScrollTopRef.current = container.scrollTop;
-    container.scrollTo({ top: container.scrollHeight, behavior });
+    const request = { behavior, handled: false };
+    container.dispatchEvent(new CustomEvent('mezair:transcript-end', { detail: request }));
+    if (!request.handled) container.scrollTo({ top: container.scrollHeight, behavior });
   }, [containerRef, persistPosition]);
 
   return { showJumpToLatest, jumpToLatest };

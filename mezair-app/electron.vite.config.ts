@@ -80,6 +80,7 @@ export default defineConfig({
     },
   },
   renderer: {
+    worker: { format: 'es' },
     define,
     root: 'src/renderer',
     plugins: [react(), tailwindcss()],

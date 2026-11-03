@@ -7,7 +7,7 @@ import type {
   ChatThreadPullRequestLink,
   CodeReviewPullRequest,
 } from '../../../shared/types';
-import { useChatContext } from '../../contexts/ChatContext';
+import { useChatActions } from '../../contexts/ChatContext';
 
 const button =
   'inline-flex items-center justify-center gap-1.5 rounded-md border border-border px-2.5 py-2 text-xs text-text-secondary hover:bg-bg-tertiary focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50';
@@ -21,7 +21,7 @@ export function PullRequestThreads({
   pullRequest: Pick<CodeReviewPullRequest, 'id' | 'provider'> & Partial<CodeReviewPullRequest>;
 }) {
   const navigate = useNavigate();
-  const { launchPreparedChat } = useChatContext();
+  const { launchPreparedChat } = useChatActions();
   const [links, setLinks] = useState<ChatThreadPullRequestLink[]>([]);
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [threadId, setThreadId] = useState('');

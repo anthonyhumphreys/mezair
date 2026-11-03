@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, CircleDashed, GitBranch, TerminalSquare, XCircle } from 'lucide-react';
 import { useBrand } from '../../contexts/BrandContext';
 import { useChatNavigation } from '../../contexts/ChatContext';
+import { terminalImport } from '../../utils/tool-preloads';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { buildSettingsPath } from '../settings/settings-route';
 import type { GitStatusResult, RepoInfo } from '../../../shared/types';
@@ -207,6 +208,8 @@ export function StatusBar({ connectionStatus, onToggleTerminal, terminalOpen }: 
         )}
         <button
           onClick={onToggleTerminal}
+          onPointerEnter={terminalImport.warm}
+          onFocus={terminalImport.warm}
           className={`flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-bg-elevated hover:text-text-primary ${
             terminalOpen ? 'text-text-primary' : ''
           }`}

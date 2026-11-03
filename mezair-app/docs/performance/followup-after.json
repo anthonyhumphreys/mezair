@@ -1,0 +1,175 @@
+{
+  "measuredAt": "2026-11-03T14:39:49.766Z",
+  "environment": {
+    "chrome": "Chrome/156.0.8078.80",
+    "js": "15.6.75.27",
+    "node": "24.10.0",
+    "platform": "darwin 27.0.0 arm64",
+    "cpu": "Apple M3"
+  },
+  "scenarioTurns": 1000,
+  "methodology": "Production Vite build; headless Chrome with background throttling disabled; 5 fresh browser contexts; forced GC before and after; synthetic 1000-turn history with 30 operations per turn; 60 streamed updates; 200 composition updates; 20 scroll events in one frame. Renderer-only measurements, not whole Electron process memory or provider latency.",
+  "comparison": "Alternating before/after builds in the same browser session; order reversed every pair.",
+  "median": {
+    "mountMs": 36.5,
+    "streamMedianMs": 3.600000023841858,
+    "streamP95Ms": 4.700000047683716,
+    "composeMedianMs": 0.09999996423721313,
+    "composeBatchMs": 20,
+    "retainedTurns": 999,
+    "domElements": 717,
+    "hiddenWorkRows": 0,
+    "turnRectReads": 5,
+    "turns": 1000,
+    "actionsPerTurn": 30,
+    "streamUpdates": 60,
+    "retainedHeapBytes": 12395328,
+    "totalHeapBytes": 14161956
+  },
+  "runs": [
+    {
+      "mountMs": 48,
+      "streamMedianMs": 3.099999964237213,
+      "streamP95Ms": 4.700000047683716,
+      "composeMedianMs": 0.10000002384185791,
+      "composeBatchMs": 20.5,
+      "retainedTurns": 999,
+      "domElements": 717,
+      "hiddenWorkRows": 0,
+      "turnRectReads": 5,
+      "turns": 1000,
+      "actionsPerTurn": 30,
+      "streamUpdates": 60,
+      "retainedHeapBytes": 12397968,
+      "totalHeapBytes": 14164720
+    },
+    {
+      "mountMs": 36.19999998807907,
+      "streamMedianMs": 3.699999988079071,
+      "streamP95Ms": 6.400000035762787,
+      "composeMedianMs": 0.09999996423721313,
+      "composeBatchMs": 19.69999998807907,
+      "retainedTurns": 999,
+      "domElements": 717,
+      "hiddenWorkRows": 0,
+      "turnRectReads": 5,
+      "turns": 1000,
+      "actionsPerTurn": 30,
+      "streamUpdates": 60,
+      "retainedHeapBytes": 12395328,
+      "totalHeapBytes": 14161128
+    },
+    {
+      "mountMs": 36.5,
+      "streamMedianMs": 3.600000023841858,
+      "streamP95Ms": 5.800000011920929,
+      "composeMedianMs": 0.10000002384185791,
+      "composeBatchMs": 27.80000001192093,
+      "retainedTurns": 999,
+      "domElements": 717,
+      "hiddenWorkRows": 0,
+      "turnRectReads": 5,
+      "turns": 1000,
+      "actionsPerTurn": 30,
+      "streamUpdates": 60,
+      "retainedHeapBytes": 12394080,
+      "totalHeapBytes": 14159880
+    },
+    {
+      "mountMs": 46.59999996423721,
+      "streamMedianMs": 3.600000023841858,
+      "streamP95Ms": 4.700000047683716,
+      "composeMedianMs": 0.09999996423721313,
+      "composeBatchMs": 20,
+      "retainedTurns": 999,
+      "domElements": 717,
+      "hiddenWorkRows": 0,
+      "turnRectReads": 5,
+      "turns": 1000,
+      "actionsPerTurn": 30,
+      "streamUpdates": 60,
+      "retainedHeapBytes": 12395204,
+      "totalHeapBytes": 14161956
+    },
+    {
+      "mountMs": 36.39999997615814,
+      "streamMedianMs": 3.199999988079071,
+      "streamP95Ms": 4.599999964237213,
+      "composeMedianMs": 0.09999996423721313,
+      "composeBatchMs": 19.600000023841858,
+      "retainedTurns": 999,
+      "domElements": 717,
+      "hiddenWorkRows": 0,
+      "turnRectReads": 5,
+      "turns": 1000,
+      "actionsPerTurn": 30,
+      "streamUpdates": 60,
+      "retainedHeapBytes": 12396356,
+      "totalHeapBytes": 14162156
+    }
+  ],
+  "checks": {
+    "chat": [
+      "expand operations",
+      "preserve expansion during streaming",
+      "preserve reader offset",
+      "jump to live",
+      "follow pinned response",
+      "replace history"
+    ],
+    "dashboard": [
+      "single initial read",
+      "coalesce forced refreshes",
+      "manual cache bypass",
+      "reject stale refresh",
+      "resize without fetching",
+      "clear cross-workspace results",
+      "reject old workspace response",
+      "reload row limit",
+      "unmounted view stays empty"
+    ],
+    "advanced": {
+      "passed": [
+        "1,000 variable-height turns windowed",
+        "selection and focus pinned across scroll",
+        "work disclosure retained across remount",
+        "prepend preserves reading anchor",
+        "find reveals loaded offscreen turns",
+        "intent-only import coalescing",
+        "zero composer component renders across 60 transcript updates",
+        "completed Markdown DOM retained with long code",
+        "real worker syntax highlighting",
+        "30 rich preview cycles release frames, blob URLs and theme observers",
+        "failed deferred imports leave shell controls available"
+      ],
+      "markdownP95Ms": 1.899999976158142,
+      "composerRendersDuring60Updates": 0,
+      "extra": {
+        "passed": [
+          "60 background updates leave settings and four state channels idle",
+          "real terminal and palette imports reuse intent-warmed modules",
+          "12 large-diff, image and Mermaid mount/close cycles release DOM",
+          "initially folded surface restores its body and releases it when folded again",
+          "surfaces outside loaded history open their known stage",
+          "five actual surface pop-outs close with their owners",
+          "three real WebGL contexts released after garden close"
+        ],
+        "toolImports": {
+          "terminal": {
+            "coldLoadMs": 9.5,
+            "warmReadMs": 0
+          },
+          "palette": {
+            "coldLoadMs": 1.800000011920929,
+            "warmReadMs": 0
+          }
+        },
+        "channelRendersDuring60Updates": 0,
+        "webgl": {
+          "cycles": 3,
+          "released": 3
+        }
+      }
+    }
+  }
+}

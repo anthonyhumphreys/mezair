@@ -1,0 +1,33 @@
+{
+  "source": "258009240b2322049a37658e4393bc8dd1a5aaf6",
+  "measuredAt": "2026-11-03T14:03:28.356Z",
+  "environment": {
+    "platform": "win32",
+    "arch": "x64",
+    "cpu": "AMD EPYC 7763 64-Core Processor                "
+  },
+  "methodology": "Unsigned packaged app, isolated fresh profile for each of three launches. Launch-to-interactive waits for the production welcome heading, role controls and two animation frames. Idle RSS is sampled 15 seconds later. Profiling disables background throttling through the main-process inspector so screen sleep/occlusion cannot stall animation-frame samples. Sum of OS working sets/RSS for the app process tree (shared pages can count more than once). Five-second sampled peak, no forced GC. A profiling-only display-sleep blocker and 16-ms timer-paced animation callbacks keep the memory soak running independently of display vsync; renderer latency is measured separately with native animation frames. Main process remains running during a synthetic production-renderer stream; no model/provider is invoked.",
+  "launches": [
+    {
+      "coldWindowAvailableMs": 1515.6965,
+      "launchToInteractiveMs": 2224.8414000000002,
+      "idleRssBytes": 448081920,
+      "processes": 4
+    },
+    {
+      "coldWindowAvailableMs": 1304.8947000000007,
+      "launchToInteractiveMs": 1794.5143000000025,
+      "idleRssBytes": 449077248,
+      "processes": 4
+    },
+    {
+      "coldWindowAvailableMs": 1281.6229999999996,
+      "launchToInteractiveMs": 1716.7580000000016,
+      "idleRssBytes": 445112320,
+      "processes": 4
+    }
+  ],
+  "samples": [],
+  "complete": true,
+  "sampledPeakRssBytes": 0
+}

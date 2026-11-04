@@ -59,6 +59,7 @@ export async function checkAdvanced() {
         {
           kind: 'assistant',
           id: `vanswer-${n}`,
+          phase: 'final',
           content: `Answer ${n}\n\n${'Variable-height paragraph. '.repeat((n % 9) + 1)}`,
         },
       ] as ChatEntry[],
@@ -269,6 +270,7 @@ export async function checkAdvanced() {
       {
         kind: 'assistant',
         id: 'short-answer',
+        phase: 'final',
         content: 'A paragraph in the latest response.\n\n'.repeat(50),
       },
     ];

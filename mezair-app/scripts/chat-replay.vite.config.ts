@@ -9,6 +9,7 @@ const previewRoot = fileURLToPath(
 );
 
 export default defineConfig({
+  worker: { format: 'es' },
   root: previewRoot,
   plugins: [react(), tailwindcss()],
   server: {

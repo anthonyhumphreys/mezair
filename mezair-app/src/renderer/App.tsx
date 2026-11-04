@@ -11,7 +11,7 @@ import { AppRouter } from './components/layout/AppRouter';
 import { Shell } from './components/layout/Shell';
 import { ErrorBoundary } from './components/layout/ErrorBoundary';
 import { SplashScreen } from './components/brand/SplashScreen';
-import { ChatProvider, useChatContext } from './contexts/ChatContext';
+import { ChatProvider, useChatNavigation } from './contexts/ChatContext';
 import { BrandProvider } from './contexts/BrandContext';
 import { getBrand, getBuildBrandId } from '../shared/branding';
 import { WorkspaceProvider, useWorkspace } from './contexts/WorkspaceContext';
@@ -216,7 +216,7 @@ function LegacyRedirect() {
 function ChatRoute({ userRole }: { userRole: UserRole }) {
   const [searchParams] = useSearchParams();
   const temporary = searchParams.get('temporary') === '1';
-  const { isTemporaryChat, resumeTemporaryChat, showWorkspaceChat } = useChatContext();
+  const { isTemporaryChat, resumeTemporaryChat, showWorkspaceChat } = useChatNavigation();
 
   useEffect(() => {
     if (temporary) {

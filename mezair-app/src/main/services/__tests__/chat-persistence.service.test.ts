@@ -90,7 +90,13 @@ describe('chat thread persistence', () => {
       timestamp,
       threadId: thread.id,
     });
-    saveChatEvent(thread.id, null, 'temporary-session', { type: 'status', status: 'complete' }, timestamp);
+    saveChatEvent(
+      thread.id,
+      null,
+      'temporary-session',
+      { type: 'status', status: 'complete' },
+      timestamp,
+    );
 
     expect(thread.temporary).toBe(true);
     expect(listChatThreads(null).some((listed) => listed.id === thread.id)).toBe(false);
@@ -873,5 +879,62 @@ describe('chat thread persistence', () => {
     });
 
     rmSync(repo.path, { recursive: true, force: true });
+  });
+});
+
+describe('bounded history pages', () => {
+  it('walks timestamp ties once, excludes new rows from an existing snapshot, and validates scope', async () => {
+    const { loadChatHistoryPage } = await import('../chat-history-page.service.js');
+    const thread = createChatThread({ personaId: 'coder', workspaceId: 'ws-1', title: 'Paged' });
+    const save = (n: number) =>
+      saveChatEntry(thread.id, null, null, {
+        id: `paged-${n}`,
+        role: 'user',
+        content: `Message ${n}`,
+        timestamp: '2026-01-01T00:00:00.000Z',
+        threadId: thread.id,
+      });
+    for (let n = 0; n < 205; n++) save(n);
+    const first = loadChatHistoryPage({ threadId: thread.id, limit: 50 });
+    expect(first.messages.map((m) => m.id)).toEqual(
+      Array.from({ length: 50 }, (_, i) => `paged-${155 + i}`),
+    );
+    save(205);
+    let cursor = first.before;
+    const all = [...first.messages];
+    while (cursor) {
+      const page = loadChatHistoryPage({ threadId: thread.id, before: cursor, limit: 50 });
+      all.unshift(...page.messages);
+      cursor = page.before;
+    }
+    expect(all.map((m) => m.id)).toEqual(Array.from({ length: 205 }, (_, i) => `paged-${i}`));
+    expect(() => loadChatHistoryPage({ threadId: 'other', before: first.before! })).toThrow(
+      'cursor',
+    );
+    expect(() => loadChatHistoryPage({ threadId: thread.id, limit: 201 })).toThrow('limit');
+    expect(loadChatHistoryPage({ threadId: thread.id }).messages).toHaveLength(200);
+  });
+  it('pages temporary messages without persisting them', async () => {
+    const { loadChatHistoryPage } = await import('../chat-history-page.service.js');
+    const thread = createTemporaryChatThread('coder');
+    for (let n = 0; n < 5; n++)
+      saveChatEntry(thread.id, null, null, {
+        id: `temp-${n}`,
+        role: 'user',
+        content: String(n),
+        timestamp: new Date().toISOString(),
+        threadId: thread.id,
+      });
+    const page = loadChatHistoryPage({ threadId: thread.id, limit: 2 });
+    expect(page.messages.map((m) => m.id)).toEqual(['temp-3', 'temp-4']);
+    expect(
+      loadChatHistoryPage({ threadId: thread.id, before: page.before!, limit: 2 }).messages.map(
+        (m) => m.id,
+      ),
+    ).toEqual(['temp-1', 'temp-2']);
+    expect(inMemoryDb.prepare('SELECT count(*) AS total FROM chat_messages').get()).toEqual({
+      total: 0,
+    });
+    endTemporaryChatThread(thread.id);
   });
 });

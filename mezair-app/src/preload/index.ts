@@ -405,6 +405,7 @@ const api: MezairAPI = {
       timestamp: string,
     ) => ipcRenderer.invoke('chat:save-event', threadId, repoId, sessionId, event, timestamp),
     loadHistory: (threadId: string) => ipcRenderer.invoke('chat:load-history', threadId),
+    loadHistoryPage: (request) => ipcRenderer.invoke('chat:load-history-page', request),
     clearHistory: (threadId: string) => ipcRenderer.invoke('chat:clear-history', threadId),
     saveThreadPlan: (threadId: string, plan: ChatPlanSnapshot) =>
       ipcRenderer.invoke('chat:save-thread-plan', threadId, plan),
@@ -525,6 +526,8 @@ const api: MezairAPI = {
       ipcRenderer.invoke('factories:get', factoryId) as Promise<FactoryDefinition | null>,
     listRuns: (factoryId: string) =>
       ipcRenderer.invoke('factories:list-runs', factoryId) as Promise<FactoryRun[]>,
+    listRunPage: (request) => ipcRenderer.invoke('factories:list-run-page', request),
+    getRunSummary: (factoryId) => ipcRenderer.invoke('factories:run-summary', factoryId),
     getRun: (runId: string) =>
       ipcRenderer.invoke('factories:get-run', runId) as Promise<FactoryRun | null>,
     control: (input: FactoryControlInput) =>

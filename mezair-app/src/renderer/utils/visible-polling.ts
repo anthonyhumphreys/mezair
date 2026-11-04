@@ -1,5 +1,9 @@
 /** Poll presentation data only while visible, with at most one request in flight. */
-export function pollWhileVisible(refresh: () => Promise<void>, intervalMs: number): () => void {
+export function pollWhileVisible(
+  refresh: () => Promise<void>,
+  intervalMs: number,
+  options: { immediate?: boolean } = {},
+): () => void {
   let stopped = false;
   let running = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -22,7 +26,8 @@ export function pollWhileVisible(refresh: () => Promise<void>, intervalMs: numbe
     if (!document.hidden) void poll();
   };
   document.addEventListener('visibilitychange', onVisibilityChange);
-  void poll();
+  if (options.immediate !== false) void poll();
+  else if (!document.hidden) timer = setTimeout(() => void poll(), intervalMs);
 
   return () => {
     stopped = true;

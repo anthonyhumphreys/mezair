@@ -165,7 +165,7 @@ function serialiseRepoIds(repoIds: string[] | undefined): string {
   return JSON.stringify(repoIds ?? []);
 }
 
-function parseAttachments(value: string | null | undefined): ChatAttachment[] | undefined {
+export function parseAttachments(value: string | null | undefined): ChatAttachment[] | undefined {
   if (!value) return undefined;
   try {
     const parsed = JSON.parse(value);
@@ -1078,7 +1078,7 @@ export function loadChatHistory(threadId: string): ChatMessage[] {
   }));
 }
 
-function parseChatEvent(value: string | null): ChatMessage['event'] {
+export function parseChatEvent(value: string | null): ChatMessage['event'] {
   if (!value) return undefined;
   try {
     const parsed = JSON.parse(value) as ChatMessage['event'];

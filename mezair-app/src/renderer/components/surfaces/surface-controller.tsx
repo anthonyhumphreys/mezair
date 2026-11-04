@@ -104,51 +104,74 @@ export function useSurfaceActions(intent: AgentUISurfaceIntent) {
 
 export function useSurfaceComments(surfaceId: string, enabled: boolean) {
   const [comments, setComments] = useState<SurfaceComment[]>([]);
+  const [countSnapshot, setCountSnapshot] = useState({ surfaceId, openCount: 0 });
   const [error, setError] = useState<string | null>(null);
   const supported = enabled && !isSyntheticSurfaceId(surfaceId);
+  const generation = useRef(0);
+  useEffect(() => {
+    if (supported)
+      setCountSnapshot({
+        surfaceId,
+        openCount: comments.filter((item) => item.status === 'open').length,
+      });
+  }, [surfaceId, supported, comments]);
 
   const refresh = useCallback(async () => {
     if (!supported) return;
+    const request = ++generation.current;
     try {
-      setComments(await window.mezair.surfaces.listComments(surfaceId));
+      const next = await window.mezair.surfaces.listComments(surfaceId);
+      if (request !== generation.current) return;
+      setComments(next);
       setError(null);
     } catch (caught) {
-      setError(errorMessage(caught, 'Comments could not be loaded.'));
+      if (request === generation.current)
+        setError(errorMessage(caught, 'Comments could not be loaded.'));
     }
   }, [supported, surfaceId]);
 
   useEffect(() => {
+    setComments([]);
+    setError(null);
     void refresh();
+    return () => {
+      generation.current += 1;
+    };
   }, [refresh]);
 
   const add = useCallback(
     async (anchor: SurfaceAnchor, body: string, sendToAgent: boolean) => {
+      const request = generation.current;
       const comment = await window.mezair.surfaces.addComment({
         surfaceId,
         anchor,
         body,
         sendToAgent,
       });
-      setComments((current) => [...current.filter((item) => item.id !== comment.id), comment]);
+      if (request === generation.current)
+        setComments((current) => [...current.filter((item) => item.id !== comment.id), comment]);
       return comment;
     },
     [surfaceId],
   );
 
   const setStatus = useCallback(async (commentId: string, status: SurfaceComment['status']) => {
+    const request = generation.current;
     try {
       const updated = await window.mezair.surfaces.setCommentStatus(commentId, status);
+      if (request !== generation.current) return;
       setComments((current) => current.map((item) => (item.id === updated.id ? updated : item)));
       setError(null);
     } catch (caught) {
-      setError(errorMessage(caught, 'The comment could not be updated.'));
+      if (request === generation.current)
+        setError(errorMessage(caught, 'The comment could not be updated.'));
     }
   }, []);
 
   return {
     supported,
     comments,
-    openCount: comments.filter((comment) => comment.status === 'open').length,
+    openCount: countSnapshot.surfaceId === surfaceId ? countSnapshot.openCount : 0,
     error,
     refresh,
     add,

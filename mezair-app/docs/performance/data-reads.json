@@ -1,0 +1,147 @@
+{
+  "measuredAt": "2026-11-03T13:47:14.509Z",
+  "environment": {
+    "node": "v24.10.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M3"
+  },
+  "methodology": "Same in-memory SQLite database; actual full-read and new paged services. Five alternating samples, including JSON serialization as a payload-size proxy. Forced GC before each sample; heap growth sampled after read and serialization (sampled high-water estimate, not a continuous allocation trace). Excludes Electron IPC transport, file-system I/O, providers and hosted encrypted history. 32,000 messages (1,000 turns × 30 actions plus user/answer); 5,000 factory runs.",
+  "measurements": {
+    "historyFull": [
+      {
+        "ms": 118.04666699999996,
+        "bytes": 31373371,
+        "peakSampledHeapGrowthBytes": 110098456
+      },
+      {
+        "ms": 108.87516699999992,
+        "bytes": 31373371,
+        "peakSampledHeapGrowthBytes": 110283392
+      },
+      {
+        "ms": 94.51520800000003,
+        "bytes": 31373371,
+        "peakSampledHeapGrowthBytes": 110027200
+      },
+      {
+        "ms": 89.93512499999997,
+        "bytes": 31373371,
+        "peakSampledHeapGrowthBytes": 110040248
+      },
+      {
+        "ms": 87.02637500000014,
+        "bytes": 31373371,
+        "peakSampledHeapGrowthBytes": 110085768
+      }
+    ],
+    "historyPage": [
+      {
+        "ms": 0.931041999999934,
+        "bytes": 196037,
+        "peakSampledHeapGrowthBytes": 725848
+      },
+      {
+        "ms": 0.67837499999996,
+        "bytes": 196037,
+        "peakSampledHeapGrowthBytes": 712280
+      },
+      {
+        "ms": 0.7380419999999503,
+        "bytes": 196037,
+        "peakSampledHeapGrowthBytes": 717552
+      },
+      {
+        "ms": 0.6880839999998898,
+        "bytes": 196037,
+        "peakSampledHeapGrowthBytes": 713688
+      },
+      {
+        "ms": 0.6977079999999205,
+        "bytes": 196037,
+        "peakSampledHeapGrowthBytes": 712296
+      }
+    ],
+    "factoryFull": [
+      {
+        "ms": 70.27537499999994,
+        "bytes": 10952281,
+        "peakSampledHeapGrowthBytes": 39908056
+      },
+      {
+        "ms": 76.21912500000008,
+        "bytes": 10952281,
+        "peakSampledHeapGrowthBytes": 39892824
+      },
+      {
+        "ms": 67.36637499999995,
+        "bytes": 10952281,
+        "peakSampledHeapGrowthBytes": 39896392
+      },
+      {
+        "ms": 66.34829200000013,
+        "bytes": 10952281,
+        "peakSampledHeapGrowthBytes": 39898240
+      },
+      {
+        "ms": 67.06345800000008,
+        "bytes": 10952281,
+        "peakSampledHeapGrowthBytes": 39897888
+      }
+    ],
+    "factoryPage": [
+      {
+        "ms": 2.6268340000000308,
+        "bytes": 109524,
+        "peakSampledHeapGrowthBytes": 412160
+      },
+      {
+        "ms": 2.3417499999999336,
+        "bytes": 109524,
+        "peakSampledHeapGrowthBytes": 407224
+      },
+      {
+        "ms": 2.601709000000028,
+        "bytes": 109524,
+        "peakSampledHeapGrowthBytes": 407240
+      },
+      {
+        "ms": 2.575749999999971,
+        "bytes": 109524,
+        "peakSampledHeapGrowthBytes": 407240
+      },
+      {
+        "ms": 2.921000000000049,
+        "bytes": 109524,
+        "peakSampledHeapGrowthBytes": 407240
+      }
+    ],
+    "factorySummary": [
+      {
+        "ms": 13.384500000000003,
+        "bytes": 68,
+        "peakSampledHeapGrowthBytes": 7512
+      },
+      {
+        "ms": 13.490958999999975,
+        "bytes": 68,
+        "peakSampledHeapGrowthBytes": 5976
+      },
+      {
+        "ms": 14.225750000000062,
+        "bytes": 68,
+        "peakSampledHeapGrowthBytes": 5992
+      },
+      {
+        "ms": 14.456209000000172,
+        "bytes": 68,
+        "peakSampledHeapGrowthBytes": 5992
+      },
+      {
+        "ms": 13.99262500000009,
+        "bytes": 68,
+        "peakSampledHeapGrowthBytes": 5992
+      }
+    ]
+  }
+}

@@ -41,6 +41,22 @@ describe('shouldCollapseUserMessage', () => {
 });
 
 describe('shouldShowTurnWorkDetails', () => {
+  it('does not allocate hidden DOM rows for collapsed routine operations', () => {
+    const html = renderToStaticMarkup(
+      createElement(TurnWorkMessage, {
+        items: Array.from({ length: 1000 }, (_, sourceIndex) => ({
+          kind: 'event' as const,
+          sourceIndex,
+          event: { type: 'command_exec' as const, command: 'pnpm test', exitCode: 0 },
+        })),
+        outcome: 'completed',
+      }),
+    );
+    expect(html).toContain('1000');
+    expect(html).not.toContain('class="processing-item"');
+    expect(html).not.toContain('hidden=""');
+  });
+
   it('keeps live operational detail folded until requested', () => {
     expect(shouldShowTurnWorkDetails(true, null)).toBe(false);
     expect(shouldShowTurnWorkDetails(true, false)).toBe(false);

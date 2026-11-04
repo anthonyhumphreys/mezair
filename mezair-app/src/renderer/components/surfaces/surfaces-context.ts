@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { AgentUISurfaceIntent } from '../../../shared/agent-ui-intents';
 import type { ChatArtifact } from '../../../shared/types';
+import { revealTranscriptItem } from '../../utils/reveal-transcript';
 
 export interface OpenStageOptions {
   targetId?: string;
@@ -39,7 +40,21 @@ function scrollToSurfaceElement(surfaceId: string) {
   const element = document.querySelector<HTMLElement>(
     `[data-surface-id="${CSS.escape(surfaceId)}"]`,
   );
-  if (!element) return;
+  if (!element) {
+    revealTranscriptItem({
+      surfaceId,
+      after: () => {
+        const revealed = document.querySelector<HTMLElement>(
+          `[data-surface-id="${CSS.escape(surfaceId)}"]`,
+        );
+        revealed?.scrollIntoView({ block: 'center', behavior: 'auto' });
+        revealed
+          ?.querySelector<HTMLElement>('[data-surface-handle]')
+          ?.focus({ preventScroll: true });
+      },
+    });
+    return;
+  }
   const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   element.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
   element.querySelector<HTMLElement>('[data-surface-handle]')?.focus({ preventScroll: true });

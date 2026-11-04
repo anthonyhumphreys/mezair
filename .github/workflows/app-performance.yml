@@ -1,0 +1,116 @@
+name: Mezair journey performance
+on:
+  pull_request:
+    paths:
+      - "mezair-app/src/**"
+      - "mezair-app/scripts/performance/**"
+      - "mezair-app/package.json"
+      - "mezair-app/pnpm-lock.yaml"
+      - ".github/workflows/app-performance.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: app-perf-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CI: true
+  # Immutable first-pass reference; update deliberately when accepting new budgets.
+  PERF_BASE_REF: 258009240b2322049a37658e4393bc8dd1a5aaf6
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
+jobs:
+  renderer:
+    name: Paired renderer budgets (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mezair-app
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+          cache: pnpm
+          cache-dependency-path: mezair-app/pnpm-lock.yaml
+      - name: Prepare local CLIs
+        working-directory: .
+        run: node .github/scripts/prepare-desktop-clis.mjs
+      - run: pnpm install --frozen-lockfile
+      - name: Build both production fixtures
+        run: |
+          node scripts/performance/prepare-baseline.mjs "$PERF_BASE_REF" "$RUNNER_TEMP/perf-baseline"
+          pnpm --dir "$RUNNER_TEMP/perf-baseline/mezair-app" exec electron-vite build
+          node scripts/performance/bundle-metrics.mjs "$RUNNER_TEMP/perf-baseline/mezair-app/out/renderer" docs/performance/ci-bundles-before.json
+          pnpm exec electron-vite build
+          node scripts/performance/bundle-metrics.mjs out/renderer docs/performance/ci-bundles-after.json
+          node scripts/performance/check-budgets.mjs docs/performance/ci-bundles-before.json docs/performance/ci-bundles-after.json bundle
+          PERF_OUT_DIR="$RUNNER_TEMP/perf-before" pnpm --dir "$RUNNER_TEMP/perf-baseline/mezair-app" exec vite build --config scripts/performance/vite.config.mjs
+          PERF_OUT_DIR="$RUNNER_TEMP/perf-after" pnpm exec vite build --config scripts/performance/vite.config.mjs
+      - name: Alternate five pairs in the same browser and enforce budgets
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+          PERF_FIXTURE_ROOT: ${{ runner.temp }}/perf-after
+          PERF_COMPARE_ROOT: ${{ runner.temp }}/perf-before
+          PERF_TURNS: "1000"
+          PERF_CHECKS: "1"
+          PERF_RICH: "1"
+        run: |
+          node scripts/performance/run.mjs docs/performance/ci-after.json docs/performance/ci-before.json
+          node scripts/performance/check-budgets.mjs docs/performance/ci-before.json docs/performance/ci-after.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: paired-renderer-evidence
+          path: mezair-app/docs/performance/ci-*.json
+          if-no-files-found: error
+  windows-native:
+    name: Windows 2022 packaged startup and 30-minute soak
+    runs-on: windows-2022
+    timeout-minutes: 100
+    defaults:
+      run:
+        working-directory: mezair-app
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+          cache: pnpm
+          cache-dependency-path: mezair-app/pnpm-lock.yaml
+      - name: Prepare local CLIs
+        working-directory: .
+        run: node .github/scripts/prepare-desktop-clis.mjs
+      - run: pnpm install --frozen-lockfile
+      - name: Package and measure immutable reference
+        run: |
+          node scripts/performance/prepare-baseline.mjs "$PERF_BASE_REF" "$RUNNER_TEMP/perf-baseline"
+          pnpm --dir "$RUNNER_TEMP/perf-baseline/mezair-app" exec electron-vite build
+          pnpm --dir "$RUNNER_TEMP/perf-baseline/mezair-app" exec electron-builder --dir --win --x64 --config.directories.output="$RUNNER_TEMP/native-before"
+          PERF_OUT_DIR="$RUNNER_TEMP/perf-before" pnpm --dir "$RUNNER_TEMP/perf-baseline/mezair-app" exec vite build --config scripts/performance/vite.config.mjs
+          PERF_SOURCE_SHA="$PERF_BASE_REF" node scripts/performance/native-profile.mjs "$RUNNER_TEMP/native-before/win-unpacked/Mezair.exe" "$RUNNER_TEMP/perf-before" docs/performance/native-windows-before.json 0
+      - name: Package candidate and run 30-minute streaming soak
+        run: |
+          pnpm build
+          pnpm exec electron-builder --dir --win --x64 --config.directories.output="$RUNNER_TEMP/native-after"
+          PERF_OUT_DIR="$RUNNER_TEMP/perf-after" pnpm exec vite build --config scripts/performance/vite.config.mjs
+          PERF_SOURCE_SHA="${{ github.sha }}" node scripts/performance/native-profile.mjs "$RUNNER_TEMP/native-after/win-unpacked/Mezair.exe" "$RUNNER_TEMP/perf-after" docs/performance/native-windows-after.json 1800
+          node scripts/performance/check-budgets.mjs docs/performance/native-windows-before.json docs/performance/native-windows-after.json native
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-windows-evidence
+          path: mezair-app/docs/performance/native-windows-*.json
+          if-no-files-found: error

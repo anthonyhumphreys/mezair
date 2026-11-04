@@ -13,6 +13,9 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useNow } from '../../hooks/useNow';
+import { pollWhileVisible } from '../../utils/visible-polling';
+import { mapWithConcurrency } from '../../utils/map-concurrent';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   factoryWorkflowDrift,
@@ -28,6 +31,9 @@ import {
   type FactoryPreview,
   type FactoryRun,
   type FactoryRunControlInput,
+  type FactoryRunCursor,
+  type FactoryRunPage,
+  type FactoryRunSummary as CompleteRunSummary,
 } from '../../../shared/factories';
 import type { Persona, WorkflowTemplate, WorkItemConnection } from '../../../shared/types';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
@@ -76,20 +82,36 @@ interface Banner {
   action?: { label: string; onClick: () => void };
 }
 
+async function readRunPage(
+  factoryId: string,
+  cursor?: FactoryRunCursor | null,
+): Promise<FactoryRunPage> {
+  if (window.mezair.factories.listRunPage)
+    return window.mezair.factories.listRunPage({
+      factoryId,
+      cursor: cursor ?? undefined,
+      limit: 50,
+    });
+  return { runs: await window.mezair.factories.listRuns(factoryId), cursor: null, complete: true };
+}
+function mergeRunPages(previous: FactoryRun[], latest: FactoryRun[]) {
+  const merged = new Map(previous.map((run) => [run.id, run]));
+  latest.forEach((run) => merged.set(run.id, run));
+  const terminal = (run: FactoryRun) =>
+    ['completed', 'cancelled', 'taken-over'].includes(run.stage) ? 1 : 0;
+  return [...merged.values()].sort(
+    (a, b) =>
+      terminal(a) - terminal(b) ||
+      b.updatedAt.localeCompare(a.updatedAt) ||
+      b.id.localeCompare(a.id),
+  );
+}
+
 const GROUP_LABELS: Record<RunGroup, string> = {
   attention: 'Needs you',
   active: 'In progress',
   finished: 'Finished',
 };
-
-function useNow(intervalMs: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
-    return () => window.clearInterval(timer);
-  }, [intervalMs]);
-  return now;
-}
 
 export function FactoriesView() {
   const { activeWorkspace, repos, workspaces } = useWorkspace();
@@ -101,8 +123,14 @@ export function FactoriesView() {
   const [organizations, setOrganizations] = useState<FactoryOrganizationOption[]>([]);
   const [directory, setDirectory] = useState<FactoryDirectoryItem[]>([]);
   const [keyRegistrationBusy, setKeyRegistrationBusy] = useState<string | null>(null);
+  const [runCursor, setRunCursor] = useState<FactoryRunCursor | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const moreInFlight = useRef<{ factoryId: string; generation: number } | null>(null);
+  const pageStarted = useRef(false);
   const [runs, setRuns] = useState<FactoryRun[]>([]);
-  const [runSummaries, setRunSummaries] = useState<Record<string, FactoryRunSummary>>({});
+  const [runSummaries, setRunSummaries] = useState<
+    Record<string, FactoryRunSummary & Partial<Pick<CompleteRunSummary, 'complete'>>>
+  >({});
   const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
   const [connections, setConnections] = useState<WorkItemConnection[]>([]);
   const [selectedFactoryId, setSelectedFactoryId] = useState<string | null>(
@@ -166,21 +194,44 @@ export function FactoriesView() {
 
   const loadRuns = useCallback(
     async (factoryId: string) => {
+      if (moreInFlight.current?.factoryId === factoryId) return;
       const generation = ++runGenerationRef.current;
       // Only clear when switching factories; polling must not blank the list.
       if (runsFactoryRef.current !== factoryId) {
+        moreInFlight.current = null;
+        setLoadingMore(false);
         setRuns([]);
         setRunsLoadedAt(null);
+        setRunCursor(null);
+        pageStarted.current = false;
       }
       runsFactoryRef.current = factoryId;
       setRunsFactoryId(factoryId);
       try {
-        const nextRuns = await window.mezair.factories.listRuns(factoryId);
+        const [page, summary] = await Promise.all([
+          readRunPage(factoryId),
+          window.mezair.factories.getRunSummary?.(factoryId).catch(() => undefined),
+        ]);
+        let nextRuns = page.runs;
+        const selectedId = selectedRunRef.current;
+        if (selectedId && !nextRuns.some((run) => run.id === selectedId)) {
+          const selected = await window.mezair.factories.getRun(selectedId);
+          if (selected) nextRuns = mergeRunPages(nextRuns, [selected]);
+        }
         if (generation !== runGenerationRef.current || selectedFactoryRef.current !== factoryId)
           return;
-        setRuns(nextRuns);
+        const preservePages = pageStarted.current;
+        setRuns((current) => (preservePages ? mergeRunPages(current, nextRuns) : nextRuns));
+        if (!pageStarted.current) setRunCursor(page.cursor);
+        pageStarted.current = true;
         setRunsLoadedAt(Date.now());
-        setRunSummaries((current) => ({ ...current, [factoryId]: summarizeRuns(nextRuns) }));
+        setRunSummaries((current) => ({
+          ...current,
+          [factoryId]: summary ?? {
+            ...summarizeRuns(nextRuns),
+            complete: page.complete && !page.cursor,
+          },
+        }));
         const runId = selectedRunRef.current;
         if (!runId || !nextRuns.some((item) => item.id === runId)) {
           const groups = groupRuns(nextRuns);
@@ -207,6 +258,30 @@ export function FactoriesView() {
     [setError],
   );
 
+  const loadMoreRuns = async () => {
+    const factoryId = selectedFactoryRef.current;
+    if (!factoryId || !runCursor || moreInFlight.current?.factoryId === factoryId) return;
+    const generation = runGenerationRef.current;
+    const owner = { factoryId, generation };
+    moreInFlight.current = owner;
+    setLoadingMore(true);
+    try {
+      const page = await readRunPage(factoryId, runCursor);
+      if (generation !== runGenerationRef.current || selectedFactoryRef.current !== factoryId)
+        return;
+      setRuns((current) => mergeRunPages(current, page.runs));
+      setRunCursor(page.cursor);
+    } catch (cause) {
+      if (generation === runGenerationRef.current && selectedFactoryRef.current === factoryId)
+        setError(cause instanceof Error ? cause.message : 'Could not load more runs.');
+    } finally {
+      if (moreInFlight.current === owner) {
+        moreInFlight.current = null;
+        setLoadingMore(false);
+      }
+    }
+  };
+
   const reload = useCallback(async () => {
     const workspaceId = activeWorkspace?.id;
     if (!workspaceId) return;
@@ -224,8 +299,10 @@ export function FactoriesView() {
         .then(async (orgs) => {
           if (generation !== loadGenerationRef.current) return;
           setOrganizations(orgs);
-          const entries = await Promise.all(
-            orgs.map((org) => window.mezair.factories.directory(org.id).catch(() => [])),
+          const entries = await mapWithConcurrency(orgs, 4, (org) =>
+            generation === loadGenerationRef.current
+              ? window.mezair.factories.directory(org.id).catch(() => [])
+              : Promise.resolve([]),
           );
           if (generation === loadGenerationRef.current) setDirectory(entries.flat());
         })
@@ -243,15 +320,16 @@ export function FactoriesView() {
           ? currentId
           : (items[0]?.id ?? null);
       // Attention counts for every factory in the rail; the selected one refreshes with its runs.
-      void Promise.all(
-        items
-          .filter((item) => !item.accessPending && item.id !== targetId)
-          .map((item) =>
-            window.mezair.factories
-              .listRuns(item.id)
-              .then((list) => [item.id, summarizeRuns(list)] as const)
-              .catch(() => null),
-          ),
+      void mapWithConcurrency(
+        items.filter((item) => !item.accessPending && item.id !== targetId),
+        4,
+        (item) =>
+          generation !== loadGenerationRef.current
+            ? Promise.resolve(null)
+            : window.mezair.factories
+                .getRunSummary(item.id)
+                .then((summary) => [item.id, summary] as const)
+                .catch(() => null),
       ).then((entries) => {
         if (generation !== loadGenerationRef.current) return;
         setRunSummaries((current) => ({
@@ -328,14 +406,15 @@ export function FactoriesView() {
     reload().catch((cause) =>
       setError(cause instanceof Error ? cause.message : 'Could not load software factories.'),
     );
+    return () => {
+      loadGenerationRef.current += 1;
+      runGenerationRef.current += 1;
+    };
   }, [activeWorkspace?.id, reload, setError]);
 
   useEffect(() => {
     if (!selectedFactoryId || !activeWorkspace?.id) return;
-    const timer = window.setInterval(() => {
-      void loadRuns(selectedFactoryId);
-    }, 10_000);
-    return () => window.clearInterval(timer);
+    return pollWhileVisible(() => loadRuns(selectedFactoryId), 10_000, { immediate: false });
   }, [selectedFactoryId, activeWorkspace?.id, loadRuns]);
 
   const startNew = useCallback(
@@ -785,6 +864,9 @@ export function FactoriesView() {
             runs={factoryRuns}
             runsLoaded={runsLoadedAt !== null}
             runsLoadedAt={runsLoadedAt}
+            hasMore={Boolean(runCursor)}
+            loadingMore={loadingMore}
+            onLoadMore={() => void loadMoreRuns()}
             selectedRun={selectedRun}
             templates={templates}
             tab={tab}
@@ -867,7 +949,7 @@ function FactoryRail({
   loaded: boolean;
   selectedId: string | null;
   creating: boolean;
-  summaries: Record<string, FactoryRunSummary>;
+  summaries: Record<string, FactoryRunSummary & Partial<Pick<CompleteRunSummary, 'complete'>>>;
   pendingDirectory: FactoryDirectoryItem[];
   keyRegistrationBusy: string | null;
   onSelect: (factory: FactoryDefinition) => void;
@@ -917,6 +999,9 @@ function FactoryRail({
                       : 'hover:bg-bg-tertiary',
                   )}
                 >
+                  {summary?.complete === false && (
+                    <span className="block text-xs text-text-tertiary">Recent shared runs</span>
+                  )}
                   <span className="flex items-center gap-2">
                     <FactoryStatus status={factoryStatusKey(factory)} iconOnly />
                     <span
@@ -1010,6 +1095,9 @@ function FactoryFloor({
   runs,
   runsLoaded,
   runsLoadedAt,
+  hasMore,
+  loadingMore,
+  onLoadMore,
   selectedRun,
   templates,
   tab,
@@ -1043,6 +1131,9 @@ function FactoryFloor({
   runs: FactoryRun[];
   runsLoaded: boolean;
   runsLoadedAt: number | null;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
   selectedRun: FactoryRun | null;
   templates: WorkflowTemplate[];
   tab: 'runs' | 'definition';
@@ -1276,6 +1367,14 @@ function FactoryFloor({
               ]}
             />
             <span className="ml-auto flex items-center gap-1.5 text-xs text-text-tertiary">
+              <span>
+                Showing {runs.length} loaded runs{hasMore ? ' · more available' : ''}
+              </span>
+              {hasMore && (
+                <button type="button" disabled={loadingMore} onClick={onLoadMore}>
+                  {loadingMore ? 'Loading…' : 'Load more runs'}
+                </button>
+              )}
               {runsLoadedAt && (
                 <span>Updated {relativeTime(new Date(runsLoadedAt).toISOString(), now)}</span>
               )}
@@ -1302,7 +1401,7 @@ function FactoryFloor({
               <div className="shrink-0 border-b border-border-subtle px-4 py-2">
                 <StationBoard loads={loads} selected={stationFilter} onSelect={onStationFilter} />
               </div>
-              {runsLoaded && runs.length === 0 ? (
+              {runsLoaded && runs.length === 0 && !hasMore ? (
                 <EmptyRuns
                   factory={factory}
                   canManage={canManage}
@@ -1314,6 +1413,7 @@ function FactoryFloor({
                   <RunList
                     factory={factory}
                     runs={runs}
+                    hasMore={hasMore}
                     loaded={runsLoaded}
                     selectedId={selectedRun?.id ?? null}
                     stationFilter={stationFilter}
@@ -1365,6 +1465,7 @@ function FactoryFloor({
 function RunList({
   factory,
   runs,
+  hasMore,
   loaded,
   selectedId,
   stationFilter,
@@ -1374,6 +1475,7 @@ function RunList({
 }: {
   factory: FactoryDefinition;
   runs: FactoryRun[];
+  hasMore: boolean;
   loaded: boolean;
   selectedId: string | null;
   stationFilter: FactoryStationId | null;
@@ -1423,9 +1525,13 @@ function RunList({
   if (!runs.length)
     return (
       <div className="px-5 py-8">
-        <p className="text-sm font-medium text-text-primary">No issues on the line yet</p>
+        <p className="text-sm font-medium text-text-primary">
+          {hasMore ? 'More runs are available' : 'No issues on the line yet'}
+        </p>
         <p className="mt-1 max-w-prose text-xs leading-5 text-text-tertiary">
-          {factory.status === 'active' ? (
+          {hasMore ? (
+            'Load more runs to continue browsing shared history.'
+          ) : factory.status === 'active' ? (
             <>{factoryIntakeDescription(factory.definition)} appear here on the next check.</>
           ) : (
             'Activate the factory to start claiming matching issues.'

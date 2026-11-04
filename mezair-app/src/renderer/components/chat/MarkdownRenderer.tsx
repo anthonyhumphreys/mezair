@@ -1,4 +1,4 @@
-import { isValidElement, cloneElement, memo, useState } from 'react';
+import { isValidElement, cloneElement, memo, useState, useContext, useRef } from 'react';
 import type { ComponentProps } from 'react';
 import { AlertTriangle, LoaderCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -7,6 +7,11 @@ import { CodeBlock } from './CodeBlock';
 import { FileReference } from './FileReference';
 import { parseEditorFileLocation } from '../../../shared/editor-file-link';
 import type { Components } from 'react-markdown';
+import { createStreamingMarkdown } from './streaming-markdown';
+import { TranscriptViewScope } from './TranscriptViewState';
+import { MessageStreamingContext } from './surface-fences';
+
+const remarkPlugins = [remarkGfm];
 
 const BARE_FILE_REFERENCE_RE =
   /(^|[\s([{"'`])((?:(?:\.{1,2}|~)?\/|[A-Za-z]:[\\/]|[A-Za-z0-9_.-]+\/)[^\s<>()\]{}'"`]+?)([),.;:!?]?)(?=$|\s|[\])}"'])/g;
@@ -130,14 +135,36 @@ interface MarkdownRendererProps {
 }
 
 export const MarkdownRenderer = memo(function MarkdownRenderer({ content }: MarkdownRendererProps) {
-  const displayContent = linkifyBareFileReferences(content);
+  const streaming = useContext(MessageStreamingContext);
+  const streamed = useRef(false);
+  if (streaming) streamed.current = true;
+  const [split] = useState(createStreamingMarkdown);
+  const blocks = streamed.current ? split(content) : [{ key: 0, content, settled: true }];
 
   return (
     <div className="markdown-body overflow-visible text-sm leading-relaxed text-text-primary [overflow-wrap:anywhere] [&>*:last-child]:mb-0">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {displayContent}
-      </ReactMarkdown>
+      {blocks.map((block) => (
+        <TranscriptViewScope key={block.key} name={`markdown-${block.key}`}>
+          <MarkdownBlock content={block.content} streaming={streaming && !block.settled} />
+        </TranscriptViewScope>
+      ))}
     </div>
+  );
+});
+
+const MarkdownBlock = memo(function MarkdownBlock({
+  content,
+  streaming,
+}: {
+  content: string;
+  streaming: boolean;
+}) {
+  return (
+    <MessageStreamingContext.Provider value={streaming}>
+      <ReactMarkdown remarkPlugins={remarkPlugins} components={components}>
+        {linkifyBareFileReferences(content)}
+      </ReactMarkdown>
+    </MessageStreamingContext.Provider>
   );
 });
 

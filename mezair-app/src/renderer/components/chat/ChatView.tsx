@@ -1,3 +1,9 @@
+import {
+  useChatModel,
+  useChatArtifacts,
+  useChatExecution,
+  useChatCommands,
+} from '../../contexts/ChatChannels';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { AgentUIPlanIntent, AgentUIQuestionIntent } from '../../../shared/agent-ui-intents';
@@ -27,7 +33,7 @@ import { useChatScroll } from './useChatScroll';
 import { buildFindingFollowUpPrompt } from './ChatFindingCard';
 import { PendingQuestionPrompt, PlanChip, WorkflowActionConfirmation } from './ChatPromptOverlays';
 import { useChatErrorRecovery } from './useChatErrorRecovery';
-import { composeChatTurns } from './chat-turns';
+import { createChatTurnComposer } from './chat-turns';
 import { buildChatRequestTargetDomId, getPendingQuestionTarget } from './chat-run-outcome';
 import { useChatContext } from '../../contexts/ChatContext';
 import { useWorkspace, repoIsMapped } from '../../contexts/WorkspaceContext';
@@ -43,7 +49,10 @@ import { ChatRunTargetSelect } from './ChatRunTargetSelect';
 import { RemoteThreadTranscript } from './RemoteThreadTranscript';
 import { SettingsLink } from '../shared/SettingsLink';
 import { SessionOwnershipChip } from './SessionOwnershipChip';
-import { buildExecutionTopology } from '../../utils/execution-topology';
+import {
+  buildExecutionTopology,
+  createExecutionEntriesSelector,
+} from '../../utils/execution-topology';
 import { CHAT_PREFILL_EVENT, CHAT_SEND_EVENT } from './chat-prefill';
 import { resolveChatFastModeTarget } from '../../utils/chat-fast-mode';
 import { useChatPanels, type ChatPanelId } from './useChatPanels';
@@ -127,63 +136,68 @@ interface ChatViewProps {
   userRole: UserRole;
 }
 
+const EMPTY_FINDINGS: (ExtractedFinding & { idx: number })[] = [];
+
 export function ChatView({ userRole }: ChatViewProps) {
   const {
     personas,
     activePersona,
-    session,
     entries,
     activeRepos,
     selectedGovernanceDocs,
     setSelectedGovernanceDocs,
     scaffoldModeActive,
     scaffoldStatus,
-    busy,
     error,
+    threads,
+    activeThread,
+    activeThreadId,
+    isTemporaryChat,
+    endTemporaryChat,
+    chatLayout,
+    sideQuestion,
+    historyReady,
+    historyHasEarlier,
+    historyLoadingEarlier,
+    loadEarlierHistory,
+    threadViewSnapshot,
+    setActiveRepos,
+    selectThread,
+    renameThread,
+    settleThread,
+    deleteThread,
+    forkThread,
+    setChatLayout,
+    selectWorkItemThread,
+    startWorkItemThread,
+  } = useChatContext();
+  const {
     model,
     modelProvider,
     modelOptions,
     modelPickerPreferences,
     reasoningLevel,
     reasoningOptions,
-    threads,
-    activeThread,
-    activeThreadId,
-    isTemporaryChat,
-    endTemporaryChat,
-    liveThreadStatuses,
     collaborationMode,
-    activePlan,
-    agentUIIntents,
-    activeGoal,
-    activeArtifacts,
-    discardArtifact,
-    chatLayout,
+    setModel,
+    setReasoningLevel,
+    setCollaborationMode,
+  } = useChatModel();
+  const { activeArtifacts, discardArtifact } = useChatArtifacts();
+  const { session, busy, liveThreadStatuses, activePlan, agentUIIntents, activeGoal } =
+    useChatExecution();
+  const {
     send,
     followUp,
     startSideQuestion,
     returnFromSideQuestion,
-    sideQuestion,
-    historyReady,
-    threadViewSnapshot,
-    setActiveRepos,
     switchPersona,
     interrupt,
     stopSession,
     startNewSession,
     ensureChatThread,
-    setModel,
-    setReasoningLevel,
-    selectThread,
-    renameThread,
-    settleThread,
-    deleteThread,
-    forkThread,
-    setCollaborationMode,
-    setChatLayout,
-    selectWorkItemThread,
-    startWorkItemThread,
-  } = useChatContext();
+  } = useChatCommands();
+
   const {
     repos,
     featureAvailability,
@@ -338,7 +352,7 @@ export function ChatView({ userRole }: ChatViewProps) {
   // --- Findings (BA persona) --------------------------------------------------
 
   const findings = useMemo(() => {
-    if (!isBaPersona) return [];
+    if (!isBaPersona) return EMPTY_FINDINGS;
     const all: (ExtractedFinding & { idx: number })[] = [];
     let idx = 0;
     for (const entry of entries) {
@@ -351,12 +365,27 @@ export function ChatView({ userRole }: ChatViewProps) {
     return all;
   }, [entries, isBaPersona]);
 
-  const openFindings = findings.filter((f) => !dismissedFindings.has(f.idx));
-  const composedTurns = useMemo(() => composeChatTurns(entries, { active: busy }), [busy, entries]);
-  const transcriptSurfaces = useMemo(
+  const openFindings = useMemo(
+    () => findings.filter((f) => !dismissedFindings.has(f.idx)),
+    [findings, dismissedFindings],
+  );
+  const composeTurns = useMemo(createChatTurnComposer, []);
+  const composedTurns = useMemo(
+    () => composeTurns(entries, { active: busy }),
+    [busy, composeTurns, entries],
+  );
+  const nextTranscriptSurfaces = useMemo(
     () => composedTurns.flatMap((turn) => turn.surfaces.map((surface) => surface.intent)),
     [composedTurns],
   );
+
+  const surfacesRef = useRef(nextTranscriptSurfaces);
+  if (
+    surfacesRef.current.length !== nextTranscriptSurfaces.length ||
+    surfacesRef.current.some((surface, index) => surface !== nextTranscriptSurfaces[index])
+  )
+    surfacesRef.current = nextTranscriptSurfaces;
+  const transcriptSurfaces = surfacesRef.current;
 
   const pendingQuestionTarget = useMemo(
     () => getPendingQuestionTarget(composedTurns),
@@ -416,22 +445,123 @@ export function ChatView({ userRole }: ChatViewProps) {
 
   // --- Handlers ---------------------------------------------------------------
 
-  const handleSwitchPersona = (persona: Persona) => {
-    panels.closeActivity();
-    switchPersona(persona);
-  };
+  const handleSwitchPersona = useCallback(
+    (persona: Persona) => {
+      panels.closeActivity();
+      void switchPersona(persona);
+    },
+    [panels.closeActivity, switchPersona],
+  );
 
-  const runTarget = useChatRunTarget({
-    workspaceId: isTemporaryChat || scaffoldModeActive ? undefined : activeWorkspace?.id,
-    threadId: activeThreadId,
-    sourceSessionId: session?.id,
-    provider: modelProvider,
-    model,
-    permissionMode:
-      isItsmPersona || activeThread?.purpose === 'side-question' ? 'read-only' : threadAccess.level,
-    reasoningEffort: reasoningLevel,
-    ensureThread: ensureChatThread,
-  });
+  const runTargetInput = useMemo(
+    () => ({
+      workspaceId: isTemporaryChat || scaffoldModeActive ? undefined : activeWorkspace?.id,
+      threadId: activeThreadId,
+      sourceSessionId: session?.id,
+      provider: modelProvider,
+      model,
+      permissionMode:
+        isItsmPersona || activeThread?.purpose === 'side-question'
+          ? 'read-only'
+          : threadAccess.level,
+      reasoningEffort: reasoningLevel,
+      ensureThread: ensureChatThread,
+    }),
+    [
+      isTemporaryChat,
+      scaffoldModeActive,
+      activeWorkspace?.id,
+      activeThreadId,
+      session?.id,
+      modelProvider,
+      model,
+      isItsmPersona,
+      activeThread?.purpose,
+      threadAccess.level,
+      reasoningLevel,
+      ensureChatThread,
+    ],
+  );
+  const runTarget = useChatRunTarget(runTargetInput);
+  const personaColour = activePersona?.colour ?? 'var(--color-accent)';
+  const targetSelect = useMemo(
+    () => ({
+      target: runTarget.target,
+      setTarget: runTarget.setTarget,
+      hosted: runTarget.hosted,
+      busy: runTarget.busy,
+      record: runTarget.record,
+      hostedAgentsEnabled: runTarget.hostedAgentsEnabled,
+      devices: runTarget.devices,
+    }),
+    [
+      runTarget.target,
+      runTarget.setTarget,
+      runTarget.hosted,
+      runTarget.busy,
+      runTarget.record,
+      runTarget.hostedAgentsEnabled,
+      runTarget.devices,
+    ],
+  );
+  const leadingControls = useMemo(
+    () =>
+      !scaffoldModeActive && !isTemporaryChat ? (
+        <>
+          <ChatPersonaPicker
+            personas={personas}
+            activePersona={activePersona}
+            userRole={userRole}
+            personaColour={personaColour}
+            onSelect={handleSwitchPersona}
+          />
+          <ChatRunTargetSelect run={targetSelect} disabled={busy || !activeWorkspace} />
+        </>
+      ) : undefined,
+    [
+      scaffoldModeActive,
+      isTemporaryChat,
+      personas,
+      activePersona,
+      userRole,
+      personaColour,
+      handleSwitchPersona,
+      targetSelect,
+      busy,
+      activeWorkspace,
+    ],
+  );
+  const contextControls = useMemo(
+    () =>
+      scaffoldModeActive || isTemporaryChat ? null : (
+        <>
+          <RepoSelector
+            variant="dropdown"
+            mode="multi"
+            indexedOnly={false}
+            placement="top"
+            selectedRepoIds={activeRepos.map((repo) => repo.id)}
+            onMultiSelect={setActiveRepos}
+          />
+          <GovernanceSelector
+            placement="top"
+            selectedDocIds={selectedGovernanceDocs.map((document) => document.id)}
+            onSelectionChange={setSelectedGovernanceDocs}
+          />
+        </>
+      ),
+    [
+      scaffoldModeActive,
+      isTemporaryChat,
+      activeRepos,
+      selectedGovernanceDocs,
+      setActiveRepos,
+      setSelectedGovernanceDocs,
+    ],
+  );
+  const stopRemote = useCallback(() => {
+    void runTarget.stop();
+  }, [runTarget.stop]);
   // H13 — label strings name the provider the session actually runs on.
   const agentProvider = runTarget.record?.provider ?? session?.provider ?? modelProvider;
   const agentLabel = agentProviderLabel(agentProvider) ?? 'The agent';
@@ -456,7 +586,10 @@ export function ChatView({ userRole }: ChatViewProps) {
       runTarget.remote ? 'default' : collaborationMode,
     );
   const slashCommands = useMemo(() => buildSlashCommands(agentLabel), [agentLabel]);
-  const combinedThreadStatuses = { ...liveThreadStatuses, ...runTarget.threadStatuses };
+  const combinedThreadStatuses = useMemo(
+    () => ({ ...liveThreadStatuses, ...runTarget.threadStatuses }),
+    [liveThreadStatuses, runTarget.threadStatuses],
+  );
 
   const sendInFlight = useRef(false);
   const handleChatInputSend = useCallback(
@@ -478,7 +611,7 @@ export function ChatView({ userRole }: ChatViewProps) {
         sendInFlight.current = false;
       }
     },
-    [busy, handleComposerSend, runTarget],
+    [busy, handleComposerSend, runTarget.remote, runTarget.send],
   );
 
   const handleAccessOptionSelect = useCallback(
@@ -492,7 +625,7 @@ export function ChatView({ userRole }: ChatViewProps) {
       if (collaborationMode === 'plan') setCollaborationMode('default');
       if (option.level) threadAccess.setLevel(option.level);
     },
-    [collaborationMode, setCollaborationMode, threadAccess],
+    [collaborationMode, setCollaborationMode, threadAccess.setLevel],
   );
 
   const handleModelChange = useCallback(
@@ -539,14 +672,14 @@ export function ChatView({ userRole }: ChatViewProps) {
       panels.setGoalPopoverOpen(false);
       void send(`Set a goal${budgetText}: ${trimmedObjective}`);
     },
-    [panels, send, goalsSupported],
+    [panels.setGoalPopoverOpen, send, goalsSupported],
   );
 
   const handleCompleteGoal = useCallback(() => {
     if (!goalsSupported) return;
     panels.setGoalPopoverOpen(false);
     void send('Mark the active goal complete.');
-  }, [panels, send, goalsSupported]);
+  }, [panels.setGoalPopoverOpen, send, goalsSupported]);
 
   const handleBranch = useCallback(
     (messageIndex: number) => {
@@ -586,7 +719,6 @@ export function ChatView({ userRole }: ChatViewProps) {
   // --- Derived view state ------------------------------------------------------
 
   // C5 — fall back to the accent token, not a hard-coded red.
-  const personaColour = activePersona?.colour ?? 'var(--color-accent)';
   // C2/3.5 — repo-grounded starter prompts once a repo is mapped; persona
   // suggestions stay as the fallback in ChatEmptyState.
   const starterPrompts = useMemo(
@@ -685,10 +817,12 @@ export function ChatView({ userRole }: ChatViewProps) {
       ),
     [agentUIIntents],
   );
+  const selectExecutionEntries = useMemo(createExecutionEntriesSelector, []);
+  const executionEntries = selectExecutionEntries(entries);
   const executionTopology = useMemo(
     () =>
       buildExecutionTopology({
-        entries,
+        entries: executionEntries,
         sessions: session
           ? [session, ...activeSessions.filter((item) => item.id !== session.id)]
           : activeSessions,
@@ -704,7 +838,7 @@ export function ChatView({ userRole }: ChatViewProps) {
       activeThread?.title,
       activeThread?.summary,
       activeThreadId,
-      entries,
+      executionEntries,
     ],
   );
   const visibleSessionId = executionTopology.nodes.find(
@@ -754,6 +888,100 @@ export function ChatView({ userRole }: ChatViewProps) {
     showPanelsCluster &&
     !showItsmWorkbench &&
     !panels.previewMode;
+  const sidePanels = useMemo(
+    () => (
+      <ChatSidePanels
+        previewMode={isTemporaryChat ? null : panels.previewMode}
+        previewInitialUrl={panels.previewInitialUrl}
+        onClosePreview={() => panels.setActivePanel(null)}
+        isBaPersona={isBaPersona}
+        hasFindings={findings.length > 0}
+        openFindings={openFindings}
+        showFindings={showFindings}
+        onToggleFindings={() => setShowFindings((open) => !open)}
+        onFindingFollowUp={handleFindingFollowUp}
+        onDismissFinding={(idx) => setDismissedFindings((prev) => new Set(prev).add(idx))}
+        isDesignPersona={isDesignPersona && !isTemporaryChat}
+        designSidebarCollapsed={designSidebarCollapsed}
+        onToggleDesignSidebar={() => setDesignSidebarCollapsed((c) => !c)}
+        showItsmWorkbench={showItsmWorkbench}
+        workspaceId={isTemporaryChat ? null : (activeWorkspace?.id ?? null)}
+        onItsmPrompt={requestChatAction}
+        showActivitySidebar={showActivitySidebar}
+        activity={{
+          workspaceName: isTemporaryChat
+            ? 'Temporary chat'
+            : (activeWorkspace?.name ?? 'workspace'),
+          runs: recentRuns,
+          topology: executionTopology,
+          lastViewedAt:
+            threadViewSnapshot?.threadId === activeThreadId
+              ? threadViewSnapshot.lastViewedAt
+              : null,
+          attentionUpdatedAt: activeThread?.attentionUpdatedAt,
+          attentionState: activeThread?.attentionState,
+          pendingQuestionTarget,
+          onJumpToQuestion: handleJumpToQuestion,
+          activeGoal,
+          busy,
+          goalOpen: panels.goalPopoverOpen,
+          onGoalOpenChange: panels.setGoalPopoverOpen,
+          onSetGoal: handleSetGoal,
+          onCompleteGoal: handleCompleteGoal,
+          onClose: () => {
+            panels.closeActivity();
+            focusPanelsControl();
+          },
+          onOpenThread: (threadId) => void selectThread(threadId),
+          onStop: (sessionId) => {
+            setExecutionSessionStates((states) => ({ ...states, [sessionId]: 'stopped' }));
+            void stopSession(sessionId);
+          },
+          goalsSupported,
+          agentLabel,
+        }}
+      />
+    ),
+    [
+      isTemporaryChat,
+      panels.previewMode,
+      panels.previewInitialUrl,
+      panels.setActivePanel,
+      isBaPersona,
+      findings.length,
+      openFindings,
+      showFindings,
+      handleFindingFollowUp,
+      isDesignPersona,
+      designSidebarCollapsed,
+      showItsmWorkbench,
+      activeWorkspace?.id,
+      activeWorkspace?.name,
+      requestChatAction,
+      showActivitySidebar,
+      recentRuns,
+      executionTopology,
+      threadViewSnapshot,
+      activeThreadId,
+      activeThread?.attentionUpdatedAt,
+      activeThread?.attentionState,
+      pendingQuestionTarget,
+      handleJumpToQuestion,
+      activeGoal,
+      busy,
+      panels.goalPopoverOpen,
+      panels.setGoalPopoverOpen,
+      handleSetGoal,
+      handleCompleteGoal,
+      panels.closeActivity,
+      focusPanelsControl,
+      selectThread,
+      setExecutionSessionStates,
+      stopSession,
+      goalsSupported,
+      agentLabel,
+    ],
+  );
   const content = (
     <div className="flex h-full flex-col">
       {/* CH4 — title + PR chip + one segmented Panels control. */}
@@ -832,12 +1060,12 @@ export function ChatView({ userRole }: ChatViewProps) {
               threads={threads}
               activeThreadId={activeThreadId}
               liveThreadStatuses={combinedThreadStatuses}
-              onSelectWorkItem={(workItem) => void selectWorkItemThread(workItem)}
-              onSelectThread={(threadId) => void selectThread(threadId)}
-              onCreateThread={(workItem) => void startWorkItemThread(workItem)}
-              onRenameThread={(threadId, title) => void renameThread(threadId, title)}
-              onSettleThread={(threadId, settled) => void settleThread(threadId, settled)}
-              onDeleteThread={(threadId) => void deleteThread(threadId)}
+              onSelectWorkItem={selectWorkItemThread}
+              onSelectThread={selectThread}
+              onCreateThread={startWorkItemThread}
+              onRenameThread={renameThread}
+              onSettleThread={settleThread}
+              onDeleteThread={deleteThread}
               chatLayout={chatLayout}
               onChatLayoutChange={handleChatLayoutChange}
               accessLevels={threadAccess.threadLevels}
@@ -850,11 +1078,11 @@ export function ChatView({ userRole }: ChatViewProps) {
               threads={threads}
               activeThreadId={activeThreadId}
               liveThreadStatuses={combinedThreadStatuses}
-              onSelectThread={(threadId) => void selectThread(threadId)}
-              onCreateThread={() => void startNewSession()}
-              onRenameThread={(threadId, title) => void renameThread(threadId, title)}
-              onSettleThread={(threadId, settled) => void settleThread(threadId, settled)}
-              onDeleteThread={(threadId) => void deleteThread(threadId)}
+              onSelectThread={selectThread}
+              onCreateThread={startNewSession}
+              onRenameThread={renameThread}
+              onSettleThread={settleThread}
+              onDeleteThread={deleteThread}
               chatLayout={chatLayout}
               onChatLayoutChange={handleChatLayoutChange}
               accessLevels={threadAccess.threadLevels}
@@ -906,6 +1134,12 @@ export function ChatView({ userRole }: ChatViewProps) {
                   : undefined
               }
               turns={composedTurns}
+              hasEarlier={historyHasEarlier}
+              loadingEarlier={historyLoadingEarlier}
+              onLoadEarlier={loadEarlierHistory}
+              scrollScopeKey={
+                activeThreadId ? `${activeWorkspace?.id ?? 'no-workspace'}:${activeThreadId}` : null
+              }
               activeThreadId={activeThreadId}
               changeReviewThreadId={!isTemporaryChat ? (activeThreadId ?? undefined) : undefined}
               busy={busy}
@@ -1078,7 +1312,7 @@ export function ChatView({ userRole }: ChatViewProps) {
               activeThread?.purpose !== 'side-question'
             }
             onSideQuestion={startSideQuestion}
-            onStop={runTarget.remote ? () => void runTarget.stop() : interrupt}
+            onStop={runTarget.remote ? stopRemote : interrupt}
             disabled={
               chatInputDisabled ||
               pendingWorkflowAction !== null ||
@@ -1129,99 +1363,18 @@ export function ChatView({ userRole }: ChatViewProps) {
                       ?.displayName ?? 'Remote device')
                   : 'This device',
             ].join(' · ')}
-            leadingControls={
-              !scaffoldModeActive && !isTemporaryChat ? (
-                <>
-                  <ChatPersonaPicker
-                    personas={personas}
-                    activePersona={activePersona}
-                    userRole={userRole}
-                    personaColour={personaColour}
-                    onSelect={handleSwitchPersona}
-                  />
-                  <ChatRunTargetSelect run={runTarget} disabled={busy || !activeWorkspace} />
-                </>
-              ) : undefined
-            }
-            contextControls={
-              scaffoldModeActive || isTemporaryChat ? null : (
-                <>
-                  <RepoSelector
-                    variant="dropdown"
-                    mode="multi"
-                    indexedOnly={false}
-                    placement="top"
-                    selectedRepoIds={activeRepos.map((repo) => repo.id)}
-                    onMultiSelect={setActiveRepos}
-                  />
-                  <GovernanceSelector
-                    placement="top"
-                    selectedDocIds={selectedGovernanceDocs.map((document) => document.id)}
-                    onSelectionChange={setSelectedGovernanceDocs}
-                  />
-                </>
-              )
-            }
+            leadingControls={leadingControls}
+            contextControls={contextControls}
             prefill={isTemporaryChat ? null : composerPrefill}
             draftKey={isTemporaryChat ? undefined : composerDraftKey}
             allowAttachments={!isTemporaryChat}
             mentionRepoIds={mentionRepoIds}
-            slashCommands={isTemporaryChat ? [] : slashCommands}
+            slashCommands={isTemporaryChat ? undefined : slashCommands}
             focusRequest={composerFocusRequest}
           />
         </div>
 
-        <ChatSidePanels
-          previewMode={isTemporaryChat ? null : panels.previewMode}
-          previewInitialUrl={panels.previewInitialUrl}
-          onClosePreview={() => panels.setActivePanel(null)}
-          isBaPersona={isBaPersona}
-          hasFindings={findings.length > 0}
-          openFindings={openFindings}
-          showFindings={showFindings}
-          onToggleFindings={() => setShowFindings((open) => !open)}
-          onFindingFollowUp={handleFindingFollowUp}
-          onDismissFinding={(idx) => setDismissedFindings((prev) => new Set(prev).add(idx))}
-          isDesignPersona={isDesignPersona && !isTemporaryChat}
-          designSidebarCollapsed={designSidebarCollapsed}
-          onToggleDesignSidebar={() => setDesignSidebarCollapsed((c) => !c)}
-          showItsmWorkbench={showItsmWorkbench}
-          workspaceId={isTemporaryChat ? null : (activeWorkspace?.id ?? null)}
-          onItsmPrompt={requestChatAction}
-          showActivitySidebar={showActivitySidebar}
-          activity={{
-            workspaceName: isTemporaryChat
-              ? 'Temporary chat'
-              : (activeWorkspace?.name ?? 'workspace'),
-            runs: recentRuns,
-            topology: executionTopology,
-            lastViewedAt:
-              threadViewSnapshot?.threadId === activeThreadId
-                ? threadViewSnapshot.lastViewedAt
-                : null,
-            attentionUpdatedAt: activeThread?.attentionUpdatedAt,
-            attentionState: activeThread?.attentionState,
-            pendingQuestionTarget,
-            onJumpToQuestion: handleJumpToQuestion,
-            activeGoal,
-            busy,
-            goalOpen: panels.goalPopoverOpen,
-            onGoalOpenChange: panels.setGoalPopoverOpen,
-            onSetGoal: handleSetGoal,
-            onCompleteGoal: handleCompleteGoal,
-            onClose: () => {
-              panels.closeActivity();
-              focusPanelsControl();
-            },
-            onOpenThread: (threadId) => void selectThread(threadId),
-            onStop: (sessionId) => {
-              setExecutionSessionStates((states) => ({ ...states, [sessionId]: 'stopped' }));
-              void stopSession(sessionId);
-            },
-            goalsSupported,
-            agentLabel,
-          }}
-        />
+        {sidePanels}
       </div>
     </div>
   );

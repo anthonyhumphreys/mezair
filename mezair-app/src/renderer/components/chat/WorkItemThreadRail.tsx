@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Archive,
@@ -63,7 +63,7 @@ interface WorkItemThreadRailProps {
   defaultAccessLevel?: CodexMode;
 }
 
-export function WorkItemThreadRail({
+function WorkItemThreadRailImpl({
   threads,
   activeThreadId,
   liveThreadStatuses,
@@ -943,3 +943,5 @@ function decodeHtmlEntities(value: string): string {
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&');
 }
+
+export const WorkItemThreadRail = memo(WorkItemThreadRailImpl);

@@ -885,26 +885,77 @@ export async function handleFactoryOperation(
     return response({ published: true });
   }
   if (operation === 'factory.run.list' || operation === 'factory.run.read') {
+    const page = operation === 'factory.run.list' && input.page !== undefined ? input.page : null;
+    if (
+      page !== null &&
+      (!isRecord(page) ||
+        !Number.isSafeInteger(page.limit) ||
+        Number(page.limit) < 1 ||
+        Number(page.limit) > 100)
+    )
+      return malformed();
+    const cursor = isRecord(page) ? page.cursor : null;
+    if (
+      cursor !== null &&
+      cursor !== undefined &&
+      (!isRecord(cursor) ||
+        cursor.factoryId !== row.id ||
+        typeof cursor.updatedAt !== 'string' ||
+        !/^\d{1,16}$/.test(cursor.updatedAt) ||
+        !Number.isSafeInteger(Number(cursor.updatedAt)) ||
+        typeof cursor.id !== 'string' ||
+        cursor.id.length > 200)
+    )
+      return malformed();
+    const limit = isRecord(page) ? Number(page.limit) : 100;
     const rows =
       operation === 'factory.run.list'
         ? await db
             .prepare(
-              'SELECT id,version,snapshot_json FROM hosted_factory_runs WHERE factory_id=? ORDER BY updated_at DESC LIMIT 100',
+              `SELECT id,version,snapshot_json,updated_at FROM hosted_factory_runs WHERE factory_id=? ${cursor ? 'AND (updated_at<? OR (updated_at=? AND id<?))' : ''} ORDER BY updated_at DESC,id DESC LIMIT ?`,
             )
-            .bind(row.id)
-            .all<{ id: string; version: number; snapshot_json: string }>()
+            .bind(
+              row.id,
+              ...(isRecord(cursor)
+                ? [Number(cursor.updatedAt), Number(cursor.updatedAt), cursor.id]
+                : []),
+              limit + (page ? 1 : 0),
+            )
+            .all<{ id: string; version: number; snapshot_json: string; updated_at: number }>()
         : {
             results: [
               await db
                 .prepare(
-                  'SELECT id,version,snapshot_json FROM hosted_factory_runs WHERE factory_id=? AND id=?',
+                  'SELECT id,version,snapshot_json,updated_at FROM hosted_factory_runs WHERE factory_id=? AND id=?',
                 )
                 .bind(row.id, String(input.runId))
-                .first<{ id: string; version: number; snapshot_json: string }>(),
+                .first<{
+                  id: string;
+                  version: number;
+                  snapshot_json: string;
+                  updated_at: number;
+                }>(),
             ],
           };
+    const all = (rows.results ?? []).flatMap((entry) => (entry ? [entry] : []));
+    const last = all[Math.min(limit, all.length) - 1];
     return response({
-      runs: (rows.results ?? [])
+      ...(page
+        ? {
+            pageSupported: true,
+            cursor:
+              all.length > limit && last
+                ? {
+                    factoryId: row.id,
+                    terminal: 0,
+                    updatedAt: String(last.updated_at),
+                    id: last.id,
+                  }
+                : null,
+          }
+        : {}),
+      runs: all
+        .slice(0, limit)
         .flatMap((x) => (x ? [x] : []))
         .map((x) => ({
           id: x.id,

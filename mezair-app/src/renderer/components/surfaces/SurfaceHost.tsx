@@ -77,20 +77,25 @@ export function SurfaceHost({ intent: incoming }: { intent: AgentUISurfaceIntent
   const supersedingId = resolveSupersedingId(intent, context.surfaces);
   const handleRef = useRef<HTMLButtonElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const mounted = useViewportMount(bodyRef);
-  const actions = useSurfaceActions(intent);
-  const comments = useSurfaceComments(intent.id, mounted && !supersedingId);
-  const share = useSurfaceShare(intent);
-  const [composerAnchor, setComposerAnchor] = useState<SurfaceAnchor | null>(null);
-  const [seenRevision, setSeenRevision] = useState(intent.revision);
-  const windowOpen = context.isWindowOpen(intent.id);
-  const wide = definition?.wide === true;
   const surfaceId = intent.id;
-  const bodyId = useId();
   const [minimised, toggleMinimised] = useSurfaceMinimised(
     surfaceId,
     intent.presentation.collapsed,
   );
+  const windowOpen = context.isWindowOpen(intent.id);
+  const mounted = useViewportMount(bodyRef, {
+    enabled: !minimised && !windowOpen && !supersedingId,
+  });
+  const actions = useSurfaceActions(intent);
+  const comments = useSurfaceComments(
+    intent.id,
+    mounted && !supersedingId && !minimised && !windowOpen,
+  );
+  const share = useSurfaceShare(intent);
+  const [composerAnchor, setComposerAnchor] = useState<SurfaceAnchor | null>(null);
+  const [seenRevision, setSeenRevision] = useState(intent.revision);
+  const wide = definition?.wide === true;
+  const bodyId = useId();
   const { openStage } = context;
 
   const handleOpenStage = useCallback(
@@ -220,41 +225,42 @@ export function SurfaceHost({ intent: incoming }: { intent: AgentUISurfaceIntent
         </div>
       </header>
 
-      {/* Folded, not unmounted: previews keep their state and need no re-render. */}
+      {/* Release expensive previews and subscriptions while folded. */}
       <div id={bodyId} hidden={minimised}>
-        {windowOpen ? (
-          <p className="flex items-center gap-2 text-xs text-text-tertiary">
-            <PictureInPicture2 size={13} aria-hidden="true" />
-            Open in window ·
-            <button
-              type="button"
-              onClick={() => context.focusWindow?.(intent.id)}
-              className="rounded-md px-1 font-medium text-text-secondary underline-offset-2 hover:text-text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+        {!minimised &&
+          (windowOpen ? (
+            <p className="flex items-center gap-2 text-xs text-text-tertiary">
+              <PictureInPicture2 size={13} aria-hidden="true" />
+              Open in window ·
+              <button
+                type="button"
+                onClick={() => context.focusWindow?.(intent.id)}
+                className="rounded-md px-1 font-medium text-text-secondary underline-offset-2 hover:text-text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+              >
+                Bring to front
+              </button>
+            </p>
+          ) : (
+            <div
+              ref={bodyRef}
+              style={mounted ? undefined : { minHeight: reservedHeight(intent) }}
+              className="min-w-0"
             >
-              Bring to front
-            </button>
-          </p>
-        ) : (
-          <div
-            ref={bodyRef}
-            style={mounted ? undefined : { minHeight: reservedHeight(intent) }}
-            className="min-w-0"
-          >
-            {!mounted || (streaming && isEmptySurfaceData(intent.payload.data)) ? (
-              <SurfaceSkeleton
-                label={streaming ? 'The agent is preparing this output' : undefined}
-              />
-            ) : (
-              <SurfaceKindRenderer
-                intent={intent}
-                presentation="inline"
-                onAction={actions.onAction}
-                onComment={handleComment}
-                onOpenStage={handleOpenStage}
-              />
-            )}
-          </div>
-        )}
+              {!mounted || (streaming && isEmptySurfaceData(intent.payload.data)) ? (
+                <SurfaceSkeleton
+                  label={streaming ? 'The agent is preparing this output' : undefined}
+                />
+              ) : (
+                <SurfaceKindRenderer
+                  intent={intent}
+                  presentation="inline"
+                  onAction={actions.onAction}
+                  onComment={handleComment}
+                  onOpenStage={handleOpenStage}
+                />
+              )}
+            </div>
+          ))}
       </div>
 
       {context.blockedWindowId === intent.id && (

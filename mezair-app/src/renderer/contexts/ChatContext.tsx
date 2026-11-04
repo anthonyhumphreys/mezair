@@ -1,3 +1,4 @@
+import { ChatStateChannels } from './ChatChannels';
 import { isPendingChatUserEntry } from '../utils/chat-entry-order';
 import { createChatNavigationRequests } from '../utils/chat-navigation-request';
 import {
@@ -64,6 +65,8 @@ import { isAcpAgentProvider } from '../../shared/agent-providers';
 import { agentEventLabel } from '../utils/agent-display';
 import { buildEmptyThreadLabel, buildThreadTitle } from '../utils/thread-display-title';
 import { shouldReplaceIntent } from '../utils/intent-revision';
+import type { ChatHistoryCursor } from '../../shared/history-pages';
+import { mergeHydratedHistory } from '../utils/merge-hydrated-history';
 
 export type ChatEntry = (
   | {
@@ -90,9 +93,9 @@ export type ChatEntry = (
     }
   | { kind: 'thinking'; content: string; id?: string }
   | { kind: 'event'; event: CodexEvent }
-) & { timestamp?: string };
+) & { timestamp?: string; historyId?: string; historyEndId?: string };
 
-interface ChatContextValue {
+export interface ChatContextValue {
   personas: Persona[];
   activePersona: Persona | null;
   session: CodexSession | null;
@@ -122,6 +125,9 @@ interface ChatContextValue {
   activeThreadId: string | null;
   /** False only while the selected thread's history is being hydrated. */
   historyReady: boolean;
+  historyHasEarlier: boolean;
+  historyLoadingEarlier: boolean;
+  loadEarlierHistory: () => Promise<void>;
   /** Last-view timestamp captured before selectThread marks the target viewed. */
   threadViewSnapshot: { threadId: string; lastViewedAt: string | null } | null;
   /** Active side-question thread and the main thread it branched from. */
@@ -189,6 +195,26 @@ interface ChatContextValue {
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
+type ChatActionsValue = Pick<ChatContextValue, 'activeRepos' | 'launchPreparedChat'>;
+const ChatActionsContext = createContext<ChatActionsValue | null>(null);
+export function useChatActions(): ChatActionsValue {
+  const value = useContext(ChatActionsContext);
+  if (!value) throw new Error('useChatActions must be used within <ChatProvider>');
+  return value;
+}
+type ChatNavigationValue = Pick<
+  ChatContextValue,
+  | 'threads'
+  | 'activeThread'
+  | 'busy'
+  | 'liveThreadStatuses'
+  | 'startNewSession'
+  | 'startTemporaryChat'
+  | 'isTemporaryChat'
+  | 'resumeTemporaryChat'
+  | 'showWorkspaceChat'
+>;
+const ChatNavigationContext = createContext<ChatNavigationValue | null>(null);
 const MAX_LIVE_COMMAND_OUTPUT_CHARS = 120_000;
 const MAX_LIVE_DIFF_CHARS = 120_000;
 const LIVE_STREAM_FLUSH_MS = 80;
@@ -229,6 +255,13 @@ export function useChatContext(): ChatContextValue {
   return ctx;
 }
 
+/** Shell consumers do not subscribe to streamed transcript, reasoning or artifact bytes. */
+export function useChatNavigation(): ChatNavigationValue {
+  const ctx = useContext(ChatNavigationContext);
+  if (!ctx) throw new Error('useChatNavigation must be used within <ChatProvider>');
+  return ctx;
+}
+
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { repos, activeWorkspace, activeScaffoldSession, refreshWorkspaces } = useWorkspace();
   const navigationRequests = useRef(createChatNavigationRequests());
@@ -247,6 +280,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [temporaryThread, setTemporaryThread] = useState<ChatThread | null>(null);
   const [isTemporaryChat, setIsTemporaryChat] = useState(false);
   const [historyReady, setHistoryReady] = useState(true);
+  const historyResolutionsRef = useRef<{
+    threadId: string;
+    messages: Map<string, ChatMessage>;
+  } | null>(null);
+  const [historyLoadingEarlier, setHistoryLoadingEarlier] = useState(false);
+  const [historyCursor, setHistoryCursor] = useState<ChatHistoryCursor | null>(null);
+  const historyPageRef = useRef<{
+    threadId: string;
+    messages: ChatMessage[];
+    entries: ChatEntry[];
+    cursor: ChatHistoryCursor | null;
+  } | null>(null);
   const [threadViewSnapshot, setThreadViewSnapshot] = useState<{
     threadId: string;
     lastViewedAt: string | null;
@@ -325,9 +370,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       intent.lifecycle !== 'expired' &&
       intent.payload.lifecycle !== 'archived',
   );
-  const activePlan = activePlanIntent
-    ? planIntentToSnapshot(activePlanIntent)
-    : (activeThread?.activePlan ?? null);
+  const activePlan = useMemo(
+    () =>
+      activePlanIntent
+        ? planIntentToSnapshot(activePlanIntent)
+        : (activeThread?.activePlan ?? null),
+    [activePlanIntent, activeThread?.activePlan],
+  );
   const activeGoal = activeThread?.activeGoal ?? null;
 
   useEffect(() => {
@@ -590,6 +639,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const loadVersion = ++threadLoadVersionRef.current;
       discardPendingStreamEntry();
       setHistoryReady(false);
+      historyPageRef.current = null;
+      historyResolutionsRef.current = { threadId, messages: new Map() };
+      setHistoryCursor(null);
       const thread = (availableThreads ?? threadsRef.current).find(
         (candidate) => candidate.id === threadId,
       );
@@ -611,7 +663,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       let artifacts: ChatArtifact[];
       let intents: AgentUIIntent[];
       try {
-        history = await window.mezair.chat.loadHistory(threadId);
+        const page = await window.mezair.chat.loadHistoryPage({ threadId });
+        history = page.messages;
+        if (loadVersion === threadLoadVersionRef.current) {
+          historyPageRef.current = {
+            threadId,
+            messages: history,
+            entries: chatMessagesToEntries(history),
+            cursor: page.before,
+          };
+          setHistoryCursor(page.before);
+          setHistoryLoadingEarlier(false);
+        }
         if (thread.temporary) {
           artifacts = [];
           intents = [];
@@ -652,7 +715,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           ? { parentThreadId: thread.sideQuestionOfThreadId, sideThreadId: thread.id }
           : null,
       );
-      const nextEntries = chatMessagesToEntries(history);
+      const nextEntries = chatMessagesToEntries([
+        ...history,
+        ...Array.from(historyResolutionsRef.current?.messages.values() ?? []),
+      ]);
+      if (historyPageRef.current?.threadId === thread.id)
+        historyPageRef.current.entries = [...nextEntries];
       const liveSession = liveSessionsByThreadIdRef.current[thread.id];
       const liveOutput = liveSession ? liveOutputBySessionIdRef.current[liveSession.id] : null;
       for (const segment of liveOutput?.segments ?? []) {
@@ -1560,6 +1628,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         (eventSessionId ? findThreadIdForSession(eventSessionId) : null) ??
         event.appThreadId ??
         null;
+      if (
+        eventThreadId &&
+        historyResolutionsRef.current?.threadId === eventThreadId &&
+        (event.type === 'request_resolved' ||
+          event.type === 'agent_ui_intent_resolved' ||
+          event.type === 'follow_up_delivery')
+      ) {
+        const key = `${event.type}:${event.sessionId ?? ''}:${event.resolvedRequestId ?? event.agentUIIntentId ?? event.followUpRequestId ?? ''}`;
+        historyResolutionsRef.current.messages.set(key, {
+          id: `live:${key}`,
+          role: 'system',
+          content: '',
+          timestamp: new Date().toISOString(),
+          event,
+        });
+      }
       const mainPersistsEvent = event.persistedBy === 'main';
       const isActiveSession = !!eventSessionId && eventSessionId === sessionRef.current?.id;
       const eventSession =
@@ -3332,13 +3416,83 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [loadThreadIntoState, stopThreadLiveSession],
   );
 
+  const loadEarlierHistory = useCallback(async () => {
+    const previous = historyPageRef.current;
+    if (
+      !previous?.cursor ||
+      previous.threadId !== activeThreadRef.current?.id ||
+      historyLoadingEarlier
+    )
+      return;
+    const version = threadLoadVersionRef.current;
+    setHistoryLoadingEarlier(true);
+    try {
+      const page = await window.mezair.chat.loadHistoryPage({
+        threadId: previous.threadId,
+        before: previous.cursor,
+      });
+      if (
+        version !== threadLoadVersionRef.current ||
+        previous !== historyPageRef.current ||
+        previous.threadId !== activeThreadRef.current?.id
+      )
+        return;
+      const messages = [...page.messages, ...previous.messages];
+      const hydrated = chatMessagesToEntries([
+        ...messages,
+        ...Array.from(historyResolutionsRef.current?.messages.values() ?? []),
+      ]);
+      setEntries((current) => mergeHydratedHistory(hydrated, previous.entries, current));
+      historyPageRef.current = {
+        threadId: previous.threadId,
+        messages,
+        entries: hydrated,
+        cursor: page.before,
+      };
+      setHistoryCursor(page.before);
+    } catch (cause) {
+      if (version === threadLoadVersionRef.current)
+        setError(cause instanceof Error ? cause.message : 'Could not load earlier messages.');
+    } finally {
+      if (version === threadLoadVersionRef.current) setHistoryLoadingEarlier(false);
+    }
+  }, [historyLoadingEarlier]);
+
   const forkThread = useCallback(
     async (messageIndex: number) => {
       navigationRequests.current.invalidate();
       if (scaffoldModeActive || !activePersona || chatLayout === 'workitems') return;
 
-      const ancestorEntries = entriesRef.current
-        .slice(0, messageIndex + 1)
+      const sourceId = activeThreadRef.current?.id;
+      const selected = entriesRef.current[messageIndex];
+      let forkEntries = entriesRef.current;
+      let forkIndex = messageIndex;
+      if (
+        sourceId &&
+        historyPageRef.current?.threadId === sourceId &&
+        historyPageRef.current.cursor
+      ) {
+        const full = chatMessagesToEntries(await window.mezair.chat.loadHistory(sourceId));
+        if (activeThreadRef.current?.id !== sourceId) return;
+        forkEntries = mergeHydratedHistory(
+          full,
+          historyPageRef.current.entries,
+          entriesRef.current,
+        );
+        forkIndex = forkEntries.findIndex(
+          (entry) =>
+            entry === selected ||
+            (selected?.historyId && entry.historyId === selected.historyId) ||
+            (selected &&
+              'id' in selected &&
+              selected.id &&
+              'id' in entry &&
+              entry.id === selected.id),
+        );
+        if (forkIndex < 0) return;
+      }
+      const ancestorEntries = forkEntries
+        .slice(0, forkIndex + 1)
         .filter(
           (entry): entry is Extract<ChatEntry, { kind: 'user' | 'assistant' }> =>
             entry.kind === 'user' || entry.kind === 'assistant',
@@ -3639,79 +3793,114 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     return updated;
   }, []);
 
+  const navigationValue = useMemo<ChatNavigationValue>(
+    () => ({
+      threads: scopedThreads,
+      activeThread,
+      busy,
+      liveThreadStatuses,
+      startNewSession,
+      startTemporaryChat,
+      isTemporaryChat,
+      resumeTemporaryChat,
+      showWorkspaceChat,
+    }),
+    [
+      scopedThreads,
+      activeThread,
+      busy,
+      liveThreadStatuses,
+      startNewSession,
+      startTemporaryChat,
+      isTemporaryChat,
+      resumeTemporaryChat,
+      showWorkspaceChat,
+    ],
+  );
+
+  const actionsValue = useMemo(
+    () => ({ activeRepos: activeReposState, launchPreparedChat }),
+    [activeReposState, launchPreparedChat],
+  );
+  const chatValue: ChatContextValue = {
+    personas,
+    activePersona,
+    session,
+    entries,
+    repos,
+    activeRepo: activeRepoState,
+    activeRepos: activeReposState,
+    governanceDocs,
+    selectedGovernanceDocs,
+    scaffoldModeActive,
+    scaffoldStatus,
+    busy,
+    error,
+    model,
+    modelProvider,
+    modelOptions,
+    modelPickerPreferences,
+    reasoningLevel,
+    reasoningOptions,
+    threads: scopedThreads,
+    activeThread,
+    isTemporaryChat,
+    startTemporaryChat,
+    resumeTemporaryChat,
+    showWorkspaceChat,
+    endTemporaryChat,
+    activeThreadId: activeThread?.id ?? null,
+    historyReady,
+    historyHasEarlier: historyCursor?.threadId === activeThreadId,
+    historyLoadingEarlier,
+    loadEarlierHistory,
+    threadViewSnapshot,
+    sideQuestion,
+    liveThreadStatuses,
+    collaborationMode,
+    activePlan,
+    agentUIIntents,
+    activeGoal,
+    activeArtifacts,
+    discardArtifact,
+    shareArtifact,
+    unshareArtifact,
+    chatLayout,
+    setActiveRepo,
+    setActiveRepos,
+    setSelectedGovernanceDocs,
+    send,
+    steer,
+    followUp,
+    startSideQuestion,
+    returnFromSideQuestion,
+    switchPersona,
+    interrupt,
+    stopSession: stopSessionLive,
+    startNewSession,
+    ensureChatThread,
+    loadHistory: loadHistoryFn,
+    clearHistory: clearHistoryFn,
+    setModel: updateModel,
+    setReasoningLevel: updateReasoningLevel,
+    selectThread,
+    renameThread,
+    settleThread,
+    deleteThread,
+    forkThread,
+    setCollaborationMode,
+    setChatLayout,
+    selectWorkItemThread,
+    startWorkItemThread,
+    launchPreparedChat,
+  };
   return (
-    <ChatContext.Provider
-      value={{
-        personas,
-        activePersona,
-        session,
-        entries,
-        repos,
-        activeRepo: activeRepoState,
-        activeRepos: activeReposState,
-        governanceDocs,
-        selectedGovernanceDocs,
-        scaffoldModeActive,
-        scaffoldStatus,
-        busy,
-        error,
-        model,
-        modelProvider,
-        modelOptions,
-        modelPickerPreferences,
-        reasoningLevel,
-        reasoningOptions,
-        threads: scopedThreads,
-        activeThread,
-        isTemporaryChat,
-        startTemporaryChat,
-        resumeTemporaryChat,
-        showWorkspaceChat,
-        endTemporaryChat,
-        activeThreadId: activeThread?.id ?? null,
-        historyReady,
-        threadViewSnapshot,
-        sideQuestion,
-        liveThreadStatuses,
-        collaborationMode,
-        activePlan,
-        agentUIIntents,
-        activeGoal,
-        activeArtifacts,
-        discardArtifact,
-        shareArtifact,
-        unshareArtifact,
-        chatLayout,
-        setActiveRepo,
-        setActiveRepos,
-        setSelectedGovernanceDocs,
-        send,
-        steer,
-        followUp,
-        startSideQuestion,
-        returnFromSideQuestion,
-        switchPersona,
-        interrupt,
-        stopSession: stopSessionLive,
-        startNewSession,
-        ensureChatThread,
-        loadHistory: loadHistoryFn,
-        clearHistory: clearHistoryFn,
-        setModel: updateModel,
-        setReasoningLevel: updateReasoningLevel,
-        selectThread,
-        renameThread,
-        settleThread,
-        deleteThread,
-        forkThread,
-        setCollaborationMode,
-        setChatLayout,
-        selectWorkItemThread,
-        startWorkItemThread,
-        launchPreparedChat,
-      }}
-    >
-      {children}
+    <ChatContext.Provider value={chatValue}>
+      <ChatStateChannels value={chatValue}>
+        <ChatNavigationContext.Provider value={navigationValue}>
+          <ChatActionsContext.Provider value={actionsValue}>{children}</ChatActionsContext.Provider>
+        </ChatNavigationContext.Provider>
+      </ChatStateChannels>
     </ChatContext.Provider>
   );
 }
@@ -4091,119 +4280,131 @@ export function chatMessagesToEntries(history: ChatMessage[]): ChatEntry[] {
   }
 
   for (const message of history) {
-    const event =
-      message.event && message.sessionId && !message.event.sessionId
-        ? { ...message.event, sessionId: message.sessionId }
-        : message.event;
-    if (event?.type === 'request_resolved' && event.resolvedRequestId !== undefined) {
-      const remaining = removeResolvedRequestEntry(
-        entries,
-        event.resolvedRequestId,
-        event.sessionId,
-      );
-      entries.splice(0, entries.length, ...remaining);
-      continue;
-    }
+    try {
+      const event =
+        message.event && message.sessionId && !message.event.sessionId
+          ? { ...message.event, sessionId: message.sessionId }
+          : message.event;
+      if (event?.type === 'request_resolved' && event.resolvedRequestId !== undefined) {
+        const remaining = removeResolvedRequestEntry(
+          entries,
+          event.resolvedRequestId,
+          event.sessionId,
+        );
+        entries.splice(0, entries.length, ...remaining);
+        continue;
+      }
 
-    if (event?.type === 'agent_ui_intent_resolved' && event.agentUIIntentId) {
-      const remaining = removeResolvedAgentUIIntentEntry(entries, event.agentUIIntentId);
-      entries.splice(0, entries.length, ...remaining);
-      continue;
-    }
+      if (event?.type === 'agent_ui_intent_resolved' && event.agentUIIntentId) {
+        const remaining = removeResolvedAgentUIIntentEntry(entries, event.agentUIIntentId);
+        entries.splice(0, entries.length, ...remaining);
+        continue;
+      }
 
-    if (event?.type === 'follow_up_delivery' && event.followUpRequestId && event.followUpStatus) {
-      followUpDeliveries.set(event.followUpRequestId, {
-        status: event.followUpStatus,
-        intent: event.followUpIntent,
-        error: event.followUpError,
-      });
-      const next = updateFollowUpEntry(entries, event.followUpRequestId, {
-        delivery: event.followUpStatus,
-        deliveryIntent: event.followUpIntent,
-        deliveryError: event.followUpError,
-      });
-      entries.splice(0, entries.length, ...next);
-      if (message.role !== 'user') continue;
-    }
+      if (event?.type === 'follow_up_delivery' && event.followUpRequestId && event.followUpStatus) {
+        followUpDeliveries.set(event.followUpRequestId, {
+          status: event.followUpStatus,
+          intent: event.followUpIntent,
+          error: event.followUpError,
+        });
+        const next = updateFollowUpEntry(entries, event.followUpRequestId, {
+          delivery: event.followUpStatus,
+          deliveryIntent: event.followUpIntent,
+          deliveryError: event.followUpError,
+        });
+        entries.splice(0, entries.length, ...next);
+        if (message.role !== 'user') continue;
+      }
 
-    // H14 — `file_read` is a dead renderer surface; legacy persisted rows are
-    // dropped at load instead of rendering as ghost activity.
-    if (event?.type === 'file_read') continue;
+      // H14 — `file_read` is a dead renderer surface; legacy persisted rows are
+      // dropped at load instead of rendering as ghost activity.
+      if (event?.type === 'file_read') continue;
 
-    if (message.role === 'user') {
-      entries.push({
-        kind: 'user',
-        content: message.content,
-        attachments: message.attachments,
-        id: message.id,
-        timestamp: message.timestamp,
-        ...(initialDeliveries.has(message.id)
-          ? { requestId: message.id, ...initialDeliveries.get(message.id) }
-          : {}),
-      });
-      continue;
-    }
+      if (message.role === 'user') {
+        entries.push({
+          kind: 'user',
+          content: message.content,
+          attachments: message.attachments,
+          id: message.id,
+          timestamp: message.timestamp,
+          ...(initialDeliveries.has(message.id)
+            ? { requestId: message.id, ...initialDeliveries.get(message.id) }
+            : {}),
+        });
+        continue;
+      }
 
-    if (event?.type === 'text') {
-      entries.push({
-        kind: 'assistant',
-        content: event.text ?? message.content,
-        id: message.id,
-        timestamp: message.timestamp,
-        itemId: event.itemId,
-        phase: event.assistantPhase,
-      });
-      continue;
-    }
+      if (event?.type === 'text') {
+        entries.push({
+          kind: 'assistant',
+          content: event.text ?? message.content,
+          id: message.id,
+          timestamp: message.timestamp,
+          itemId: event.itemId,
+          phase: event.assistantPhase,
+        });
+        continue;
+      }
 
-    if (message.role === 'assistant') {
-      // Legacy history was persisted as one flattened assistant row without metadata.
-      entries.push({
-        kind: 'assistant',
-        content: message.content,
-        id: message.id,
-        timestamp: message.timestamp,
-      });
-      continue;
-    }
+      if (message.role === 'assistant') {
+        // Legacy history was persisted as one flattened assistant row without metadata.
+        entries.push({
+          kind: 'assistant',
+          content: message.content,
+          id: message.id,
+          timestamp: message.timestamp,
+        });
+        continue;
+      }
 
-    if (event?.type === 'thinking' && event.text) {
-      // Persisted reasoning reloads as the same coalescing 'thinking' entry
-      // kind the live stream produces.
-      const next = appendLiveStreamEntry(entries, 'thinking', event.text);
-      entries.splice(0, entries.length, ...next);
-      continue;
-    }
+      if (event?.type === 'thinking' && event.text) {
+        // Persisted reasoning reloads as the same coalescing 'thinking' entry
+        // kind the live stream produces.
+        const next = appendLiveStreamEntry(entries, 'thinking', event.text);
+        const last = next.length - 1;
+        next[last] = {
+          ...next[last],
+          historyId: next[last].historyId ?? message.id,
+          historyEndId: message.id,
+        };
+        entries.splice(0, entries.length, ...next);
+        continue;
+      }
 
-    if (event?.type === 'command_exec') {
-      const next = upsertCommandEntry(entries, event, message.timestamp);
-      entries.splice(0, entries.length, ...next);
-      continue;
-    }
+      if (event?.type === 'command_exec') {
+        const next = upsertCommandEntry(entries, event, message.timestamp);
+        entries.splice(0, entries.length, ...next);
+        continue;
+      }
 
-    if (event?.type === 'tool_call') {
-      const next = upsertToolCallEntry(entries, event);
-      entries.splice(0, entries.length, ...next);
-      continue;
-    }
+      if (event?.type === 'tool_call') {
+        const next = upsertToolCallEntry(entries, event);
+        entries.splice(0, entries.length, ...next);
+        continue;
+      }
 
-    if (event?.type === 'subagent_update') {
-      const next = upsertSubagentEntry(entries, event);
-      entries.splice(0, entries.length, ...next);
-      continue;
-    }
+      if (event?.type === 'subagent_update') {
+        const next = upsertSubagentEntry(entries, event);
+        entries.splice(0, entries.length, ...next);
+        continue;
+      }
 
-    if (event?.type === 'agent_ui_intent') {
-      const next = upsertAgentUIIntentEntry(entries, event);
-      entries.splice(0, entries.length, ...next);
-      continue;
-    }
+      if (event?.type === 'agent_ui_intent') {
+        const next = upsertAgentUIIntentEntry(entries, event);
+        entries.splice(0, entries.length, ...next);
+        continue;
+      }
 
-    if (event?.type === 'turn_outcome' && event.turnOutcome === 'completed') {
-      const completed = resolveCompletedAssistantEntries(entries);
-      entries.splice(0, entries.length, ...completed);
+      if (event?.type === 'turn_outcome' && event.turnOutcome === 'completed') {
+        const completed = resolveCompletedAssistantEntries(entries);
+        entries.splice(0, entries.length, ...completed);
+      }
+      if (event) entries.push({ kind: 'event', event, timestamp: message.timestamp });
+    } finally {
+      for (let index = entries.length - 1; index >= 0 && !entries[index].historyId; index--) {
+        entries[index] = { ...entries[index], historyId: message.id };
+      }
     }
-    if (event) entries.push({ kind: 'event', event, timestamp: message.timestamp });
   }
 
   return entries.map((entry) => {

@@ -12,6 +12,8 @@ import {
   resolveReviewRepairPaths,
 } from '../services/change-review.service.js';
 import { ipcMain } from 'electron';
+import { loadChatHistoryPage } from '../services/chat-history-page.service.js';
+import type { ChatHistoryPageRequest } from '../../shared/history-pages.js';
 import type {
   AgentUIIntentPresentationPatch,
   AgentUIPlanPatch,
@@ -829,6 +831,9 @@ export function registerChatHandlers(): void {
   ipcMain.handle('chat:load-history', (_event, threadId: string): ChatMessage[] => {
     return loadChatHistory(threadId);
   });
+  ipcMain.handle('chat:load-history-page', (_event, request: ChatHistoryPageRequest) =>
+    loadChatHistoryPage(request),
+  );
 
   ipcMain.handle('chat:clear-history', (_event, threadId: string): void => {
     clearChatHistory(threadId);

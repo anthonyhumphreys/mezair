@@ -606,6 +606,30 @@ changes, cross-source dedupe, overlapping claims, refreshed issue content and
 queue-started execution budgets have focused coverage. No live provider write
 was performed.
 
+Factory presentation reads use at most four concurrent requests per directory
+or non-selected-factory summary batch. Selected-run polling and relative-time
+updates pause while the Desktop window is hidden and catch up on return;
+polls do not overlap. Navigation invalidates pending presentation responses and
+queued reads. These are renderer resource limits only: the daemon continues
+authorised execution, and service access checks still govern every read.
+
+Factory presentation now exposes bounded run pages (50 by default, 100 maximum)
+and a summary read. Local pages hydrate active runs before terminal history;
+SQLite computes local counts without loading receipts. Hosted pages use the
+existing authorised `factory.run.list` operation with a factory-bound timestamp/
+id cursor and recipient-only encrypted snapshots. Every page rechecks current
+membership/source access; paging introduces no execution or publication authority.
+Remote summaries describe only the decrypted recent window and set `complete:
+false` when history remains. Older backends retain their explicit 100-run window;
+the UI labels those counts as recent shared runs. Full run reads remain available
+by id, including runs outside that window. No plaintext run-stage index was added
+to the hosted backend.
+
+Summary failures retain an independently authorised run page; fallback counts
+are incomplete when its cursor indicates more history. Load-more requests and
+their errors belong to the selected factory generation, so leaving one factory
+releases its presentation guard without affecting another factory's pages.
+
 The dual-provider delivery and Mezair role change passed the full desktop suite
 (3,417 passed, 12 skipped), then 70 focused tests after the final current-head
 review and continuation guards. Node/web/backend TypeScript checks, lint,
@@ -617,6 +641,13 @@ was reproduced in an unchanged HEAD checkout. Synthetic browser checks covered
 ADO delivery with Jira intake, no label gate, backlog selection and Mezair
 organisation viewing at desktop/compact widths. No live credential exchange,
 provider write, production migration or deployment was performed.
+
+Follow-up on 4 November 2026: the enrollment rate-limit test failure is resolved.
+Independent hosted-identity test fixtures clear the shared test SessionCoordinator's
+cooldown row before changing their fake clock. The production provider gate and
+device limits remain unchanged; within-fixture concurrent throttling is still
+asserted. All 508 backend tests, backend typecheck, hosted config validation and
+34 deployment-isolation checks pass.
 
 Rollout on 1 November 2026: source commit `4c9eb0c0` was pushed to `main`;
 migration 0009 was applied to both hosted databases and both backends deployed

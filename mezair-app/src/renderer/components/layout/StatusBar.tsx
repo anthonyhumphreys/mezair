@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, CircleDashed, GitBranch, TerminalSquare, XCircle } from 'lucide-react';
 import { useBrand } from '../../contexts/BrandContext';
-import { useChatContext } from '../../contexts/ChatContext';
+import { useChatNavigation } from '../../contexts/ChatContext';
+import { terminalImport } from '../../utils/tool-preloads';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { buildSettingsPath } from '../settings/settings-route';
 import type { GitStatusResult, RepoInfo } from '../../../shared/types';
@@ -45,7 +46,7 @@ export function StatusBar({ connectionStatus, onToggleTerminal, terminalOpen }: 
   const { overrides: shortcuts } = useShortcuts();
   const navigate = useNavigate();
   const { repos } = useWorkspace();
-  const { activeThread } = useChatContext();
+  const { activeThread } = useChatNavigation();
   const [appVersion, setAppVersion] = useState<string | null>(null);
   // Local copy of connection status so the status bar can re-test on window
   // focus without the parent (App.tsx owns the startup check) re-rendering.
@@ -207,6 +208,8 @@ export function StatusBar({ connectionStatus, onToggleTerminal, terminalOpen }: 
         )}
         <button
           onClick={onToggleTerminal}
+          onPointerEnter={terminalImport.warm}
+          onFocus={terminalImport.warm}
           className={`flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-bg-elevated hover:text-text-primary ${
             terminalOpen ? 'text-text-primary' : ''
           }`}

@@ -16,6 +16,8 @@ import {
   getFactoryRun,
   listFactories,
   listFactoryRuns,
+  listFactoryRunPage,
+  getFactoryRunSummary,
   listFactoryOrganizations,
   listFactoryOrganizationMembers,
   listFactoryDirectory,
@@ -45,6 +47,14 @@ export function registerFactoryHandlers(): void {
   ipcMain.handle('factories:list', (_event, workspaceId?: string) => listFactories(workspaceId));
   ipcMain.handle('factories:get', (_event, factoryId: string) => getFactory(factoryId));
   ipcMain.handle('factories:list-runs', (_event, factoryId: string) => listFactoryRuns(factoryId));
+  ipcMain.handle(
+    'factories:list-run-page',
+    (_event, request: import('../../shared/factories.js').FactoryRunPageRequest) =>
+      listFactoryRunPage(request),
+  );
+  ipcMain.handle('factories:run-summary', (_event, factoryId: string) =>
+    getFactoryRunSummary(factoryId),
+  );
   ipcMain.handle('factories:get-run', (_event, runId: string) => getFactoryRun(runId));
   ipcMain.handle('factories:control', (_event, input: FactoryControlInput) =>
     controlFactory(input),

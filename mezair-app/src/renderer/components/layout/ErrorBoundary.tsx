@@ -1,8 +1,10 @@
 import { Component, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { useBrand } from '../../contexts/BrandContext';
 
 interface Props {
   children: ReactNode;
+  fallback?: ReactNode;
 }
 
 interface State {
@@ -30,6 +32,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render(): ReactNode {
     if (this.state.hasError) {
+      if (this.props.fallback !== undefined) return this.props.fallback;
       return (
         <div className="flex h-full items-center justify-center p-8">
           <div className="max-w-md text-center">
@@ -52,4 +55,36 @@ export class ErrorBoundary extends Component<Props, State> {
 
     return this.props.children;
   }
+}
+
+/** A failed deferred chunk stays contained until an explicit app reload. */
+export function DeferredLoadError({ label, onClose }: { label: string; onClose?: () => void }) {
+  const brand = useBrand();
+  return (
+    <div role="alert" className="grid min-h-48 place-items-center p-6">
+      <div className="max-w-sm space-y-3 text-center">
+        <p className="text-sm text-text-secondary">
+          {label} could not load. Reload {brand.appName} to try again.
+        </p>
+        <div className="flex justify-center gap-3">
+          {onClose && (
+            <button
+              type="button"
+              className="rounded-md border border-border px-3 py-2 text-sm"
+              onClick={onClose}
+            >
+              Close
+            </button>
+          )}
+          <button
+            type="button"
+            className="rounded-md bg-accent px-3 py-2 text-sm text-accent-foreground"
+            onClick={() => window.location.reload()}
+          >
+            Reload {brand.appName}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

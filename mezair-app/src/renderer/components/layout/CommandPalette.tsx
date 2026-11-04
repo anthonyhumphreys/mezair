@@ -43,10 +43,9 @@ import {
 import type { ChatLayout, Feature, UserRole } from '../../../shared/types';
 import { ROLE_FEATURES } from '../../../shared/types';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
-import { useChatContext } from '../../contexts/ChatContext';
+import { useChatNavigation } from '../../contexts/ChatContext';
 import { getNextListboxIndex } from '../../utils/list-navigation';
 import { slugForDomId } from '../../utils/dom-id';
-import { isEditableShortcutTarget } from '../../utils/keyboard';
 import {
   chatPromptPath,
   getAvailableSidebarNavigation,
@@ -127,7 +126,8 @@ export function buildPickupSharedThreadCommandMetadata() {
   return {
     id: 'act-pick-up-thread',
     label: 'Pick up shared thread…',
-    description: 'Review a .mezair-thread file and create a private continuation in your workspace.',
+    description:
+      'Review a .mezair-thread file and create a private continuation in your workspace.',
     keywords: ['shared', 'pick up', 'continue', 'import', 'thread', 'conversation'],
   };
 }
@@ -355,7 +355,7 @@ export function CommandPalette({
   const { overrides: shortcuts } = useShortcuts();
   const { activeWorkspace, workspaces, switchWorkspace, removeRepos, featureAvailability } =
     useWorkspace();
-  const { threads, startTemporaryChat } = useChatContext();
+  const { threads, startTemporaryChat } = useChatNavigation();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [chatLayout, setChatLayout] = useState<ChatLayout>('classic');
@@ -365,22 +365,6 @@ export function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-
-  // ⌃1–9 switches workspaces from anywhere in the shell (WS4). The palette is
-  // always mounted, so the listener lives here even when the palette is closed.
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
-      if (event.key < '1' || event.key > '9') return;
-      if (isEditableShortcutTarget(event.target)) return;
-      const workspace = workspaces[Number(event.key) - 1];
-      if (!workspace || workspace.id === activeWorkspace?.id) return;
-      event.preventDefault();
-      void switchWorkspace(workspace.id);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [workspaces, activeWorkspace?.id, switchWorkspace]);
 
   const go = useCallback(
     (path: string) => {

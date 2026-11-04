@@ -6,9 +6,9 @@ import {
   readChatScrollPosition,
   scrollTopForChatPosition,
   writeChatScrollPosition,
-  type ChatScrollAnchor,
   type ChatScrollPosition,
 } from './chat-scroll-position';
+import { getVisibleTurnAnchor } from './chat-scroll-anchor';
 
 interface ChatScrollScopeState {
   key: string | null;
@@ -42,15 +42,23 @@ export function useChatScroll({
   const shouldStickToBottomRef = useRef(true);
   const forcedPinnedScrollRef = useRef(false);
   const lastScrollTopRef = useRef(0);
+  const lastPersistedRef = useRef<{ key: string | null; value: string } | null>(null);
 
   const persistPosition = useCallback((state: ChatScrollScopeState) => {
-    writeChatScrollPosition(getSessionStorage(), state.key, state.position);
+    const value = JSON.stringify(state.position);
+    if (lastPersistedRef.current?.key === state.key && lastPersistedRef.current.value === value)
+      return;
+    if (writeChatScrollPosition(getSessionStorage(), state.key, state.position))
+      lastPersistedRef.current = { key: state.key, value };
   }, []);
 
   const captureCurrentPosition = useCallback(
     (container: HTMLDivElement, state: ChatScrollScopeState) => {
       if (!state.restored) return;
-      const position = chatScrollPositionFromMetrics(container, getVisibleTurnAnchor(container));
+      let position = chatScrollPositionFromMetrics(container);
+      if (position.mode === 'offset') {
+        position = { ...position, anchor: getVisibleTurnAnchor(container) };
+      }
       state.position = position;
       shouldStickToBottomRef.current = position.mode === 'bottom';
       setShowJumpToLatest(position.mode !== 'bottom');
@@ -110,6 +118,7 @@ export function useChatScroll({
     const container = containerRef.current;
     if (!container) return;
 
+    let frame = 0;
     const onScroll = () => {
       const state = scopeStateRef.current;
       if (!state?.restored) return;
@@ -123,15 +132,25 @@ export function useChatScroll({
         state.position = { mode: 'bottom' };
         shouldStickToBottomRef.current = true;
         setShowJumpToLatest(false);
-        persistPosition(state);
-        return;
+      } else {
+        // Record intent immediately so a streamed update before the next frame
+        // cannot pull someone reading history back to the bottom.
+        state.position = chatScrollPositionFromMetrics(container);
+        shouldStickToBottomRef.current = state.position.mode === 'bottom';
       }
-      captureCurrentPosition(container, state);
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (scopeStateRef.current !== state) return;
+        if (forcedPinnedScrollRef.current) persistPosition(state);
+        else captureCurrentPosition(container, state);
+      });
     };
 
     container.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       container.removeEventListener('scroll', onScroll);
+      cancelAnimationFrame(frame);
       const state = scopeStateRef.current;
       if (state?.restored) persistPosition(state);
     };
@@ -187,23 +206,12 @@ export function useChatScroll({
     const behavior: ScrollBehavior = reducedMotion ? 'auto' : 'smooth';
     forcedPinnedScrollRef.current = behavior === 'smooth';
     lastScrollTopRef.current = container.scrollTop;
-    container.scrollTo({ top: container.scrollHeight, behavior });
+    const request = { behavior, handled: false };
+    container.dispatchEvent(new CustomEvent('mezair:transcript-end', { detail: request }));
+    if (!request.handled) container.scrollTo({ top: container.scrollHeight, behavior });
   }, [containerRef, persistPosition]);
 
   return { showJumpToLatest, jumpToLatest };
-}
-
-function getVisibleTurnAnchor(container: HTMLDivElement): ChatScrollAnchor | undefined {
-  const viewportTop = container.getBoundingClientRect().top + container.clientTop;
-  const turns = container.querySelectorAll<HTMLElement>('[data-chat-turn-key]');
-  for (const turn of turns) {
-    const rect = turn.getBoundingClientRect();
-    const turnKey = turn.dataset.chatTurnKey;
-    if (turnKey && rect.bottom > viewportTop) {
-      return { turnKey, offsetFromTurnTop: viewportTop - rect.top };
-    }
-  }
-  return undefined;
 }
 
 function findTurnTop(container: HTMLDivElement, turnKey: string): number | undefined {

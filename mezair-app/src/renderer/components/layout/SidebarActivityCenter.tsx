@@ -9,7 +9,7 @@ import type {
   SimulatorPreviewStatus,
 } from '../../../shared/types';
 import type { RunStatus } from '../../../shared/run-types';
-import { useChatContext } from '../../contexts/ChatContext';
+import { useChatNavigation } from '../../contexts/ChatContext';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { useRepoIndex } from '../../contexts/RepoIndexContext';
 import { WORKSPACE_REPOSITORIES_PATH } from '../../utils/sidebar-navigation';
@@ -62,7 +62,7 @@ export function useSidebarActivity(): SidebarActivityValue {
 function useSidebarActivityData(): SidebarActivityValue {
   const location = useLocation();
   const { activeWorkspace, activeScaffoldSession, repos, featureAvailability } = useWorkspace();
-  const { busy, liveThreadStatuses, activeThread, threads } = useChatContext();
+  const { busy, liveThreadStatuses, activeThread, threads } = useChatNavigation();
   const repoIndex = useRepoIndex();
   const [agentRuns, setAgentRuns] = useState<AgentRunSummary[]>([]);
   const [automationTriage, setAutomationTriage] = useState<AutomationTriageItem[]>([]);

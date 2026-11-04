@@ -1,4 +1,6 @@
 import type { RemoteCodexAccountAuthChoice } from './remote-chat';
+import type { ChatHistoryPage, ChatHistoryPageRequest } from './history-pages';
+import type { FactoryRunPage, FactoryRunPageRequest, FactoryRunSummary } from './factories';
 import type {
   CloudAgentConnectionProvider,
   CloudAgentConnectionResult,
@@ -541,6 +543,7 @@ export interface MezairAPI {
       timestamp: string,
     ) => Promise<void>;
     loadHistory: (threadId: string) => Promise<ChatMessage[]>;
+    loadHistoryPage: (request: ChatHistoryPageRequest) => Promise<ChatHistoryPage>;
     clearHistory: (threadId: string) => Promise<void>;
     saveThreadPlan: (threadId: string, plan: ChatPlanSnapshot) => Promise<ChatThread | null>;
     saveThreadGoal: (threadId: string, goal: ChatGoalSnapshot | null) => Promise<ChatThread | null>;
@@ -629,6 +632,8 @@ export interface MezairAPI {
     list: (workspaceId?: string) => Promise<FactoryDefinition[]>;
     get: (factoryId: string) => Promise<FactoryDefinition | null>;
     listRuns: (factoryId: string) => Promise<FactoryRun[]>;
+    listRunPage: (request: FactoryRunPageRequest) => Promise<FactoryRunPage>;
+    getRunSummary: (factoryId: string) => Promise<FactoryRunSummary>;
     getRun: (runId: string) => Promise<FactoryRun | null>;
     control: (input: FactoryControlInput) => Promise<FactoryDefinition>;
     controlRun: (input: FactoryRunControlInput) => Promise<FactoryRun>;

@@ -1,0 +1,395 @@
+import { lazy, useMemo, useRef } from 'react';
+import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
+import { MemoryRouter } from 'react-router-dom';
+import { ChatTranscript } from '../../../src/renderer/components/chat/ChatTranscript';
+import { createChatTurnComposer } from '../../../src/renderer/components/chat/chat-turns';
+import { useChatScroll } from '../../../src/renderer/components/chat/useChatScroll';
+import { MarkdownRenderer } from '../../../src/renderer/components/chat/MarkdownRenderer';
+import { MessageStreamingContext } from '../../../src/renderer/components/chat/surface-fences';
+import {
+  highlightCode,
+  disposeHighlightResources,
+} from '../../../src/renderer/components/chat/shiki';
+import { ArtifactPreview } from '../../../src/renderer/components/chat/ArtifactPreview';
+import type { ChatArtifact } from '../../../src/shared/types';
+import { SketchFrame } from '../../../src/renderer/components/surfaces/kinds/sketch/SketchFrame';
+import { preloadable } from '../../../src/renderer/utils/preloadable';
+import {
+  ErrorBoundary,
+  DeferredLoadError,
+} from '../../../src/renderer/components/layout/ErrorBoundary';
+import { ChatInput } from '../../../src/renderer/components/chat/ChatInput';
+import type { ChatEntry } from '../../../src/renderer/contexts/ChatContext';
+const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+const settle = async (count = 5) => {
+  for (let n = 0; n < count; n++) await frame();
+};
+const noop = () => undefined;
+const empty: never[] = [];
+const check = (condition: unknown, message: string) => {
+  if (!condition) throw Error(message);
+};
+export async function checkAdvanced() {
+  Object.assign(window.mezair, {
+    voice: { onResult: () => noop, onError: () => noop, onStatus: () => noop },
+    chat: { listDelegations: async () => [] },
+  });
+  const host = document.createElement('div');
+  host.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#0b1020';
+  document.body.append(host);
+  const root = createRoot(host);
+  const passed: string[] = [];
+  let entries: ChatEntry[] = Array.from(
+    { length: 1000 },
+    (_, n) =>
+      [
+        { kind: 'user', id: `vuser-${n}`, content: `History request ${n}` },
+        {
+          kind: 'event',
+          event: {
+            type: 'command_exec',
+            command: 'synthetic',
+            exitCode: 0,
+            toolStatus: 'completed',
+            output: 'done',
+          },
+        },
+        {
+          kind: 'assistant',
+          id: `vanswer-${n}`,
+          content: `Answer ${n}\n\n${'Variable-height paragraph. '.repeat((n % 9) + 1)}`,
+        },
+      ] as ChatEntry[],
+  ).flat();
+  function Transcript() {
+    const [compose, scrollRef, endRef] = [
+      useMemo(createChatTurnComposer, []),
+      useRef<HTMLDivElement>(null),
+      useRef<HTMLDivElement>(null),
+    ];
+    const scroll = useChatScroll({
+      containerRef: scrollRef,
+      scopeKey: 'virtual-check',
+      contentVersion: entries,
+      contentReady: true,
+    });
+    return (
+      <div style={{ height: 600, display: 'flex', flexDirection: 'column' }}>
+        <ChatTranscript
+          paneKind="transcript"
+          personaId="coder"
+          hasRepos={false}
+          hasGovernanceDocs={false}
+          isDbExpertPersona={false}
+          onSuggestionClick={noop}
+          turns={compose(entries, { active: true })}
+          activeThreadId="virtual-check"
+          busy
+          isBaPersona={false}
+          personaName="Coder"
+          personaColour="#85b788"
+          onReuseMessage={noop}
+          changesRepos={empty}
+          error={null}
+          errorProviders={empty}
+          messagesContainerRef={scrollRef}
+          messagesEndRef={endRef}
+          showJumpToLatest={scroll.showJumpToLatest}
+          onJumpToLatest={scroll.jumpToLatest}
+        />
+      </div>
+    );
+  }
+  const render = () =>
+    flushSync(() =>
+      root.render(
+        <MemoryRouter>
+          <Transcript />
+        </MemoryRouter>,
+      ),
+    );
+  try {
+    render();
+    await settle();
+    const container = host.querySelector<HTMLElement>('[aria-label="Chat transcript"]')!;
+    check(
+      host.querySelectorAll('[data-chat-turn-key]').length > 0 &&
+        host.querySelectorAll('[data-chat-turn-key]').length < 30,
+      `1,000 turns must retain 1–29 mounted rows; got ${host.querySelectorAll('[data-chat-turn-key]').length}; viewport ${container.clientHeight}; list ${host.querySelector<HTMLElement>('[data-chat-turn-window]')?.style.height}; scroll ${container.scrollTop}/${container.scrollHeight}`,
+    );
+    passed.push('1,000 variable-height turns windowed');
+    const row = host.querySelector<HTMLElement>('[data-chat-turn-key]')!;
+    const key = row.dataset.chatTurnKey!;
+    const expand = row.querySelector<HTMLButtonElement>('[aria-label^="Expand processing"]')!;
+    expand.click();
+    await settle();
+    expand.focus();
+    const text = document.createTreeWalker(row, NodeFilter.SHOW_TEXT).nextNode()!;
+    const selection = document.getSelection()!,
+      range = document.createRange();
+    range.selectNodeContents(text);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    const selected = selection.toString();
+    container.scrollTop = 0;
+    await settle();
+    check(
+      row.isConnected && document.activeElement === expand && selection.toString() === selected,
+      'Selection and keyboard focus must survive window changes',
+    );
+    passed.push('selection and focus pinned across scroll');
+    selection.removeAllRanges();
+    expand.blur();
+    document.dispatchEvent(new Event('selectionchange'));
+    document.dispatchEvent(new FocusEvent('focusin'));
+    await settle();
+    window.dispatchEvent(new CustomEvent('mezair:reveal-transcript', { detail: { turnKey: key } }));
+    await settle(12);
+    const restored = [...host.querySelectorAll<HTMLElement>('[data-chat-turn-key]')].find(
+      (item) => item.dataset.chatTurnKey === key,
+    )!;
+    check(
+      restored?.querySelector('.processing-item'),
+      'Explicit disclosure choice must survive unmount/remount',
+    );
+    passed.push('work disclosure retained across remount');
+    // Keep the currently visible turn fixed when older pages arrive.
+    const visible = [...host.querySelectorAll<HTMLElement>('[data-chat-turn-key]')].find(
+      (item) => item.getBoundingClientRect().bottom > container.getBoundingClientRect().top + 40,
+    )!;
+    const beforeTop = visible.getBoundingClientRect().top,
+      visibleKey = visible.dataset.chatTurnKey;
+    entries = [
+      { kind: 'user', id: 'prepended-user', content: 'Earlier page' },
+      { kind: 'assistant', id: 'prepended-answer', content: 'Earlier answer' },
+      ...entries,
+    ];
+    render();
+    await settle(10);
+    const anchored = [...host.querySelectorAll<HTMLElement>('[data-chat-turn-key]')].find(
+      (item) => item.dataset.chatTurnKey === visibleKey,
+    )!;
+    check(
+      anchored && Math.abs(anchored.getBoundingClientRect().top - beforeTop) < 3,
+      'Prepending an earlier page must retain the visible anchor',
+    );
+    passed.push('prepend preserves reading anchor');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }));
+    await settle();
+    const input = host.querySelector<HTMLInputElement>(
+      '[aria-label="Find in loaded conversation"]',
+    )!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+      input,
+      'History request 20',
+    );
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle(15);
+    check(
+      [...host.querySelectorAll('[data-chat-turn-key]')].some((item) =>
+        item.textContent?.includes('History request 20'),
+      ),
+      'Find must reveal offscreen matches',
+    );
+    passed.push('find reveals loaded offscreen turns');
+    root.render(null);
+    await settle();
+    let loads = 0;
+    const intent = preloadable(async () => {
+      loads++;
+      return 1;
+    });
+    check(loads === 0, 'No startup preloading');
+    intent.warm();
+    await intent.load();
+    check(loads === 1, 'Intent preload and opening share one import');
+    passed.push('intent-only import coalescing');
+    let composerRenders = 0;
+    Object.assign(globalThis, {
+      __MEZAIR_PERF_RENDER_COUNTS__: () => {
+        composerRenders++;
+      },
+    });
+    const onSend = async () => true;
+    const renderComposer = (tick: number) =>
+      flushSync(() =>
+        root.render(
+          <>
+            <p>{tick}</p>
+            <ChatInput onSend={onSend} onStop={noop} busy disabled={false} />
+          </>,
+        ),
+      );
+    renderComposer(0);
+    await settle();
+    check(composerRenders > 0, 'Composer render instrumentation must observe the initial mount');
+    composerRenders = 0;
+    for (let n = 1; n <= 60; n++) renderComposer(n);
+    check(
+      composerRenders === 0,
+      'Stable composer props must cause zero component renders across 60 transcript updates',
+    );
+    passed.push('zero composer component renders across 60 transcript updates');
+    Reflect.deleteProperty(globalThis, '__MEZAIR_PERF_RENDER_COUNTS__');
+    const full =
+      Array.from(
+        { length: 100 },
+        (_, n) => `## Block ${n}\n\nA completed paragraph with **formatting** and a link.\n\n`,
+      ).join('') +
+      '```ts\n' +
+      'const value = 1;\n'.repeat(200) +
+      '```\n\nTail';
+    let content = full;
+    const markdown = () =>
+      flushSync(() =>
+        root.render(
+          <MessageStreamingContext.Provider value>
+            <MarkdownRenderer content={content} />
+          </MessageStreamingContext.Provider>,
+        ),
+      );
+    markdown();
+    await settle();
+    const stable = host.querySelector('h2');
+    const samples: number[] = [];
+    for (let n = 0; n < 60; n++) {
+      content += ' next';
+      const start = performance.now();
+      markdown();
+      samples.push(performance.now() - start);
+      await frame();
+    }
+    check(
+      host.querySelector('h2') === stable,
+      'Completed Markdown blocks must retain DOM identity',
+    );
+    passed.push('completed Markdown DOM retained with long code');
+    const html = await highlightCode('const greeting: string = "hello";', 'ts');
+    check(
+      html.includes('span') && html.includes('color'),
+      'Module worker must produce syntax highlighting',
+    );
+    passed.push('real worker syntax highlighting');
+    // Account for resources owned by the mounted components, not browser internals.
+    const created = URL.createObjectURL,
+      revoked = URL.revokeObjectURL;
+    const urls = new Set<string>();
+    URL.createObjectURL = (blob) => {
+      const url = created(blob);
+      urls.add(url);
+      return url;
+    };
+    URL.revokeObjectURL = (url) => {
+      urls.delete(url);
+      revoked(url);
+    };
+    Object.assign(window.mezair, {
+      chat: {
+        readArtifactFile: async () => ({
+          name: 'probe.pdf',
+          mimeType: 'application/pdf',
+          size: 15,
+          dataBase64: btoa('%PDF-1.4\n%%EOF'),
+        }),
+      },
+    });
+    const artifact: ChatArtifact = {
+      id: 'lifecycle-pdf',
+      threadId: 'fixture',
+      kind: 'pdf',
+      title: 'Lifecycle PDF',
+      content: '',
+      version: 1,
+      createdAt: '',
+      updatedAt: '',
+    } as ChatArtifact;
+    const OriginalObserver = window.MutationObserver;
+    const observers = new Set<MutationObserver>();
+    window.MutationObserver = class extends OriginalObserver {
+      observe(target: Node, options?: MutationObserverInit) {
+        observers.add(this);
+        super.observe(target, options);
+      }
+      disconnect() {
+        observers.delete(this);
+        super.disconnect();
+      }
+    };
+    try {
+      for (let cycle = 0; cycle < 30; cycle++) {
+        flushSync(() =>
+          root.render(
+            <>
+              <SketchFrame html="<p>Lifecycle probe</p>" title="Lifecycle probe" />
+              <ArtifactPreview artifact={artifact} mode="preview" />
+            </>,
+          ),
+        );
+        await settle(3);
+        check(
+          host.querySelectorAll('iframe').length === 2 && urls.size === 1,
+          'Rich previews must own one sketch frame and one PDF URL/frame',
+        );
+        flushSync(() => root.render(null));
+        await settle(2);
+        check(
+          host.querySelectorAll('iframe').length === 0 && urls.size === 0 && observers.size === 0,
+          'Closing previews must release every frame and blob URL',
+        );
+      }
+    } finally {
+      URL.createObjectURL = created;
+      URL.revokeObjectURL = revoked;
+      window.MutationObserver = OriginalObserver;
+    }
+    disposeHighlightResources();
+    passed.push('30 rich preview cycles release frames, blob URLs and theme observers');
+    let closed = false;
+    const Broken = lazy(() => Promise.reject(new Error('Synthetic lazy import failure')));
+    flushSync(() =>
+      root.render(
+        <>
+          <p>Shell still available</p>
+          <ErrorBoundary
+            fallback={
+              <DeferredLoadError
+                label="Probe"
+                onClose={() => {
+                  closed = true;
+                }}
+              />
+            }
+          >
+            <Broken />
+          </ErrorBoundary>
+        </>,
+      ),
+    );
+    await settle();
+    check(
+      host.textContent?.includes('Shell still available') && host.querySelector('[role=alert]'),
+      'Failed deferred views must leave the shell mounted',
+    );
+    [...host.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Close')!
+      .click();
+    check(closed, 'Failed optional views must remain dismissible');
+    passed.push('failed deferred imports leave shell controls available');
+    flushSync(() => root.render(null));
+    const extra = await (await import('./extra-checks')).checkExtra();
+    samples.sort((a, b) => a - b);
+    return {
+      passed,
+      markdownP95Ms: samples[Math.floor(samples.length * 0.95)],
+      composerRendersDuring60Updates: composerRenders,
+      extra,
+    };
+  } finally {
+    root.unmount();
+    host.remove();
+    disposeHighlightResources();
+    document.getSelection()?.removeAllRanges();
+    sessionStorage.removeItem('mezair:chat-scroll:virtual-check');
+  }
+}

@@ -116,3 +116,20 @@ describe('chat scroll position helpers', () => {
     expect(readChatScrollPosition(storage, 'workspace:thread')).toBeNull();
   });
 });
+
+it('reports failed writes so a recovered storage backend can retry the same position', () => {
+  const storage = new MemoryStorage();
+  const set = storage.setItem.bind(storage);
+  let blocked = true;
+  storage.setItem = (key, value) => {
+    if (blocked) throw Error('quota');
+    set(key, value);
+  };
+  expect(writeChatScrollPosition(storage, 'retry', { mode: 'offset', scrollTop: 123 })).toBe(false);
+  blocked = false;
+  expect(writeChatScrollPosition(storage, 'retry', { mode: 'offset', scrollTop: 123 })).toBe(true);
+  expect(readChatScrollPosition(storage, 'retry')).toMatchObject({
+    mode: 'offset',
+    scrollTop: 123,
+  });
+});

@@ -40,7 +40,7 @@ import type {
   PullRequestVisualisationNode,
   PullRequestVisualisationTone,
 } from '../../../shared/types';
-import { useChatContext } from '../../contexts/ChatContext';
+import { useChatActions } from '../../contexts/ChatContext';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { buildEditorUrl } from '../../utils/editor-link';
 import {
@@ -115,7 +115,7 @@ export function PullRequestCanvas({
     (pullRequest: CodeReviewPullRequest) => setDiffPullRequest({ repoId, pullRequest }),
     [repoId],
   );
-  const { launchPreparedChat } = useChatContext();
+  const { launchPreparedChat } = useChatActions();
   const [chatError, setChatError] = useState('');
   const { activeWorkspace } = useWorkspace();
   const [visualisation, setVisualisation] = useState<PullRequestVisualisation | null>(null);

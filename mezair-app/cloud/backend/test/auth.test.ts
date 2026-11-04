@@ -1,4 +1,4 @@
-import { env, SELF } from 'cloudflare:test';
+import { env, runInDurableObject, SELF } from 'cloudflare:test';
 import { describe, expect, it, vi } from 'vitest';
 
 import type {
@@ -16,7 +16,7 @@ import type { SyncPullResult } from '../../contract/sync';
 import { PREVIEW_END_MS } from '../src/hosted/policy';
 import { sha256Hex } from '../src/hash';
 import { verifyOidcPkceProof } from '../src/oidc';
-import { legacyOidcAccountId } from '../src/session-coordinator';
+import { legacyOidcAccountId, type SessionCoordinator } from '../src/session-coordinator';
 import { getOrCreateBillingAccount } from '../src/hosted/store';
 import { expectSuccess, hashedChange, postRpc, withSelfHostedBackend } from './helpers';
 
@@ -81,10 +81,7 @@ function hostedDb(): D1Database {
   return db;
 }
 
-async function linkPaidBillingAccount(
-  accountId: string,
-  identity: WorkosIdentity,
-): Promise<void> {
+async function linkPaidBillingAccount(accountId: string, identity: WorkosIdentity): Promise<void> {
   const db = hostedDb();
   const now = Date.now();
   const billingAccountId = `ba_${crypto.randomUUID().replaceAll('-', '')}`;
@@ -95,14 +92,7 @@ async function linkPaidBillingAccount(
           lifecycle, preview_eligible, created_at, updated_at)
        VALUES (?, ?, ?, ?, 1, 'active', 0, ?, ?)`,
     )
-    .bind(
-      billingAccountId,
-      identity.workosClientId,
-      identity.workosUserId,
-      accountId,
-      now,
-      now,
-    )
+    .bind(billingAccountId, identity.workosClientId, identity.workosUserId, accountId, now, now)
     .run();
   await db
     .prepare(
@@ -143,6 +133,14 @@ async function withWorkosIdentity<T>(identity: WorkosIdentity, run: () => Promis
   env.HOSTED_BILLING_ENFORCEMENT = 'true';
   await fetch(`${WORKOS_API}/__workos-stub/reset`, { method: 'POST' });
   try {
+    // SELF routes every identity through the same test SessionCoordinator.
+    // These fixtures use independent clocks (the paid fixture rewinds to the
+    // preview deadline), so an earlier test's cooldown must not leak into it.
+    // Keep the real gate active for all attempts within each fixture.
+    const sessions = env.SESSIONS.get(env.SESSIONS.idFromName('sessions'));
+    await runInDurableObject(sessions, (_instance: SessionCoordinator, state) => {
+      state.storage.sql.exec('DELETE FROM workos_device_rate');
+    });
     return await run();
   } finally {
     await fetch(`${WORKOS_API}/__workos-stub/reset`, { method: 'POST' });
@@ -280,7 +278,9 @@ describe('enrollment-code authentication', () => {
           beginWorkosEnrollment(identity, 'install-concurrent-1'),
           beginWorkosEnrollment(identity, 'install-concurrent-2'),
         ]);
-        const concurrentAttempts = await Promise.all(concurrentRequests.map((request) => request()));
+        const concurrentAttempts = await Promise.all(
+          concurrentRequests.map((request) => request()),
+        );
         const accepted = concurrentAttempts.filter((attempt) => attempt.status === 200);
         const rateLimitedIndex = concurrentAttempts.findIndex((attempt) => attempt.status === 429);
         expect(accepted).toHaveLength(1);
@@ -350,7 +350,10 @@ describe('enrollment-code authentication', () => {
           state: 'restricted',
           reason: 'device-limit-exceeded',
         });
-        expect(descriptor.entitlement?.capabilities).toEqual({ syncWrite: false, meshSubmit: false });
+        expect(descriptor.entitlement?.capabilities).toEqual({
+          syncWrite: false,
+          meshSubmit: false,
+        });
 
         const attemptedWrite = await postRpc(
           'sync.push',
@@ -366,7 +369,8 @@ describe('enrollment-code authentication', () => {
         });
 
         expect(
-          (await postRpc('sync.pull', { cursor: null, maxBytes: 1024 }, bearer(sessions[0]!))).status,
+          (await postRpc('sync.pull', { cursor: null, maxBytes: 1024 }, bearer(sessions[0]!)))
+            .status,
         ).toBe(200);
         const exported = await postRpc('data.export.begin', {}, bearer(sessions[0]!));
         expectSuccess<DataExportBeginResult>(exported);
@@ -390,7 +394,9 @@ describe('enrollment-code authentication', () => {
         const admittedWrite = await postRpc(
           'sync.push',
           {
-            changes: [await hashedChange({ enrollmentSequence: 1, entityId: 'paid-write-resumed' })],
+            changes: [
+              await hashedChange({ enrollmentSequence: 1, entityId: 'paid-write-resumed' }),
+            ],
           },
           bearer(sessions[0]!),
         );

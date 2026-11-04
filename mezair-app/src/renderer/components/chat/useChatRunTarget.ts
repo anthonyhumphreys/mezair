@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AgentProvider,
   ChatAttachment,
@@ -127,11 +127,14 @@ export function useChatRunTarget(input: {
   const provider = providers.find((item) => item.provider === input.provider);
   const providerReady =
     provider?.enabled === true && (input.provider === 'codex' || provider.connected);
-  const setTarget = (next: string) => {
-    if (next === HOSTED_CHAT_TARGET && !hostedAgentsEnabled) return;
-    updateTarget(next);
-    setCredentialChoice(next === HOSTED_CHAT_TARGET ? 'codex-host-auth' : 'target-local');
-  };
+  const setTarget = useCallback(
+    (next: string) => {
+      if (next === HOSTED_CHAT_TARGET && !hostedAgentsEnabled) return;
+      updateTarget(next);
+      setCredentialChoice(next === HOSTED_CHAT_TARGET ? 'codex-host-auth' : 'target-local');
+    },
+    [hostedAgentsEnabled],
+  );
 
   useEffect(
     () =>
@@ -460,7 +463,7 @@ export function useChatRunTarget(input: {
     [input, busy, record, target, hosted, hostedAgentsEnabled, credentialChoice, cacheScopeKey],
   );
 
-  const stop = async () => {
+  const stop = useCallback(async () => {
     if (!record || !cacheScopeKey) return;
     const workspaceId = input.workspaceId;
     try {
@@ -476,7 +479,7 @@ export function useChatRunTarget(input: {
     } catch (cause) {
       if (activeCacheScopeKey.current === cacheScopeKey) setError(String(cause));
     }
-  };
+  }, [record, cacheScopeKey, input.workspaceId]);
   const endSession = async () => {
     if (!record?.environmentId || busy || !cacheScopeKey) return;
     const workspaceId = input.workspaceId;
@@ -509,12 +512,15 @@ export function useChatRunTarget(input: {
       if (activeCacheScopeKey.current === cacheScopeKey) setError(String(cause));
     }
   };
-  const threadStatuses: Record<string, CodexSession['status']> = {};
-  for (const chat of records) {
-    if (!chat.sourceThreadId) continue;
-    threadStatuses[chat.sourceThreadId] =
-      chat.state === 'failed' ? 'error' : TERMINAL.has(chat.state) ? 'ready' : 'busy';
-  }
+  const threadStatuses = useMemo(() => {
+    const result: Record<string, CodexSession['status']> = {};
+    for (const chat of records) {
+      if (!chat.sourceThreadId) continue;
+      result[chat.sourceThreadId] =
+        chat.state === 'failed' ? 'error' : TERMINAL.has(chat.state) ? 'ready' : 'busy';
+    }
+    return result;
+  }, [records]);
   return {
     target,
     setTarget,

@@ -185,20 +185,20 @@ describe('overview findings', () => {
   });
 });
 
-describe('overview pull requests', () => {
-  const pullRequest = (overrides: Partial<CodeReviewPullRequest>): CodeReviewPullRequest => ({
-    id: '1',
-    title: 'Change',
-    provider: 'github',
-    state: 'open',
-    isDraft: false,
-    sourceBranch: 'feature',
-    targetBranch: 'main',
-    updatedAt: now,
-    url: 'https://github.com/acme/api/pull/1',
-    ...overrides,
-  });
+const pullRequest = (overrides: Partial<CodeReviewPullRequest>): CodeReviewPullRequest => ({
+  id: '1',
+  title: 'Change',
+  provider: 'github',
+  state: 'open',
+  isDraft: false,
+  sourceBranch: 'feature',
+  targetBranch: 'main',
+  updatedAt: now,
+  url: 'https://github.com/acme/api/pull/1',
+  ...overrides,
+});
 
+describe('overview pull requests', () => {
   it('distinguishes merged from closed-unmerged and skips repos without a hosted remote', async () => {
     mocks.listPullRequests.mockResolvedValue([
       pullRequest({ id: '1', state: 'merged' }),
@@ -392,4 +392,51 @@ describe('overview layouts', () => {
       'no longer exists',
     );
   });
+});
+
+it('coalesces equivalent module instances across windows and separates explicit refresh and scope', async () => {
+  let finish!: (rows: CodeReviewPullRequest[]) => void;
+  mocks.listPullRequests.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const first = loadOverviewModule(
+    request(backend, createOverviewModule('pull-requests', { id: 'window-a' })),
+  );
+  const second = loadOverviewModule(
+    request(backend, createOverviewModule('pull-requests', { id: 'window-b' })),
+  );
+  await Promise.resolve();
+  expect(mocks.listPullRequests).toHaveBeenCalledTimes(1);
+  finish([pullRequest({ id: 'shared' })]);
+  expect((await first).rows).toEqual((await second).rows);
+  await loadOverviewModule(request(backend, createOverviewModule('pull-requests')));
+  expect(mocks.listPullRequests).toHaveBeenCalledTimes(1);
+  await loadOverviewModule(request(backend, createOverviewModule('pull-requests'), true));
+  expect(mocks.listPullRequests).toHaveBeenCalledTimes(2);
+  await loadOverviewModule(
+    request({ kind: 'workspace', workspaceId: 'ws-web' }, createOverviewModule('pull-requests')),
+  );
+  expect(mocks.listPullRequests).toHaveBeenCalledTimes(3);
+});
+it('does not repopulate a cleared source cache from an older request', async () => {
+  let finish!: (rows: CodeReviewPullRequest[]) => void;
+  mocks.listPullRequests.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const old = loadOverviewModule(request(backend, createOverviewModule('pull-requests')));
+  await Promise.resolve();
+  clearOverviewCaches();
+  mocks.listPullRequests.mockResolvedValue([pullRequest({ id: 'new' })]);
+  const fresh = await loadOverviewModule(request(backend, createOverviewModule('pull-requests')));
+  finish([pullRequest({ id: 'old' })]);
+  await old;
+  const cached = await loadOverviewModule(request(backend, createOverviewModule('pull-requests')));
+  expect(cached.rows).toEqual(fresh.rows);
+  expect(mocks.listPullRequests).toHaveBeenCalledTimes(2);
 });

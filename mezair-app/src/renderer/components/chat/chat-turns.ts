@@ -102,6 +102,58 @@ export function composeChatTurns(
   );
 }
 
+/**
+ * One cache per mounted transcript. Immutable entry identities let settled turns
+ * keep their derived objects while only the live/edited turn is recomposed.
+ * Retain one history, replacing it on navigation rather than caching threads.
+ */
+export function createChatTurnComposer(): typeof composeChatTurns {
+  let previousEntries: ChatEntry[] = [];
+  let previousRanges: Array<{ start: number; end: number; active: boolean }> = [];
+  let previousTurns: ComposedChatTurn[] = [];
+
+  return (entries, options = {}) => {
+    const ranges: typeof previousRanges = [];
+    let start = 0;
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index];
+      if (index > start && entry.kind === 'user' && !isPendingChatUserEntry(entry)) {
+        ranges.push({ start, end: index, active: false });
+        start = index;
+      }
+    }
+    if (start < entries.length)
+      ranges.push({ start, end: entries.length, active: options.active === true });
+
+    const turns = ranges.map((range, turnIndex) => {
+      const previous = previousRanges[turnIndex];
+      if (
+        previous?.start === range.start &&
+        previous.end === range.end &&
+        previous.active === range.active
+      ) {
+        let unchanged = true;
+        for (let index = range.start; index < range.end; index += 1) {
+          if (entries[index] !== previousEntries[index]) {
+            unchanged = false;
+            break;
+          }
+        }
+        if (unchanged) return previousTurns[turnIndex];
+      }
+      const indexed = entries.slice(range.start, range.end).map((entry, offset) => ({
+        ...entry,
+        sourceIndex: range.start + offset,
+      })) as IndexedChatEntry[];
+      return composeTurn(indexed, range.active);
+    });
+    previousEntries = entries;
+    previousRanges = ranges;
+    previousTurns = turns;
+    return turns;
+  };
+}
+
 export type ApprovalAwareWorkSegment =
   | {
       kind: 'routine';

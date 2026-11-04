@@ -1,0 +1,805 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Mezair performance follow-up · 3 November 2026</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: #f5f4ee;
+        color: #202e25;
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+      main {
+        max-width: 1100px;
+        margin: auto;
+        padding: 56px 28px 80px;
+      }
+      a {
+        color: #1d633f;
+        text-underline-offset: 3px;
+      }
+      header {
+        border-bottom: 2px solid #203e2d;
+        padding-bottom: 34px;
+      }
+      h1 {
+        font-size: clamp(2.2rem, 5vw, 3.6rem);
+        line-height: 1.08;
+        letter-spacing: -0.045em;
+        max-width: 850px;
+        margin: 14px 0 22px;
+      }
+      h2 {
+        font-size: 1.6rem;
+        letter-spacing: -0.025em;
+        margin: 0 0 10px;
+      }
+      h3 {
+        font-size: 1.05rem;
+        margin: 0 0 6px;
+      }
+      .eyebrow,
+      .proof,
+      small {
+        font-size: 0.78rem;
+        letter-spacing: 0.04em;
+      }
+      .eyebrow {
+        text-transform: uppercase;
+        color: #4e6958;
+      }
+      .lede {
+        font-size: 1.12rem;
+        max-width: 830px;
+      }
+      nav {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        font-size: 0.88rem;
+        margin-top: 24px;
+      }
+      section {
+        padding: 36px 0;
+        border-bottom: 1px solid #cdd4c8;
+      }
+      p {
+        margin: 8px 0 14px;
+        max-width: 930px;
+      }
+      .note {
+        background: #e6ecdf;
+        border-left: 3px solid #567b58;
+        padding: 14px 18px;
+        font-size: 0.9rem;
+      }
+      .table-wrap {
+        overflow: auto;
+        margin: 22px 0;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 0.9rem;
+        white-space: nowrap;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 12px 16px 12px 0;
+        border-bottom: 1px solid #d7ddd1;
+        font-variant-numeric: tabular-nums;
+      }
+      th {
+        font-size: 0.77rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #526358;
+      }
+      td:last-child {
+        color: #23643f;
+      }
+      ol {
+        list-style: none;
+        margin: 24px 0 0;
+        padding: 0;
+      }
+      li {
+        display: grid;
+        grid-template-columns: 42px 1fr;
+        gap: 16px;
+        padding: 20px 0;
+        border-top: 1px solid #d7ddd1;
+      }
+      li p {
+        font-size: 0.94rem;
+      }
+      .index {
+        font-family: ui-monospace, monospace;
+        color: #54735e;
+      }
+      small {
+        display: inline-block;
+        background: #e0eadb;
+        border-radius: 3px;
+        padding: 2px 7px;
+        margin-left: 6px;
+        font-weight: 500;
+      }
+      .proof {
+        color: #42644c;
+      }
+      figure {
+        margin: 24px 0;
+        padding: 16px;
+        background: #eef0e8;
+      }
+      figcaption {
+        font-size: 0.85rem;
+        margin-bottom: 8px;
+      }
+      svg {
+        display: block;
+        width: 100%;
+        max-height: 300px;
+      }
+      svg text {
+        font: 12px system-ui;
+        fill: #526358;
+      }
+      .plots {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      details {
+        padding: 14px 0;
+      }
+      summary {
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 22px;
+        font-size: 0.9rem;
+      }
+      footer {
+        font-size: 0.85rem;
+        color: #5f6b62;
+        margin-top: 30px;
+      }
+      code {
+        font:
+          0.85em ui-monospace,
+          monospace;
+        overflow-wrap: anywhere;
+      }
+      strong {
+        font-weight: 650;
+      }
+      @media (max-width: 650px) {
+        main {
+          padding: 30px 18px;
+        }
+        section {
+          padding: 28px 0;
+        }
+        .plots {
+          grid-template-columns: 1fr;
+        }
+        li {
+          grid-template-columns: 28px 1fr;
+          gap: 10px;
+        }
+        small {
+          display: table;
+          margin: 6px 0;
+        }
+        th,
+        td {
+          padding-right: 20px;
+        }
+      }
+      @media print {
+        body {
+          background: white;
+        }
+        main {
+          padding: 0;
+        }
+        section,
+        li,
+        figure {
+          break-inside: avoid;
+        }
+        nav {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">Mezair Desktop / Performance follow-up / 3 November 2026</p>
+        <h1>Long chats use less memory.<br />Completed work stays quiet.</h1>
+        <p class="lede">
+          The ten follow-ups extend the first journey pass with bounded rendering and data reads,
+          stable Markdown, worker highlighting, isolated state channels and native validation.
+        </p>
+        <p>
+          <strong>82.6% less retained renderer heap</strong> ·
+          <strong>93.7% less cold mount work</strong> in the 1,000-turn comparison.
+        </p>
+        <nav>
+          <a href="#measurements">Chat measurements</a><a href="#steps">All ten steps</a
+          ><a href="#data">Data reads</a><a href="#native">Native profiles</a
+          ><a href="#validation">Validation</a>
+        </nav>
+      </header>
+      <section id="measurements">
+        <h2>1,000 turns. A bounded visible transcript.</h2>
+        <p>
+          Five alternating production-build pairs on Apple M3, Chrome/156.0.8078.80. Each
+          conversation has 30,000 operations, 60 streamed updates and 200 composition updates.
+          Reference: the first-pass commit <code>25800924</code>. Lower is better.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>First pass</th>
+                <th>Follow-up</th>
+                <th>Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Cold transcript mount</td>
+                <td>575.1 ms</td>
+                <td>36.5 ms</td>
+                <td>93.7% less</td>
+              </tr>
+              <tr>
+                <td>Median streamed update</td>
+                <td>4.2 ms</td>
+                <td>3.6 ms</td>
+                <td>14.3% less</td>
+              </tr>
+              <tr>
+                <td>P95 streamed update</td>
+                <td>5.9 ms</td>
+                <td>4.7 ms</td>
+                <td>20.3% less</td>
+              </tr>
+              <tr>
+                <td>Retained renderer heap</td>
+                <td>68.0 MiB</td>
+                <td>11.8 MiB</td>
+                <td>82.6% less</td>
+              </tr>
+              <tr>
+                <td>Mounted DOM elements</td>
+                <td>57,021</td>
+                <td>717</td>
+                <td>98.7% less</td>
+              </tr>
+              <tr>
+                <td>Geometry reads / scroll burst</td>
+                <td>11</td>
+                <td>5</td>
+                <td>54.5% less</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">
+          Renderer heap is retained JavaScript after forced GC. It excludes Electron main/GPU/native
+          memory. These results use synthetic data and measure local rendering work, rather than
+          provider token latency or field input latency.
+        </p>
+        <p>
+          The same paired gate also passes on the Ubuntu 24.04 CI runner. Its absolute timings are
+          slower than the M3; compare each platform with its own reference.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>CI metric</th>
+                <th>Reference</th>
+                <th>Candidate</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Cold mount</td>
+                <td>1,632.1 ms</td>
+                <td>128.4 ms</td>
+              </tr>
+              <tr>
+                <td>P95 update</td>
+                <td>20.7 ms</td>
+                <td>18.0 ms</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="links">
+          <a href="followup-before.json">Local reference samples</a
+          ><a href="followup-after.json">Local candidate samples</a
+          ><a href="ci-before.json">CI reference samples</a
+          ><a href="ci-after.json">CI candidate samples</a>
+        </div>
+      </section>
+      <section id="steps">
+        <h2>The ten follow-ups</h2>
+        <p>Each item names its implementation and the evidence used to check it.</p>
+        <ol>
+          <li>
+            <span class="index">01</span>
+            <div>
+              <h3>Native startup and memory <small>Verified</small></h3>
+              <p>
+                Three isolated cold launches per platform, welcome-screen readiness, 15-second idle
+                working set, and a complete 30-minute synthetic streaming soak. Whole-process-tree
+                samples and explicit device budgets are retained.
+              </p>
+              <p class="proof">Native evidence below</p>
+            </div>
+          </li>
+          <li>
+            <span class="index">02</span>
+            <div>
+              <h3>Window long histories <small>Verified</small></h3>
+              <p>
+                Variable-height virtualization above 80 turns; stable turn keys, selection/focus
+                pins, loaded-conversation search, surface/request reveal, saved anchors and
+                disclosure ownership. The 1,000-turn fixture retains fewer than 30 rows.
+              </p>
+              <p class="proof">717 DOM elements; cold mount and prepend checks</p>
+            </div>
+          </li>
+          <li>
+            <span class="index">03</span>
+            <div>
+              <h3>Stable streaming Markdown <small>Verified</small></h3>
+              <p>
+                Settled top-level blocks retain their DOM. The final two nodes stay mutable to
+                preserve partial-list semantics. Reference/footnote definitions use the
+                full-document parser. Character-prefix tests cover tables, lists and unfinished
+                fences.
+              </p>
+              <p class="proof">Long-code Markdown P95: 1.9 ms</p>
+            </div>
+          </li>
+          <li>
+            <span class="index">04</span>
+            <div>
+              <h3>Off-thread highlighting <small>Verified</small></h3>
+              <p>
+                One module worker, one running job, at most 32 requests, cancellation, deduplicated
+                grammar loads, 15-second timeout, 60-second idle disposal, and a 4 MB result cache.
+                Obsolete consumers receive safe plain text.
+              </p>
+              <p class="proof">Real browser and packaged Electron worker checks</p>
+            </div>
+          </li>
+          <li>
+            <span class="index">05</span>
+            <div>
+              <h3>Bounded data reads <small>Verified</small></h3>
+              <p>
+                History pages default to 200 messages with a stable snapshot cursor. Full-history
+                forks still load all ancestors. Factory pages default to 50 runs; SQLite computes
+                local rail counts without hydrating receipts. Hosted pages keep recipient encryption
+                and current access checks.
+              </p>
+              <p class="proof">32,000-message / 5,000-run service benchmark</p>
+            </div>
+          </li>
+          <li>
+            <span class="index">06</span>
+            <div>
+              <h3>Separate chat subscriptions <small>Verified</small></h3>
+              <p>
+                Composer commands, model preferences, artifacts and execution state have separate
+                memoized channels. Composer/rails stay memoized, and activity ignores token-only
+                changes. Unrelated consumers remain idle between real state transitions.
+              </p>
+              <p class="proof">Zero extra renders across 60 background updates</p>
+            </div>
+          </li>
+          <li>
+            <span class="index">07</span>
+            <div>
+              <h3>Shared dashboard reads <small>Verified</small></h3>
+              <p>
+                Main-process single-flight reads across modules/windows; four shared source permits;
+                bounded caches (128 entries and 4 MB per source family). Scope keys, explicit
+                refresh and stale-success fallback remain intact for retained cache entries;
+                eviction releases old rows.
+              </p>
+              <p class="proof">Cross-window, workspace, refresh and invalidation tests</p>
+            </div>
+          </li>
+          <li>
+            <span class="index">08</span>
+            <div>
+              <h3>Intent warming <small>Verified</small></h3>
+              <p>
+                Terminal, palette and later setup steps share their actual lazy import with
+                hover/focus warming. Hidden/save-data requests skip warming. Terminal recovery
+                precedes default shell creation; failed chunks stay contained.
+              </p>
+              <p class="proof">Real module import readiness measurements below</p>
+            </div>
+          </li>
+          <li>
+            <span class="index">09</span>
+            <div>
+              <h3>Rich owner cleanup <small>Verified</small></h3>
+              <p>
+                Folded previews release their bodies; stale comment reads cannot repopulate a closed
+                owner. Tests exercise document/sketch frames, blob URLs, observers, large diffs,
+                images, Mermaid, actual pop-outs and software WebGL contexts.
+              </p>
+              <p class="proof">
+                30 preview cycles, 12 rich cycles, 5 pop-outs, 3 released GL contexts
+              </p>
+            </div>
+          </li>
+          <li>
+            <span class="index">10</span>
+            <div>
+              <h3>CI performance budgets <small>Verified</small></h3>
+              <p>
+                OS-pinned Ubuntu 24.04 and Windows 2022 jobs use an immutable reference, paired
+                renderer samples and raw artifacts. Gates cover bundle growth, heap, DOM, streamed
+                P95 and native memory/startup.
+              </p>
+              <p class="proof">Paired renderer and both native gates pass</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+      <section id="data">
+        <h2>Read what the view needs.</h2>
+        <p>
+          The same SQLite database is read through the existing full-history functions and the new
+          bounded functions. Values below are medians of five alternating samples. The chat page
+          contains 200 messages; the factory page contains 50 runs.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Synthetic workload</th>
+                <th>Read + JSON encoding</th>
+                <th>Serialized payload</th>
+                <th>Sampled heap high-water growth</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Chat history · 32,000 messages</td>
+                <td>94.52 → 0.70 ms</td>
+                <td>31,373,371 → 196,037 B</td>
+                <td>105.0 MiB → 0.7 MiB</td>
+              </tr>
+              <tr>
+                <td>Factory history · 5,000 runs</td>
+                <td>67.37 → 2.60 ms</td>
+                <td>10,952,281 → 109,524 B</td>
+                <td>38.0 MiB → 0.4 MiB</td>
+              </tr>
+              <tr>
+                <td>Factory rail summary · 5,000 runs</td>
+                <td>67.37 → 13.99 ms</td>
+                <td>10,952,281 → 68 B</td>
+                <td>38.0 MiB → 0.0 MiB</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">
+          JSON size estimates IPC payload reduction; it is not an Electron wire capture. Timings
+          include SQLite, object mapping and JSON encoding, without provider calls or disk I/O. Heap
+          growth is sampled after reading and encoding, with GC before each sample; it is not a
+          continuous allocation trace. Shared factories on older servers retain a labelled 100-run
+          recent window. Remote summaries stay marked incomplete when more encrypted history
+          remains. Search covers loaded conversation pages; forks still fetch the full ancestry.
+        </p>
+        <a href="data-reads.json">Service benchmark and raw samples</a>
+      </section>
+      <section>
+        <h2>Pay for tools when intent appears.</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Module</th>
+                <th>First intent → import ready</th>
+                <th>Reusing warmed import</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Terminal</td>
+                <td>9.5 ms</td>
+                <td>0.0 ms</td>
+              </tr>
+              <tr>
+                <td>Palette</td>
+                <td>1.8 ms</td>
+                <td>0.0 ms</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          These values measure module readiness, not a terminal PTY’s first frame or an external
+          connection. Warming uses the same import promise as opening the tool. No tool or later
+          setup step is speculatively loaded at startup.
+        </p>
+        <h3>JavaScript trade-off</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Journey static closure</th>
+                <th>First pass</th>
+                <th>Follow-up</th>
+                <th>Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Initial</td>
+                <td>1,372.1 kB</td>
+                <td>1,387.0 kB</td>
+                <td>1.1% more</td>
+              </tr>
+              <tr>
+                <td>Chat</td>
+                <td>3,673.9 kB</td>
+                <td>3,484.0 kB</td>
+                <td>5.2% less</td>
+              </tr>
+              <tr>
+                <td>Settings</td>
+                <td>1,433.5 kB</td>
+                <td>1,448.4 kB</td>
+                <td>1.0% more</td>
+              </tr>
+              <tr>
+                <td>Factories</td>
+                <td>1,588.9 kB</td>
+                <td>1,607.6 kB</td>
+                <td>1.2% more</td>
+              </tr>
+              <tr>
+                <td>Dashboards</td>
+                <td>1,505.1 kB</td>
+                <td>1,520.0 kB</td>
+                <td>1.0% more</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The extra entry code supplies state channels and recoverable loading errors. The chat
+          closure shrinks because highlighting grammars move behind a worker. All journey closures
+          stay inside the 2% growth gate; the original first-run reduction remains substantial.
+        </p>
+        <a href="followup-bundles.json">Static import-closure evidence</a>
+      </section>
+      <section id="native">
+        <h2>Packaged app, real process tree.</h2>
+        <p>
+          Three fresh-profile cold process launches per platform, without clearing OS file caches or
+          rebooting. The interactive checkpoint waits for the welcome heading, role controls and two
+          real animation frames. Idle memory is sampled 15 seconds later. The candidate then streams
+          continuously for 30 minutes through the production renderer fixture.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Platform</th>
+                <th>Median welcome ready</th>
+                <th>Median idle process tree</th>
+                <th>Sampled stream peak</th>
+                <th>Late − early warm median</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Apple M3 · macOS arm64</td>
+                <td>1614 → 1194 ms</td>
+                <td>564.0 MiB → 576.5 MiB</td>
+                <td>598.6 MiB</td>
+                <td>-70.2 MiB</td>
+              </tr>
+              <tr>
+                <td>Windows Server 2022 · x64 VM</td>
+                <td>1795 → 1851 ms</td>
+                <td>427.3 MiB → 432.3 MiB</td>
+                <td>547.3 MiB</td>
+                <td>-13.2 MiB</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="plots">
+          <figure>
+            <figcaption>Apple M3 · macOS arm64 · 30.0 minutes · 1,279 stream cycles</figcaption>
+            <svg
+              viewBox="0 0 730 220"
+              role="img"
+              aria-label="Process-tree memory during the thirty minute stream"
+            >
+              <path d="M50 35V180H700" fill="none" stroke="#8d978d" />
+              <line x1="50" y1="110" x2="700" y2="110" stroke="#d9dfd6" />
+              <text x="5" y="42">1280</text>
+              <text x="10" y="114">640</text>
+              <text x="22" y="184">0</text>
+              <text x="5" y="20">MiB</text>
+              <text x="48" y="204">0</text>
+              <text x="365" y="204">15</text>
+              <text x="670" y="204">30 min</text>
+              <polyline
+                points="50.5,123.3 52.6,117.7 54.7,115.5 56.8,114.6 58.9,115.7 61.0,116.0 63.1,115.6 65.2,115.1 67.3,114.5 69.4,115.4 71.5,114.7 73.6,116.9 75.7,116.9 77.8,116.6 79.8,116.6 81.8,120.4 83.6,120.1 85.4,129.5 87.4,131.4 89.4,130.4 91.2,128.8 93.0,128.4 94.8,129.9 96.7,129.8 98.5,129.7 100.3,129.6 102.3,129.6 104.4,129.9 106.5,129.4 108.7,129.5 110.8,129.5 112.9,129.2 115.1,127.2 117.1,128.4 119.2,128.2 121.4,127.8 123.5,126.4 125.6,129.2 127.7,128.5 129.8,127.2 131.9,127.1 133.9,126.5 136.0,126.1 138.1,128.7 140.1,128.3 142.0,130.0 143.8,133.8 145.7,134.9 147.5,134.8 149.4,134.8 151.2,135.1 153.2,135.0 155.3,132.7 157.1,134.8 159.1,134.6 161.1,134.2 163.1,133.6 165.1,133.7 167.1,133.5 169.1,132.7 171.2,132.7 173.2,134.2 175.2,134.4 177.2,134.4 179.3,134.2 181.3,134.1 183.3,133.1 185.3,133.5 187.4,133.4 189.4,133.5 191.4,133.5 193.4,133.5 195.4,132.1 197.5,131.1 199.5,132.4 201.6,131.9 203.6,134.2 205.6,133.5 207.6,132.0 209.6,131.0 211.6,133.0 213.6,132.6 215.7,133.5 217.7,135.7 219.8,135.7 221.8,136.1 223.8,134.3 225.9,136.1 227.9,136.3 230.0,138.1 231.9,138.4 233.9,139.9 235.8,140.0 237.8,141.1 239.9,139.1 241.9,140.9 244.0,139.2 246.0,138.7 248.0,139.3 250.1,139.1 252.1,139.2 254.1,138.3 256.1,139.1 258.1,138.2 260.1,138.9 262.2,138.1 264.2,138.8 266.2,139.2 268.2,139.9 270.3,139.2 272.3,139.5 274.4,139.4 276.5,139.2 278.6,139.1 280.7,141.2 282.8,141.2 284.8,139.8 286.9,139.6 289.0,141.3 291.0,140.5 293.1,140.4 295.2,140.0 297.2,139.9 299.3,141.8 301.4,140.2 303.5,140.9 305.5,140.8 307.6,139.1 309.7,138.6 311.7,138.8 313.8,138.8 315.9,138.8 317.9,138.7 320.0,141.6 322.1,140.4 324.2,141.8 326.3,141.8 328.3,141.4 330.4,141.3 332.4,143.4 334.3,142.2 336.3,141.9 338.3,143.7 340.3,144.3 342.3,145.2 344.3,144.6 346.3,145.9 348.2,144.3 350.2,143.0 352.2,146.0 354.3,145.8 356.3,146.0 358.3,147.8 360.4,147.3 362.4,147.1 364.4,146.7 366.4,145.0 368.4,146.0 370.3,145.9 372.2,145.8 374.2,145.2 376.2,144.7 378.2,145.8 380.2,145.7 382.2,145.3 384.2,144.6 386.2,146.4 388.3,146.2 390.4,146.2 392.4,146.5 394.4,146.6 396.3,145.9 398.3,145.9 400.2,144.4 402.2,145.7 404.1,146.0 406.0,145.6 407.9,146.7 409.8,146.0 411.8,145.2 413.9,144.9 415.9,144.6 417.9,143.9 419.9,143.8 421.9,143.8 424.0,143.6 426.0,144.6 428.0,144.2 430.1,144.7 432.1,144.4 434.1,144.4 436.2,144.5 438.0,144.3 440.0,145.5 442.0,144.6 444.1,145.1 446.0,143.7 448.1,144.9 450.1,144.0 452.2,145.4 454.2,144.9 456.3,145.3 458.3,143.9 460.4,143.7 462.5,144.9 464.6,144.6 466.8,145.1 468.9,145.0 471.1,145.1 473.1,144.9 475.3,145.3 477.4,143.4 479.5,145.0 481.6,145.0 483.7,143.2 485.8,143.3 487.8,145.8 489.9,145.7 492.0,145.9 494.0,145.6 496.1,146.0 498.2,145.2 500.3,145.4 502.4,144.6 504.5,144.0 506.6,143.4 508.6,143.3 510.7,145.5 512.8,144.6 514.9,143.8 517.0,143.6 519.1,142.6 521.1,142.4 523.2,145.1 525.3,143.7 527.4,145.2 529.5,144.6 531.6,145.1 533.4,145.5 535.7,147.8 537.8,146.2 539.8,145.8 541.7,146.6 543.5,146.7 545.5,146.9 547.5,146.7 549.6,146.4 551.7,145.5 553.8,144.9 555.9,144.8 558.0,145.7 560.1,145.4 562.3,145.9 564.4,145.3 566.5,145.6 568.5,143.8 570.7,142.7 572.6,143.1 574.7,143.0 576.8,144.1 578.9,142.4 581.0,144.0 583.1,143.9 585.1,143.4 587.2,143.3 589.3,144.1 591.4,142.5 593.5,143.5 595.6,141.9 597.8,143.5 599.9,141.9 601.9,143.8 604.0,143.4 606.1,145.0 608.2,144.8 610.3,143.1 612.3,143.9 614.4,142.3 616.5,143.6 618.6,143.4 620.7,144.4 622.7,146.7 624.6,146.2 626.7,144.8 628.7,144.7 630.7,144.3 632.8,144.0 635.0,143.5 637.0,145.0 639.1,143.6 641.2,143.2 643.3,144.3 645.3,143.7 647.4,142.6 649.4,142.8 651.5,143.0 653.5,143.0 655.4,143.6 657.4,143.4 659.5,143.4 661.5,144.1 663.5,146.4 665.5,145.7 667.5,143.8 669.5,142.7 671.5,142.5 673.5,144.5 675.6,144.4 677.6,144.6 679.7,143.1 681.7,144.8 683.8,144.6 685.8,145.0 687.8,143.6 689.8,144.8 691.9,143.7 693.9,143.7 695.9,144.6 697.9,144.6 699.9,145.1"
+                fill="none"
+                stroke="#286944"
+                stroke-width="2"
+              />
+            </svg>
+          </figure>
+          <figure>
+            <figcaption>
+              Windows Server 2022 · x64 VM · 30.0 minutes · 1,298 stream cycles
+            </figcaption>
+            <svg
+              viewBox="0 0 730 220"
+              role="img"
+              aria-label="Process-tree memory during the thirty minute stream"
+            >
+              <path d="M50 35V180H700" fill="none" stroke="#8d978d" />
+              <line x1="50" y1="110" x2="700" y2="110" stroke="#d9dfd6" />
+              <text x="5" y="42">1280</text>
+              <text x="10" y="114">640</text>
+              <text x="22" y="184">0</text>
+              <text x="5" y="20">MiB</text>
+              <text x="48" y="204">0</text>
+              <text x="365" y="204">15</text>
+              <text x="670" y="204">30 min</text>
+              <polyline
+                points="50.5,125.7 52.6,120.8 54.6,120.1 56.6,121.9 58.6,121.9 60.6,121.1 62.6,121.6 64.6,124.8 66.6,125.0 68.6,126.4 70.6,126.5 72.6,128.0 74.6,128.2 76.6,129.1 78.6,129.4 80.6,128.6 82.6,130.0 84.6,129.3 86.6,130.4 88.6,130.0 90.6,130.9 92.6,130.5 94.6,132.0 96.6,131.3 98.6,132.1 100.6,132.3 102.6,133.3 104.6,134.3 106.6,135.5 108.7,136.6 110.6,138.4 112.7,140.0 114.7,141.1 116.7,142.7 118.7,144.3 120.7,145.1 122.7,146.6 124.7,147.2 126.7,149.5 128.7,148.5 130.7,150.7 132.7,150.7 134.7,152.2 136.8,152.6 138.8,153.7 140.8,153.5 142.8,152.3 144.8,152.4 146.8,152.4 148.9,155.0 150.9,154.9 152.9,155.6 154.8,154.3 156.8,156.0 158.8,154.6 160.8,156.5 162.8,155.1 164.8,157.1 166.8,156.3 168.8,155.0 170.8,156.6 172.8,156.8 174.8,157.7 176.8,158.2 178.9,157.8 180.9,156.2 182.9,157.5 184.9,157.5 186.9,156.3 188.9,156.3 190.9,156.2 192.9,158.1 194.9,158.1 196.9,159.0 199.0,159.4 200.9,158.3 202.9,156.8 205.0,159.3 207.0,158.9 209.0,158.8 211.0,157.1 213.0,157.0 215.0,158.0 217.0,157.1 219.0,158.9 221.0,157.5 223.0,159.9 225.0,159.5 227.0,159.7 229.0,159.5 231.0,158.0 233.0,157.4 235.1,157.2 237.1,159.9 239.1,159.7 241.1,158.7 243.1,157.6 245.1,160.0 247.1,158.4 249.1,159.7 251.1,159.8 253.1,160.1 255.1,159.6 257.1,158.8 259.1,157.8 261.1,157.3 263.1,159.6 265.1,159.1 267.1,157.5 269.1,157.3 271.1,160.2 273.1,159.2 275.1,157.8 277.1,157.3 279.1,157.5 281.1,157.4 283.1,157.3 285.1,157.2 287.1,157.1 289.1,159.0 291.1,157.3 293.1,159.1 295.1,159.1 297.1,159.7 299.1,159.6 301.1,159.3 303.1,159.3 305.1,159.2 307.1,159.6 309.1,159.2 311.1,158.1 313.1,157.4 315.1,159.8 317.1,158.9 319.1,157.3 321.1,159.3 323.0,159.1 325.0,157.4 327.0,157.4 329.0,159.7 331.0,158.5 333.0,159.5 335.1,159.7 337.0,158.4 339.0,157.7 341.0,157.2 343.1,159.7 345.1,159.6 347.1,159.5 349.1,159.2 351.1,159.4 353.0,157.6 355.1,159.8 357.0,158.5 359.0,159.8 361.0,159.3 363.0,158.6 365.0,157.5 367.0,157.8 369.1,158.8 371.1,158.7 373.1,159.2 375.1,157.6 377.1,160.0 379.1,159.1 381.1,157.7 383.1,159.7 385.1,158.5 387.1,160.0 389.1,159.6 391.1,158.6 393.1,157.8 395.1,160.8 397.1,160.2 399.0,159.0 401.0,157.9 403.0,158.0 405.0,159.0 407.0,157.9 409.0,159.9 411.0,157.9 413.0,159.7 415.0,159.8 417.0,158.0 419.0,157.8 421.0,158.0 423.0,159.8 425.0,159.8 427.0,159.6 429.0,157.8 431.0,159.8 433.0,159.2 435.0,159.5 437.0,159.2 439.1,160.5 441.1,159.9 443.1,159.0 445.1,157.9 447.1,157.9 449.1,157.9 451.1,157.7 453.2,160.8 455.2,160.1 457.2,160.1 459.2,158.5 461.2,160.5 463.2,159.1 465.2,157.8 467.2,159.9 469.2,160.1 471.2,159.4 473.2,158.8 475.2,157.6 477.2,157.3 479.2,158.8 481.2,157.5 483.2,160.0 485.2,159.9 487.2,158.7 489.2,157.5 491.2,157.6 493.2,158.6 495.2,157.6 497.2,159.0 499.2,157.4 501.2,159.9 503.2,159.3 505.2,159.3 507.2,158.9 509.2,157.4 511.2,159.7 513.2,159.5 515.2,158.1 517.2,157.6 519.2,159.6 521.2,160.0 523.2,160.0 525.2,159.6 527.2,159.2 529.2,159.5 531.2,157.9 533.3,160.1 535.3,158.8 537.3,159.8 539.2,159.3 541.2,157.6 543.2,157.8 545.3,160.0 547.2,158.6 549.3,158.1 551.2,158.3 553.3,157.6 555.3,159.6 557.2,159.1 559.3,157.5 561.3,157.8 563.3,159.0 565.3,157.7 567.3,157.7 569.2,158.2 571.2,157.5 573.3,160.0 575.3,159.9 577.3,159.2 579.3,157.9 581.3,160.5 583.3,160.3 585.3,160.1 587.3,159.0 589.3,157.1 591.3,159.5 593.4,157.8 595.4,159.8 597.5,159.3 599.5,160.1 601.5,158.7 603.6,159.7 605.6,159.7 607.6,159.9 609.6,159.5 611.7,157.7 613.7,159.9 615.7,158.6 617.7,157.8 619.7,157.6 621.7,158.5 623.7,157.8 625.7,160.0 627.7,158.9 629.7,160.5 631.7,159.3 633.7,159.5 635.7,159.8 637.7,159.1 639.7,157.8 641.7,157.6 643.7,160.4 645.7,159.9 647.7,160.1 649.7,158.8 651.7,160.1 653.7,159.6 655.7,158.8 657.7,157.7 659.7,157.6 661.7,159.1 663.7,159.0 665.7,159.5 667.7,159.2 669.7,159.9 671.7,159.5 673.7,158.1 675.7,157.5 677.7,157.7 679.7,158.9 681.7,157.4 683.7,159.6 685.7,158.0 687.7,159.7 689.7,159.2 691.7,159.8 693.8,159.5 695.8,160.3 697.8,159.5 699.8,158.6"
+                fill="none"
+                stroke="#286944"
+                stroke-width="2"
+              />
+            </svg>
+          </figure>
+        </div>
+        <p class="note">
+          The memory soak uses profiling-only sleep prevention, disabled background throttling and
+          16 ms timer-paced callbacks so screen sleep cannot stop the workload. It is not a native
+          frame-latency measurement. The native fixture uses 100 turns and 60 token updates per
+          cycle; the separate browser test covers 1,000 turns. Native captures precede the final
+          failure/recovery fixes; exact source revisions are recorded in the JSON. Final renderer
+          and regression checks cover those fixes. Working-set/RSS sums can count shared pages more
+          than once, and change with OS memory pressure. Compare each device with its own reference.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Device / runner</th>
+                <th>Published target</th>
+                <th>Regression gate</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Apple M3 / macOS arm64</td>
+                <td>Welcome median ≤ 3 s; renderer P95 < 8 ms</td>
+                <td>Startup ≤ 1.20× reference; idle ≤ 1.15×; stream peak ≤ 1.25 GiB</td>
+              </tr>
+              <tr>
+                <td>Windows 2022 / x64 CI VM</td>
+                <td>Welcome median ≤ 8 s; complete 30-minute soak</td>
+                <td>Startup ≤ 1.20× reference; idle ≤ 1.15×; stream peak ≤ 1.25 GiB</td>
+              </tr>
+              <tr>
+                <td>Both native profiles</td>
+                <td>No persistent working-set climb after warm-up</td>
+                <td>Late-quarter median − early-quarter median ≤ 128 MiB, after minute 5</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="links">
+          <a href="native-macos-before.json">macOS reference</a
+          ><a href="native-macos-after.json">macOS candidate</a
+          ><a href="native-windows-before.json">Windows reference</a
+          ><a href="native-windows-after.json">Windows candidate</a>
+        </div>
+      </section>
+      <section id="validation">
+        <h2>Verification and guardrails</h2>
+        <p>
+          Desktop: <strong>3,453 tests passed, 12 skipped</strong>; renderer/main typechecks, lint
+          and production build pass. All <strong>19 hosted factory tests</strong> pass, including
+          cursor ties, page bounds, recipient-only snapshots and membership revocation. The backend
+          typecheck passes.
+        </p>
+        <p>
+          Browser checks cover cold mount, selection/focus retention, disclosure restoration,
+          prepend anchors, loaded search, pinned scrolling, dashboard races, Markdown semantics,
+          real worker output, zero unrelated channel renders and rich-owner cleanup. The
+          settings-editor probe uses production state channels; it is not a full Settings-route
+          end-to-end test. Software WebGL checks verify context release, rather than native GPU
+          memory.
+        </p>
+        <p>
+          Follow-up on 4 November: all 508 backend tests pass. The enrollment fixture now clears the
+          shared test Durable Object's prior cooldown timestamp before using its independent fake
+          clock. Attempts within each fixture still exercise the real provider throttle and
+          device-cap enforcement. Production authentication and rate limits are unchanged. No
+          provider execution, publication or production deployment was performed.
+        </p>
+        <details>
+          <summary>CI budgets and reproducibility</summary>
+          <p>
+            The Ubuntu job builds the immutable reference and candidate, records static closures,
+            alternates five renderer pairs in one browser, and retains the raw JSON. Gates allow at
+            most 2% bundle growth, 10% retained-heap growth and 15% streamed-P95 or mount growth;
+            the 1,000-turn DOM must stay below 2,000 elements and scroll geometry below 30 reads per
+            burst. The Windows 2022 job packages both revisions and captures three cold launches
+            plus the candidate’s 30-minute soak.
+          </p>
+          <p>
+            Node is pinned to 22.16.0 in CI; Electron comes from the frozen lockfile. Hosted OS
+            images and the installed Chrome patch can change; the actual versions are captured in
+            each artifact, and each comparison uses one runner/browser. Update the immutable
+            reference deliberately when adopting new budgets.
+          </p>
+          <p>
+            See <a href="README.md">README.md</a> for commands, source revisions and the final
+            Actions run. <a href="rich-checks.json">Rich browser checks</a> retain import timings
+            and ownership assertions.
+          </p>
+        </details>
+        <div class="links">
+          <a href="https://github.com/anthonyhumphreys/mezair/pull/100">Pull request #100</a
+          ><a href="journeys.html">Original 100-turn journey report</a
+          ><a href="https://www.electronjs.org/docs/latest/api/power-save-blocker"
+            >Electron profiling API reference</a
+          >
+        </div>
+      </section>
+      <footer>
+        Local synthetic fixtures; no customer conversation content. Measurements are scoped to the
+        stated workload and device.
+      </footer>
+    </main>
+  </body>
+</html>

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, type ReactNode } from 'react';
+import { memo, useState, useRef, useCallback, useEffect, type ReactNode } from 'react';
 import {
   AlertCircle,
   ChevronDown,
@@ -193,7 +193,7 @@ interface ChatInputProps {
   showSyntaxHint?: boolean;
 }
 
-export function ChatInput({
+function ChatInputImpl({
   onSend,
   onStop,
   disabled,
@@ -1791,6 +1791,8 @@ export function ChatInput({
     </ChatComposerFrame>
   );
 }
+
+export const ChatInput = memo(ChatInputImpl);
 
 function loadDraft(draftKey: string | undefined): string {
   if (!draftKey) return '';

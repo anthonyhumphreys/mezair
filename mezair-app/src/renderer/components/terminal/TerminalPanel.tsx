@@ -26,6 +26,9 @@ export function TerminalPanel({ isOpen }: TerminalPanelProps) {
   const [workspaceStates, setWorkspaceStates] = useState<Record<string, WorkspaceTerminalState>>(
     {},
   );
+  const [recovered, setRecovered] = useState<{ workspaceId: string; repos: typeof repos } | null>(
+    null,
+  );
   const [terminalIds, setTerminalIds] = useState<Record<string, Record<string, string>>>({});
   const [height, setHeight] = useState(() => {
     const stored =
@@ -90,6 +93,9 @@ export function TerminalPanel({ isOpen }: TerminalPanelProps) {
           };
         });
       })
+      .then(() => {
+        if (!cancelled) setRecovered({ workspaceId, repos: workspaceRepos });
+      })
       .catch(console.error);
 
     return () => {
@@ -100,10 +106,24 @@ export function TerminalPanel({ isOpen }: TerminalPanelProps) {
   // Open the first repository on first use. Closing a terminal leaves its tab
   // selected but stopped, so this does not immediately resurrect it.
   useEffect(() => {
-    if (isOpen && !workspaceState.activeRepoId && firstRepoId) {
+    if (
+      recovered?.workspaceId === workspaceId &&
+      recovered.repos === workspaceRepos &&
+      isOpen &&
+      !workspaceState.activeRepoId &&
+      firstRepoId
+    ) {
       updateWorkspaceState((current) => selectTerminalRepo(current, firstRepoId));
     }
-  }, [isOpen, workspaceState.activeRepoId, firstRepoId, updateWorkspaceState]);
+  }, [
+    recovered,
+    workspaceId,
+    workspaceRepos,
+    isOpen,
+    workspaceState.activeRepoId,
+    firstRepoId,
+    updateWorkspaceState,
+  ]);
 
   const handleSelectTab = useCallback(
     (repoId: string) => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import {
   Archive,
   ArchiveRestore,
@@ -57,7 +57,7 @@ interface ChatThreadRailProps {
 
 type ThreadDisplayState = 'approval' | 'input' | 'failed' | 'complete' | 'working' | 'idle';
 
-export function ChatThreadRail({
+function ChatThreadRailImpl({
   personas,
   repos,
   threads,
@@ -563,3 +563,5 @@ export function getThreadActionVisibilityClass(editing = false): string {
   // the full rail width and hovering never rewraps thread content.
   return `${toolbar} pointer-events-none absolute right-1.5 top-1.5 z-10 shadow-sm opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100`;
 }
+
+export const ChatThreadRail = memo(ChatThreadRailImpl);

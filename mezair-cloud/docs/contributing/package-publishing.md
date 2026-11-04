@@ -7,7 +7,7 @@ Mezair Cloud is a workspace, not a bag of public npm packages.
 The `@mezairstack` npm scope and `mezair.dev` URLs are the intended release
 identities. This source update does not register the domain, publish packages,
 rename the hosted repository, or provision production infrastructure. Configure
-the scope and trusted publishing for `anthonyhumphreys/mezair-stack`, publish and
+the scope and trusted publishing for `anthonyhumphreys/mezair`, publish and
 verify the new CLI package, and activate the domain before advertising public
 installation commands as available.
 

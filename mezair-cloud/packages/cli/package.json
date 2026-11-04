@@ -1,12 +1,12 @@
 {
   "name": "@mezairstack/cloud-cli",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "license": "MIT",
   "description": "Command-line tools for Mezair Cloud Cells, local runtime, inspection, and preview deployment.",
   "private": false,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/anthonyhumphreys/mezair-stack.git"
+    "url": "git+https://github.com/anthonyhumphreys/mezair.git"
   },
   "type": "module",
   "bin": {

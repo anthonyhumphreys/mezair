@@ -1,6 +1,6 @@
 {
   "name": "mezair",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "description": "Mezair developer mission control",
   "main": "out/main/index.js",
   "type": "module",
@@ -50,7 +50,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.276",
     "@aws-sdk/client-lambda-microvms": "3.1077.0",
-    "@cursor/sdk": "1.0.35",
+    "@cursor/sdk": "1.0.40",
     "@mezairstack/cloud-cli": "file:../mezair-cloud/packages/cli",
     "@mezairstack/registry-cli": "file:../mezair-registry/apps/cli",
     "@sentry/electron": "^7.20.0",
@@ -85,7 +85,7 @@
       "brace-expansion@5": "5.0.12",
       "fast-uri": "3.1.9",
       "flatted": "3.4.2",
-      "ip-address": "10.1.1",
+      "ip-address": "10.7.4",
       "lodash": "4.18.0",
       "lodash-es": "4.18.0",
       "picomatch@2": "2.3.2",

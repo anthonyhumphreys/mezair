@@ -40,6 +40,7 @@ export async function checkAdvanced() {
   document.body.append(host);
   const root = createRoot(host);
   const passed: string[] = [];
+  let busy = true;
   let entries: ChatEntry[] = Array.from(
     { length: 1000 },
     (_, n) =>
@@ -83,9 +84,9 @@ export async function checkAdvanced() {
           hasGovernanceDocs={false}
           isDbExpertPersona={false}
           onSuggestionClick={noop}
-          turns={compose(entries, { active: true })}
+          turns={compose(entries, { active: busy })}
           activeThreadId="virtual-check"
-          busy
+          busy={busy}
           isBaPersona={false}
           personaName="Coder"
           personaColour="#85b788"
@@ -109,6 +110,62 @@ export async function checkAdvanced() {
         </MemoryRouter>,
       ),
     );
+  const checkLatestStability = async (container: HTMLElement, label: string) => {
+    container.scrollTop = container.scrollHeight;
+    await settle(12);
+    const overscroll = getComputedStyle(container).overscrollBehaviorY;
+    const scrollTop = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!;
+    let writes = 0;
+    Object.defineProperty(container, 'scrollTop', {
+      configurable: true,
+      get() {
+        return scrollTop.get!.call(this);
+      },
+      set(value: number) {
+        writes++;
+        scrollTop.set!.call(this, value);
+      },
+    });
+    try {
+      // Transcript updates can retain the same rendered height. Writing the
+      // existing offset still interrupts native trackpad momentum on macOS.
+      const row = [...container.querySelectorAll<HTMLElement>('[data-chat-turn-key]')].at(-1)!;
+      const bottom = row.getBoundingClientRect().bottom;
+      for (let tick = 0; tick < 30; tick++) {
+        entries = [...entries];
+        render();
+        await frame();
+        check(
+          container.querySelectorAll('[data-chat-turn-window]').length === 1,
+          `${label}: a transcript update must retain exactly one turn list`,
+        );
+        check(
+          Math.abs(row.getBoundingClientRect().bottom - bottom) <= 1,
+          `${label}: the latest message must stay still across unchanged-height updates`,
+        );
+      }
+      check(
+        writes === 0 && overscroll === 'none',
+        `${label}: unchanged layout rewrote scrollTop ${writes} times; overscroll is ${overscroll}`,
+      );
+    } finally {
+      Reflect.deleteProperty(container, 'scrollTop');
+    }
+    const last = entries.at(-1) as Extract<ChatEntry, { kind: 'assistant' }>;
+    entries = [
+      ...entries.slice(0, -1),
+      { ...last, content: `${last.content}\n\n${'A growing response.\n\n'.repeat(10)}` },
+    ];
+    render();
+    await settle(12);
+    check(
+      Math.abs(container.scrollHeight - container.clientHeight - container.scrollTop) <= 1,
+      `${label}: a response that grows must still follow latest`,
+    );
+    passed.push(
+      `${label}: stable latest without redundant scroll writes; growing response follows`,
+    );
+  };
   try {
     render();
     await settle();
@@ -119,6 +176,7 @@ export async function checkAdvanced() {
       `1,000 turns must retain 1–29 mounted rows; got ${host.querySelectorAll('[data-chat-turn-key]').length}; viewport ${container.clientHeight}; list ${host.querySelector<HTMLElement>('[data-chat-turn-window]')?.style.height}; scroll ${container.scrollTop}/${container.scrollHeight}`,
     );
     passed.push('1,000 variable-height turns windowed');
+    await checkLatestStability(container, 'virtualized chat');
     const row = host.querySelector<HTMLElement>('[data-chat-turn-key]')!;
     const key = row.dataset.chatTurnKey!;
     const expand = row.querySelector<HTMLButtonElement>('[aria-label^="Expand processing"]')!;
@@ -193,6 +251,18 @@ export async function checkAdvanced() {
       'Find must reveal offscreen matches',
     );
     passed.push('find reveals loaded offscreen turns');
+    busy = false;
+    entries = [
+      { kind: 'user', id: 'short-user', content: 'A short conversation' },
+      {
+        kind: 'assistant',
+        id: 'short-answer',
+        content: 'A paragraph in the latest response.\n\n'.repeat(50),
+      },
+    ];
+    render();
+    await settle(12);
+    await checkLatestStability(container, 'short settled chat');
     root.render(null);
     await settle();
     let loads = 0;

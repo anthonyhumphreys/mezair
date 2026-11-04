@@ -88,6 +88,7 @@ The memory workload uses profiling-only throttling overrides, display-sleep prev
 
 ## Verification and budgets
 
+- 4 November scroll-to-latest regression: the turn list and delegated-work panel shared the active thread ID as their sibling React key. Re-rendering a saved conversation could retain an orphaned list and inflate the scrollable height. Distinct `turns:` and `delegations:` keys prevent that collision. The transcript also disables native edge bounce and skips bottom-position writes when already within one pixel of the bottom. Browser checks now re-render a saved 1,000-turn chat and a short settled chat 30 times each, asserting exactly one list, a stable latest-message position, zero redundant scroll writes, and continued following when the response grows. The same check fails against released commit `894f4902236692f02f1cdff302f40906c9c91903` because it mounts a duplicate list.
 - Desktop: 3,453 tests passed, 12 skipped; both TypeScript projects, lint, production build and desktop CI pass.
 - Hosted factory tests: 19 passed, including cursor ties, bounds and access revocation; backend TypeScript passes locally.
 - Browser checks cover virtualized anchors, focus/selection, loaded search, disclosure persistence, Markdown, highlighting, dashboard races and resource ownership. A settings-editor probe uses production chat channels; this is not a full Settings-route test. Intent timings cover module readiness, rather than PTY first-frame latency. Software WebGL verifies context release, rather than native GPU memory.

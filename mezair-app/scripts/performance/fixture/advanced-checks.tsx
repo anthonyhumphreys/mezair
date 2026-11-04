@@ -151,13 +151,25 @@ export async function checkAdvanced() {
     } finally {
       Reflect.deleteProperty(container, 'scrollTop');
     }
+    const latestRow = () =>
+      [...container.querySelectorAll<HTMLElement>('[data-chat-turn-key]')].at(-1)!;
+    const previousHeight = latestRow().getBoundingClientRect().height;
+    const growthMarker = 'Scroll stability response growth';
     const last = entries.at(-1) as Extract<ChatEntry, { kind: 'assistant' }>;
     entries = [
       ...entries.slice(0, -1),
-      { ...last, content: `${last.content}\n\n${'A growing response.\n\n'.repeat(10)}` },
+      {
+        ...last,
+        content: `${last.content}\n\n${growthMarker}\n\n${'A growing response.\n\n'.repeat(10)}`,
+      },
     ];
     render();
     await settle(12);
+    check(
+      latestRow().textContent?.includes(growthMarker) &&
+        latestRow().getBoundingClientRect().height > previousHeight,
+      `${label}: the appended response must render and grow before checking its scroll position`,
+    );
     check(
       Math.abs(container.scrollHeight - container.clientHeight - container.scrollTop) <= 1,
       `${label}: a response that grows must still follow latest`,

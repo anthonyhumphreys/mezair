@@ -113,5 +113,16 @@ jobs:
               --title "Mezair ${GITHUB_REF_NAME}" --generate-notes \
               || gh release view "${GITHUB_REF_NAME}" >/dev/null
           fi
+          # GitHub replaces spaces with dots in uploaded asset names. The Actions
+          # artifact above keeps its original manifest; match the public downloads here.
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const manifest = 'dist/SHA256SUMS-windows-x64';
+          const checksums = readFileSync(manifest, 'utf8').replace(
+            /^([a-f0-9]{64} \*)(.+)$/gm,
+            (_, prefix, filename) => prefix + filename.replaceAll(' ', '.')
+          );
+          writeFileSync(manifest, checksums);
+          NODE
           gh release upload "${GITHUB_REF_NAME}" \
             dist/*.exe dist/*.blockmap dist/latest.yml dist/SHA256SUMS-windows-x64 --clobber

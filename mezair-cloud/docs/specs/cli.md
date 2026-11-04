@@ -15,10 +15,10 @@ Creates a new Mezair Cell project.
 ```sh
 mezair-cloud new notes
 mezair-cloud new native-notes --client expo-router
-pnpm dlx @mezairstack/cloud-cli new demo
+pnpm dlx @mezair/cloud-cli new demo
 ```
 
-The published package is `@mezairstack/cloud-cli`; the binary it exposes is
+The published package is `@mezair/cloud-cli`; the binary it exposes is
 `mezair-cloud`.
 
 Options:
@@ -247,7 +247,7 @@ Initial checks include:
 
 - Node and pnpm availability/version requirements;
 - built CLI entrypoint;
-- package publishing boundary: `@mezairstack/cloud-cli` public, internal
+- package publishing boundary: `@mezair/cloud-cli` public, internal
   workspace packages private, runtime/client tracked as candidate public APIs,
   and no public `workspace:` dependencies;
 - Cell config and build manifest;

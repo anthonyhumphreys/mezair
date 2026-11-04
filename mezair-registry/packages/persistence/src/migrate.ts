@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
-import { resolveDatabaseUrl } from "@mezairstack/config";
+import { resolveDatabaseUrl } from "@mezair/config";
 import * as schema from "./schema.js";
 
 const databaseUrl = resolveDatabaseUrl({

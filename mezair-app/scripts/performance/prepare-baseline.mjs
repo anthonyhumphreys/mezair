@@ -17,6 +17,29 @@ symlinkSync(
   join(target, 'mezair-app/node_modules'),
   process.platform === 'win32' ? 'junction' : 'dir',
 );
+// The reference shares the installed toolchain. Match local CLI dependency names
+// after a scope change so packaging can resolve those same installed packages.
+const manifestPath = join(target, 'mezair-app/package.json');
+const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+const installedDependencies = Object.entries(
+  JSON.parse(readFileSync('package.json', 'utf8')).dependencies,
+);
+for (const [name, specifier] of Object.entries(manifest.dependencies)) {
+  if (!specifier.startsWith('file:')) continue;
+  const matches = installedDependencies.filter(
+    ([, installedSpecifier]) => installedSpecifier === specifier,
+  );
+  if (matches.length !== 1)
+    throw Error(`Expected one installed local dependency for ${specifier}.`);
+  const [installedName] = matches[0];
+  if (installedName !== name) {
+    if (manifest.dependencies[installedName])
+      throw Error(`Duplicate local dependency ${installedName}.`);
+    delete manifest.dependencies[name];
+    manifest.dependencies[installedName] = specifier;
+  }
+}
+writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 cpSync('scripts/performance', join(target, 'mezair-app/scripts/performance'), { recursive: true });
 const fixture = join(target, 'mezair-app/scripts/performance/fixture/main.tsx');
 writeFileSync(

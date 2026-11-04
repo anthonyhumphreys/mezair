@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client, type S3ClientConfig } from "@aws-sdk/client-s3";
-import type { MezairConfig } from "@mezairstack/config";
+import type { MezairConfig } from "@mezair/config";
 
 export interface ObjectStore {
   healthCheck?(): Promise<void>;

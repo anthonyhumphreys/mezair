@@ -1,12 +1,12 @@
 {
-  "name": "@mezairstack/cli",
-  "version": "0.2.3",
+  "name": "@mezair/cli",
+  "version": "0.2.4",
   "license": "MIT",
   "description": "Umbrella command dispatcher for Mezair product CLIs.",
   "private": false,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/anthonyhumphreys/mezair-stack.git"
+    "url": "git+https://github.com/anthonyhumphreys/mezair.git"
   },
   "type": "module",
   "bin": {

@@ -62,8 +62,8 @@ Mezair is the brain; your coding agents are the hands.
 
 ```bash
 # Clone the monorepo
-git clone https://github.com/anthonyhumphreys/mezair-stack.git
-cd mezair-stack/mezair-app
+git clone https://github.com/anthonyhumphreys/mezair.git
+cd mezair/mezair-app
 
 # Build the local Cloud and Registry CLI packages first
 node ../.github/scripts/prepare-desktop-clis.mjs

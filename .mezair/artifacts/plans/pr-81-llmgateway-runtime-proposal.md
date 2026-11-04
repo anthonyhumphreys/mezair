@@ -8,9 +8,9 @@ Mezair → local Codex process → LLMGateway → selected model
 
 Codex supplies the coding engine: running the agent loop, editing files, executing commands, and exchanging session and approval events with Mezair. LLMGateway supplies model access and billing. The model does not have to be an OpenAI model.
 
-The PR launches `codex app-server` with process-specific provider configuration and passes the gateway key through the child process environment. It does not write those settings into the user's global Codex configuration. See [session startup](https://github.com/anthonyhumphreys/mezair-stack/blob/071f867/mezair-app/src/main/services/codex-session.service.ts#L160) and [provider configuration](https://github.com/anthonyhumphreys/mezair-stack/blob/071f867/mezair-app/src/shared/llm-gateway.ts#L5).
+The PR launches `codex app-server` with process-specific provider configuration and passes the gateway key through the child process environment. It does not write those settings into the user's global Codex configuration. See [session startup](https://github.com/anthonyhumphreys/mezair/blob/071f867/mezair-app/src/main/services/codex-session.service.ts#L160) and [provider configuration](https://github.com/anthonyhumphreys/mezair/blob/071f867/mezair-app/src/shared/llm-gateway.ts#L5).
 
-App-level LLM calls already use the gateway directly through the OpenAI-compatible SDK, without launching Codex. That distinction should stay. See [LLM client](https://github.com/anthonyhumphreys/mezair-stack/blob/071f867/mezair-app/src/main/services/llm.service.ts#L196).
+App-level LLM calls already use the gateway directly through the OpenAI-compatible SDK, without launching Codex. That distinction should stay. See [LLM client](https://github.com/anthonyhumphreys/mezair/blob/071f867/mezair-app/src/main/services/llm.service.ts#L196).
 
 ## Does Codex need an OpenAI login?
 
@@ -20,11 +20,11 @@ LLMGateway also documents a successful Codex file-editing and test-running examp
 
 ## What needs fixing before release
 
-1. **Installation is currently the user's problem.** Chat checks for a system Codex installation. If missing, the shared instructions tell users to sign in with ChatGPT, which is wrong for this route. See [installation instructions](https://github.com/anthonyhumphreys/mezair-stack/blob/071f867/mezair-app/src/main/services/codex-bridge.service.ts#L276).
+1. **Installation is currently the user's problem.** Chat checks for a system Codex installation. If missing, the shared instructions tell users to sign in with ChatGPT, which is wrong for this route. See [installation instructions](https://github.com/anthonyhumphreys/mezair/blob/071f867/mezair-app/src/main/services/codex-bridge.service.ts#L276).
 
-2. **“Connected” does not mean ready to code.** Gateway status currently checks whether a key is stored and downloads model metadata. It does not validate the key or establish runtime readiness. See [connection status](https://github.com/anthonyhumphreys/mezair-stack/blob/071f867/mezair-app/src/main/services/llm-gateway.service.ts#L123).
+2. **“Connected” does not mean ready to code.** Gateway status currently checks whether a key is stored and downloads model metadata. It does not validate the key or establish runtime readiness. See [connection status](https://github.com/anthonyhumphreys/mezair/blob/071f867/mezair-app/src/main/services/llm-gateway.service.ts#L123).
 
-3. **The model picker promises more than has been verified.** Filtering models by `tool_call` alone does not prove Codex compatibility. Reasoning settings, native web search, context limits, and multi-turn tool exchanges need matching to the chosen runtime. Workflow execution still resolves reasoning through Codex defaults without passing gateway model metadata. See [model filtering](https://github.com/anthonyhumphreys/mezair-stack/blob/071f867/mezair-app/src/main/services/llm-gateway.service.ts#L74) and [workflow turn configuration](https://github.com/anthonyhumphreys/mezair-stack/blob/071f867/mezair-app/src/main/services/workflow.service.ts#L490).
+3. **The model picker promises more than has been verified.** Filtering models by `tool_call` alone does not prove Codex compatibility. Reasoning settings, native web search, context limits, and multi-turn tool exchanges need matching to the chosen runtime. Workflow execution still resolves reasoning through Codex defaults without passing gateway model metadata. See [model filtering](https://github.com/anthonyhumphreys/mezair/blob/071f867/mezair-app/src/main/services/llm-gateway.service.ts#L74) and [workflow turn configuration](https://github.com/anthonyhumphreys/mezair/blob/071f867/mezair-app/src/main/services/workflow.service.ts#L490).
 
 ## Proposed implementation
 

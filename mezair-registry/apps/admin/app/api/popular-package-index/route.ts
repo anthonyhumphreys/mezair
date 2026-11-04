@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { loadActivePopularPackageIndex } from "@mezairstack/name-squatting";
+import { loadActivePopularPackageIndex } from "@mezair/name-squatting";
 import { config, getObjectStore } from "@/lib/admin-data";
 import { requireApiAdmin, uploadPopularPackageIndex } from "@/lib/admin-api";
 

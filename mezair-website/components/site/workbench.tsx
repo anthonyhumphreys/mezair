@@ -183,7 +183,7 @@ function Stage({ step, tick, live }: { step: number; tick: number; live: boolean
           <span />
           <span />
         </span>
-        <span className="wb-title">mezair-stack</span>
+        <span className="wb-title">mezair</span>
         <span className="wb-branch">
           <GitBranch className="size-3" />
           {step >= 3 ? "fix/retry-limit" : "main"}
@@ -225,7 +225,7 @@ function Stage({ step, tick, live }: { step: number; tick: number; live: boolean
           <div className="wb-feed">
             <Reveal on={step <= 1}>
               <div className="wb-repo">
-                <p className="wb-repo-name">mezair-stack</p>
+                <p className="wb-repo-name">mezair</p>
                 <p className="wb-repo-meta">412 files indexed. 3 packages. Last commit 2 hours ago.</p>
                 <ul className="wb-tree">
                   <li>src/retry.ts</li>

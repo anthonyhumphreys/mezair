@@ -1,4 +1,4 @@
-import type { PolicyDecision, PolicyInput, PolicyReason } from "@mezairstack/shared";
+import type { PolicyDecision, PolicyInput, PolicyReason } from "@mezair/shared";
 
 const severityScore = {
   info: 0,

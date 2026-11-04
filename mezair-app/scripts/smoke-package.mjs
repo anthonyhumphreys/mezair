@@ -44,7 +44,7 @@ void app.whenReady().then(async () => {
     for (const name of ['globby', 'openai', 'qrcode', 'simple-git', 'typescript', 'yaml', 'yazl']) {
       await import(pathToFileURL(require.resolve(name)).href);
     }
-    for (const name of ['@mezairstack/cloud-cli', '@mezairstack/registry-cli']) {
+    for (const name of ['@mezair/cloud-cli', '@mezair/registry-cli']) {
       const root = join(archive, 'node_modules', name);
       const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
       for (const bin of Object.values(typeof pkg.bin === 'string' ? { bin: pkg.bin } : pkg.bin)) {

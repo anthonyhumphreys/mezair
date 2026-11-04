@@ -65,7 +65,7 @@ Run individual services without Docker:
 ```bash
 pnpm dev:gateway
 pnpm dev:worker
-pnpm --filter @mezairstack/admin dev
+pnpm --filter @mezair/admin dev
 ```
 
 The defaults use in-memory adapters unless environment variables select Postgres, S3/MinIO, or BullMQ/SQS.
@@ -131,8 +131,8 @@ See `infra/docker/release/README.md` for NAS installation, upgrades, backup and 
 Install the published Mezair CLI and Registry product CLI:
 
 ```bash
-npm install --global @mezairstack/cli
-npm install --global @mezairstack/registry-cli
+npm install --global @mezair/cli
+npm install --global @mezair/registry-cli
 ```
 
 The CLI is a client. It requires a running gateway for package decision commands, and Admin plus `MEZAIR_ADMIN_TOKEN` for protected operations.

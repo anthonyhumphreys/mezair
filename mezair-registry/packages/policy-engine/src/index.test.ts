@@ -1,4 +1,4 @@
-import { defaultPolicyConfig } from "@mezairstack/config";
+import { defaultPolicyConfig } from "@mezair/config";
 import { describe, expect, it } from "vitest";
 import { evaluatePolicy } from "./index.js";
 

@@ -1,5 +1,5 @@
 {
-  "name": "@mezairstack/desktop-updates-worker",
+  "name": "@mezair/desktop-updates-worker",
   "version": "0.1.0",
   "private": true,
   "type": "module",

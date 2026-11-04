@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -372,9 +372,37 @@ async function verifyNewScaffoldContract() {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "mezair-notes-new-"));
 
   try {
+    const [packed] = await runJson(
+      "npm",
+      ["pack", "--json", "--pack-destination", tempDir],
+      { cwd: path.join(rootDir, "packages", "cli") },
+    );
+    const archive = path.join(tempDir, packed.filename);
+    const userconfig = path.join(tempDir, "npmrc");
+    await writeFile(userconfig, "");
+    const installArgs = [
+      "install",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      "--package-lock=false",
+      `--userconfig=${userconfig}`,
+      "--registry=https://registry.npmjs.org/",
+    ];
+    const toolsDir = path.join(tempDir, "tools");
+    await mkdir(toolsDir);
+    await run("npm", [...installArgs, archive], { cwd: toolsDir });
+    const packedCli = path.join(
+      toolsDir,
+      "node_modules",
+      "@mezair",
+      "cloud-cli",
+      "dist",
+      "index.js",
+    );
     const result = await runJson(
       process.execPath,
-      [cliPath, "new", "notes-golden", "--json"],
+      [packedCli, "new", "notes-golden", "--no-install", "--no-git", "--json"],
       { cwd: tempDir },
     );
     const cellDir = path.join(tempDir, "notes-golden");
@@ -430,6 +458,37 @@ async function verifyNewScaffoldContract() {
         generatedClient.includes('mutations: ["addTodo"]'),
       "new scaffold did not include stable generated client metadata",
     );
+    assert(
+      packageJson.dependencies?.["@mezair/cloud-cli"] === `^${packed.version}`,
+      "new scaffold did not use the public package scope and version",
+    );
+    packageJson.dependencies["@mezair/cloud-cli"] = `file:${archive}`;
+    await writeFile(
+      path.join(cellDir, "package.json"),
+      `${JSON.stringify(packageJson, null, 2)}\n`,
+    );
+    await run("npm", installArgs, { cwd: cellDir });
+    const installedCli = path.join(
+      cellDir,
+      "node_modules",
+      "@mezair",
+      "cloud-cli",
+      "dist",
+      "index.js",
+    );
+    const checked = await runJson(
+      process.execPath,
+      [installedCli, "check", "--json"],
+      { cwd: cellDir },
+    );
+    assert(checked.ok === true, "installed CLI scaffold check failed");
+    const built = await runJson(
+      process.execPath,
+      [installedCli, "build", "--json"],
+      { cwd: cellDir },
+    );
+    assert(built.ok === true, "installed CLI scaffold build failed");
+    console.log("Packed CLI scaffold installation, check and build passed.");
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }

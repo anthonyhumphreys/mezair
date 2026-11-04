@@ -24,12 +24,12 @@ export type WrapperDependencies = {
 
 const products: Record<Product, ProductConfig> = {
   cloud: {
-    packageName: "@mezairstack/cloud-cli",
+    packageName: "@mezair/cloud-cli",
     binary: "mezair-cloud",
     binPath: "dist/index.js",
   },
   registry: {
-    packageName: "@mezairstack/registry-cli",
+    packageName: "@mezair/registry-cli",
     binary: "mezair-registry",
     binPath: "dist/index.js",
   },
@@ -110,9 +110,9 @@ Examples:
   mezair registry explain react@latest
 
 Install the product CLI you want to use:
-  npm install --global @mezairstack/cli
-  npm install --global @mezairstack/cloud-cli
-  npm install --global @mezairstack/registry-cli
+  npm install --global @mezair/cli
+  npm install --global @mezair/cloud-cli
+  npm install --global @mezair/registry-cli
 `;
 }
 

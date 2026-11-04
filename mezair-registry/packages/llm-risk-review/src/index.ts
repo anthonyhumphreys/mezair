@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import type { LlmRiskReview, LlmRiskReviewInput } from "@mezairstack/shared";
+import type { LlmRiskReview, LlmRiskReviewInput } from "@mezair/shared";
 
 export const llmRiskTypeSchema = z.enum([
   "typosquatting",

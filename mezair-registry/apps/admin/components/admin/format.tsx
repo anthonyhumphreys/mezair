@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { PolicyDecisionRecord } from "@mezairstack/persistence";
+import type { PolicyDecisionRecord } from "@mezair/persistence";
 
 export function packageHref(packageName: string, version: string) {
   return `/packages/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`;

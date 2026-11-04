@@ -41,7 +41,7 @@ The API and architecture references below describe those parts in detail.
 | `@mezair-cloud/local` | Local runtime server, JSON database adapter, local files, auth, logs, events, jobs, and inspection state. |
 | `@mezair-cloud/client` | Browser client and framework hook helpers for generated query and mutation metadata. |
 | `@mezair-cloud/auth` | Provider-neutral token verification: OIDC discovery/JWKS verification plus a local identity provider that signs real JWTs. |
-| `@mezairstack/cloud-cli` | `mezair cloud new`, `dev`, `check`, `review`, `build`, `agents`, `executions`, `inspect`, `logs`, `usage`, `db`, `auth`, `workflows`, `services`, `lens`, `deploy --preview`, and rollback/destroy preview commands. |
+| `@mezair/cloud-cli` | `mezair cloud new`, `dev`, `check`, `review`, `build`, `agents`, `executions`, `inspect`, `logs`, `usage`, `db`, `auth`, `workflows`, `services`, `lens`, `deploy --preview`, and rollback/destroy preview commands. |
 | `@mezair-cloud/control-plane` | The `ControlPlaneApi` contract behind Mezair Lens plus durable agent execution leases, cursor events, controls, and a framework-neutral HTTP boundary. |
 | `@mezair-cloud/aws` | AWS preview adapter, CloudFormation synthesis, Lambda runtime bridge, AWS-backed host adapters, Bedrock inference provider, Lambda MicroVM read-only execution transport, artifact packaging, provisioning, remote inspect, remote logs, and preview cleanup. |
 

@@ -21,7 +21,7 @@ Backend run 37413757753 passed 42 files and 442 tests and checked all six requir
 That was followed by cleanup fix `dedab943`: SQLite `rowsWritten` includes index maintenance, so
 release now uses `UPDATE RETURNING`; a regression test exercises real Durable Object SQLite.
 Backend run
-[37414829188](https://github.com/anthonyhumphreys/mezair-stack/actions/runs/37414829188)
+[37414829188](https://github.com/anthonyhumphreys/mezair/actions/runs/37414829188)
 passed 42 files and 443 tests. The earlier smoke on `3a8353a` passed allocation, connector-token
 issuance, connector startup and public HTTPS marker ingress, but cleanup failed. The first smoke
 after the fix verified cleanup, but marker ingress timed out. A controlled repeat with temporary

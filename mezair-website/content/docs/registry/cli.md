@@ -11,11 +11,11 @@ order: 30
 # Registry CLI
 
 The normal user-facing command is `mezair registry ...` through the umbrella
-`@mezairstack/cli` package. Use it to inspect package decisions before install,
+`@mezair/cli` package. Use it to inspect package decisions before install,
 scan lockfiles, warm the registry cache, request analysis, review reports,
 manage overrides, and check gateway health.
 
-The product package is `@mezairstack/registry-cli` and the direct binary is
+The product package is `@mezair/registry-cli` and the direct binary is
 `mezair-registry`. The wrapper dispatches to that binary, so these are
 equivalent when both packages are installed:
 
@@ -41,14 +41,14 @@ The CLI connects to a running Registry gateway. Start with the [quickstart](/doc
 Install the umbrella CLI and the Registry product CLI globally:
 
 ```bash
-npm install --global @mezairstack/cli
-npm install --global @mezairstack/registry-cli
+npm install --global @mezair/cli
+npm install --global @mezair/registry-cli
 ```
 
 Or run it without a global install:
 
 ```bash
-npx @mezairstack/registry-cli doctor
+npx @mezair/registry-cli doctor
 ```
 
 Then point it at a gateway:
@@ -83,14 +83,14 @@ pnpm install --ignore-scripts
 Run the CLI through the workspace package:
 
 ```bash
-MEZAIR_REGISTRY_URL=http://localhost:4873 pnpm --filter @mezairstack/registry-cli dev -- doctor
-MEZAIR_REGISTRY_URL=http://localhost:4873 pnpm --filter @mezairstack/registry-cli dev -- explain react@latest
+MEZAIR_REGISTRY_URL=http://localhost:4873 pnpm --filter @mezair/registry-cli dev -- doctor
+MEZAIR_REGISTRY_URL=http://localhost:4873 pnpm --filter @mezair/registry-cli dev -- explain react@latest
 ```
 
 Build the CLI when you want the compiled entrypoint:
 
 ```bash
-pnpm --filter @mezairstack/registry-cli build
+pnpm --filter @mezair/registry-cli build
 node apps/cli/dist/index.js doctor
 ```
 
@@ -99,7 +99,7 @@ node apps/cli/dist/index.js doctor
 For a local shell command, build the package and link it:
 
 ```bash
-pnpm --filter @mezairstack/registry-cli build
+pnpm --filter @mezair/registry-cli build
 pnpm --dir apps/cli link --global
 ```
 
@@ -112,7 +112,7 @@ MEZAIR_REGISTRY_URL=http://localhost:4873 mezair registry doctor
 To remove the local development link later:
 
 ```bash
-pnpm --global remove @mezairstack/registry-cli
+pnpm --global remove @mezair/registry-cli
 ```
 
 ## Configure endpoints
@@ -377,8 +377,8 @@ Scan an npm lockfile in CI:
 export MEZAIR_REGISTRY_URL=https://npm.example.com
 export MEZAIR_ADMIN_TOKEN="${MEZAIR_ADMIN_TOKEN}"
 
-npm install --global @mezairstack/cli
-npm install --global @mezairstack/registry-cli
+npm install --global @mezair/cli
+npm install --global @mezair/registry-cli
 mezair registry doctor
 mezair registry scan package-lock.json --queue-analysis
 ```
@@ -386,15 +386,15 @@ mezair registry scan package-lock.json --queue-analysis
 If you prefer not to install globally:
 
 ```bash
-npx @mezairstack/registry-cli doctor
-npx @mezairstack/registry-cli scan package-lock.json --queue-analysis
+npx @mezair/registry-cli doctor
+npx @mezair/registry-cli scan package-lock.json --queue-analysis
 ```
 
 Use `npm ci --ignore-scripts` or Mezair Node Base safe mode for the actual install. The CLI reviews and warms dependency decisions; it is not a replacement package manager.
 
 ## Stage the CLI for publishing
 
-The npm package is `@mezairstack/registry-cli` and exposes the `mezair-registry` binary. Publishing requires access to the `@mezairstack` npm scope.
+The npm package is `@mezair/registry-cli` and exposes the `mezair-registry` binary. Publishing requires access to the `@mezair` npm scope.
 
 Release publishing is handled by `.github/workflows/publish-registry-cli.yml`
 through trusted publishing and npm staged publishing. The workflow runs on
@@ -406,8 +406,8 @@ From the repository, verify the package before tagging:
 
 ```bash
 npm whoami
-pnpm --filter @mezairstack/registry-cli build
-pnpm --filter @mezairstack/registry-cli test
+pnpm --filter @mezair/registry-cli build
+pnpm --filter @mezair/registry-cli test
 cd apps/cli
 npm pack --dry-run
 ```

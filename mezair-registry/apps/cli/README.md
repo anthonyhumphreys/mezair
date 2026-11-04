@@ -7,13 +7,13 @@ The CLI is a client. It does not run the registry gateway by itself. You need a 
 ## Install
 
 ```bash
-npm install --global @mezairstack/registry-cli
+npm install --global @mezair/registry-cli
 ```
 
 or run without a global install:
 
 ```bash
-npx @mezairstack/registry-cli doctor
+npx @mezair/registry-cli doctor
 ```
 
 ## Configure

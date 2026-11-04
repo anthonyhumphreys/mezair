@@ -1,5 +1,5 @@
 {
-  "name": "@mezairstack/policy-engine",
+  "name": "@mezair/policy-engine",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,8 +14,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@mezairstack/config": "workspace:*",
-    "@mezairstack/shared": "workspace:*"
+    "@mezair/config": "workspace:*",
+    "@mezair/shared": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^4.1.12"

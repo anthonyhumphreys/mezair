@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { gzipSync } from "node:zlib";
-import { loadConfig } from "@mezairstack/config";
-import type { LlmRiskReviewProvider } from "@mezairstack/llm-risk-review";
-import type { NpmPackageMetadata } from "@mezairstack/npm-registry";
-import { MemoryPersistence } from "@mezairstack/persistence";
-import { MetadataProvenanceVerifier } from "@mezairstack/provenance";
-import type { LlmRiskReview } from "@mezairstack/shared";
+import { loadConfig } from "@mezair/config";
+import type { LlmRiskReviewProvider } from "@mezair/llm-risk-review";
+import type { NpmPackageMetadata } from "@mezair/npm-registry";
+import { MemoryPersistence } from "@mezair/persistence";
+import { MetadataProvenanceVerifier } from "@mezair/provenance";
+import type { LlmRiskReview } from "@mezair/shared";
 import { analyseAnalysisJob, analysePackageTarget, analysisReportObjectKeyForReport, parsePackageTarget } from "./analysis.js";
 
 describe("worker analysis", () => {

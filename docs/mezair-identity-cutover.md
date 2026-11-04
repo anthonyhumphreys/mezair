@@ -20,7 +20,28 @@ pnpm build
 
 The helper installs Cloud and Registry with their frozen locks and builds both
 CLI entry points. Desktop's file dependencies avoid relying on an unpublished
-new npm scope. Production publishing still requires control of `@mezairstack`.
+new npm scope. Production publishing still requires control of `@mezair`.
+
+The npm organization and package scope are both `mezair`. The public packages
+are `@mezair/cli`, `@mezair/cloud-cli` and `@mezair/registry-cli`; private Registry
+packages use the same scope. Package names in generated Cloud projects, Desktop
+bundles, workspace imports, lockfiles and release workflows must agree. A scope
+change creates a new npm package identity, so existing published packages are
+not renamed by this source update.
+
+Create the organization with npm's free public-package plan. Publish from an
+authenticated maintainer account with the existing staged approval flow, then
+configure each package's GitHub trusted publisher for `anthonyhumphreys/mezair`
+and the workflow below. Maintainer 2FA approval remains required to promote
+staged versions. Verify the public package before marking its install command
+available. Existing release tags retain their original source commits; the
+corrected scope ships under fresh patch tags.
+
+| Package | Trusted publishing workflow |
+| --- | --- |
+| `@mezair/cli` | `publish-cli.yml` |
+| `@mezair/cloud-cli` | `publish-cloud-cli.yml` |
+| `@mezair/registry-cli` | `publish-registry-cli.yml` |
 
 ## Profiles, data and protocol compatibility
 

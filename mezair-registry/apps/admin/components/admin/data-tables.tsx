@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { AnalysisReportRecord, AuditEventRecord, NodeBaseReportRecord, OverrideRecord, PolicyDecisionRecord } from "@mezairstack/persistence";
+import type { AnalysisReportRecord, AuditEventRecord, NodeBaseReportRecord, OverrideRecord, PolicyDecisionRecord } from "@mezair/persistence";
 import { actionTone, formatDate, IdentityStack, PackageLink, packageHref, ReasonSummary, Score, shortMiddle } from "./format";
 import { revokeOverrideAction } from "@/lib/actions";
 import { analysisReportUrl } from "@/lib/admin-data";

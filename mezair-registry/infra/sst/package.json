@@ -1,5 +1,5 @@
 {
-  "name": "@mezairstack/infra-sst",
+  "name": "@mezair/infra-sst",
   "version": "0.1.0",
   "private": true,
   "type": "module",

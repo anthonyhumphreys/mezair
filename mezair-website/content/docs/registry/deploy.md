@@ -124,7 +124,7 @@ pnpm smoke:node-base-image-report
 The public Mezair image path is:
 
 ```text
-ghcr.io/anthonyhumphreys/mezair-stack/mezair-node-base:22
+ghcr.io/anthonyhumphreys/mezair/mezair-node-base:22
 ```
 
 Use immutable tags for CI rollouts when you need repeatability, and keep a major Node tag such as `22` for routine upgrades. Forks can publish the same image under their own GHCR namespace.

@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
-  transpilePackages: ["@mezairstack/config", "@mezairstack/name-squatting", "@mezairstack/object-store", "@mezairstack/persistence", "@mezairstack/shared"]
+  transpilePackages: ["@mezair/config", "@mezair/name-squatting", "@mezair/object-store", "@mezair/persistence", "@mezair/shared"]
 };
 
 export default nextConfig;

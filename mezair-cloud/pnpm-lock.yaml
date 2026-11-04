@@ -94,7 +94,7 @@ importers:
         specifier: ^6.4.5
         version: 6.4.5(@types/node@22.20.5)(tsx@4.23.15)
     devDependencies:
-      "@mezairstack/cloud-cli":
+      "@mezair/cloud-cli":
         specifier: workspace:*
         version: link:../../packages/cli
       "@types/react":
@@ -113,7 +113,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/runtime
     devDependencies:
-      "@mezairstack/cloud-cli":
+      "@mezair/cloud-cli":
         specifier: workspace:*
         version: link:../../packages/cli
 

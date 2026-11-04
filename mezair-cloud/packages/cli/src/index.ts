@@ -144,7 +144,7 @@ type DoctorCheck = {
   details?: Record<string, unknown>;
 };
 
-const publicPackageNames = new Set(["@mezairstack/cloud-cli"]);
+const publicPackageNames = new Set(["@mezair/cloud-cli"]);
 const candidatePublicApiPackageNames = [
   "@mezair-cloud/runtime",
   "@mezair-cloud/client",
@@ -1682,7 +1682,7 @@ async function commandNew(
         'import React from "react";',
         'import { createRoot } from "react-dom/client";',
         "",
-        'import { App } from "./App";',
+        'import { App } from "./App.js";',
         'import "./styles.css";',
         "",
         'const root = document.getElementById("root");',
@@ -7441,7 +7441,7 @@ async function createStarterDependencies(
   clientKind: StarterClientKind,
 ): Promise<Record<string, string>> {
   const dependencies: Record<string, string> = {
-    "@mezairstack/cloud-cli": `^${await readCloudCliVersion()}`,
+    "@mezair/cloud-cli": `^${await readCloudCliVersion()}`,
   };
 
   if (clientKind === "expo-router") {
@@ -7458,7 +7458,7 @@ async function createStarterDependencies(
     return {
       ...dependencies,
       "@vitejs/plugin-react": "^4.3.4",
-      vite: "^5.4.21",
+      vite: "^6.4.5",
       react: "^18.3.1",
       "react-dom": "^18.3.1",
     };
@@ -7517,12 +7517,12 @@ async function createStarterTsconfig(
   const localPaths = await detectLocalPackagePaths(cellDir);
   const paths = {
     "@mezair-cloud/client": [
+      "node_modules/@mezair/cloud-cli/dist/packages/client/src/index.ts",
       ...(localPaths["@mezair-cloud/client"] ?? []),
-      "node_modules/@mezairstack/cloud-cli/dist/packages/client/src/index.ts",
     ],
     "@mezair-cloud/runtime": [
+      "node_modules/@mezair/cloud-cli/dist/packages/runtime/src/index.ts",
       ...(localPaths["@mezair-cloud/runtime"] ?? []),
-      "node_modules/@mezairstack/cloud-cli/dist/packages/runtime/src/index.ts",
     ],
     "@mezair/generated/client": [".mezair/generated/client.ts"],
   };

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type PolicyConfig, runtimeModeSchema } from "@mezairstack/shared";
+import { type PolicyConfig, runtimeModeSchema } from "@mezair/shared";
 
 const booleanEnv = z.preprocess((value) => {
   if (typeof value !== "string") return value;

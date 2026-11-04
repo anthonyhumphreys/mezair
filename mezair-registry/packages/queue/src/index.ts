@@ -7,8 +7,8 @@ import {
   SQSClient
 } from "@aws-sdk/client-sqs";
 import { Queue, type Job, type WorkerOptions } from "bullmq";
-import type { MezairConfig } from "@mezairstack/config";
-import { analysisJobSchema, type AnalysisJob } from "@mezairstack/shared";
+import type { MezairConfig } from "@mezair/config";
+import { analysisJobSchema, type AnalysisJob } from "@mezair/shared";
 
 export type AnalysisQueueStats = {
   driver: "memory" | "bullmq" | "sqs";

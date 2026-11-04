@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = path.resolve(process.cwd(), "../..");
-const publicPackages = new Set(["@mezairstack/cloud-cli"]);
+const publicPackages = new Set(["@mezair/cloud-cli"]);
 const candidatePublicApiPackages = new Set([
   "@mezair-cloud/runtime",
   "@mezair-cloud/client",

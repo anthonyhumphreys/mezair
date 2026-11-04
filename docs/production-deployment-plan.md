@@ -189,7 +189,7 @@ opens. No subscriber automatically loses or gains a discount at this transition.
 | --- | --- |
 | Desktop signing and downloads | Deliver tested `app-v*` artifacts. macOS notarisation needs the Apple credentials in the existing protected release workflow; label unsigned artifacts accurately if that remains the selected path. |
 | Automatic updates | Separate `mezair-desktop-updates` Worker and `mezair-desktop-releases` R2 bucket. Auto-update publication is currently parked; do not make it a dependency of the Sync launch. |
-| npm and GHCR | Confirm `@mezairstack` publishing and renamed CLI/image artifacts before advertising public install commands. Desktop's bundled CLI preparation does not prove public package publication. |
+| npm and GHCR | Confirm `@mezair` publishing and renamed CLI/image artifacts before advertising public install commands. Desktop's bundled CLI preparation does not prove public package publication. |
 | Registry hosting | A separate gateway/worker/admin stack with Postgres, object storage, and Redis/BullMQ in Compose or AWS queue/storage equivalents. It is not part of this Worker backend and has no shared database requirement with Sync. |
 | Cloud Agents / Cloud execution | Separate credential brokerage, persistent control plane, execution-provider acceptance and container lifecycle work. Do not deploy the Sandbox provisioner or enable the Cloud Agents flag for this release. |
 | Mobile / Raycast | Validate against the selected production backend before distribution. Mobile retains its native receive-buffer and physical-device release gates from [release readiness](release-readiness.md). |

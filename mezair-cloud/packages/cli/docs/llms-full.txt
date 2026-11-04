@@ -337,16 +337,16 @@ leases, events, or snapshots.
 For narrow package work, run focused filters from `mezair-cloud/`:
 
 ```sh
-pnpm --filter @mezairstack/cloud-cli typecheck
-pnpm --filter @mezairstack/cloud-cli test
+pnpm --filter @mezair/cloud-cli typecheck
+pnpm --filter @mezair/cloud-cli test
 ```
 
 For runtime, AWS adapter, or CLI orchestration changes, use the owned Effect
 verification set from root `PATCH.md`:
 
 ```sh
-pnpm --filter @mezair-cloud/runtime --filter @mezair-cloud/control-plane --filter @mezair-cloud/aws --filter @mezairstack/cloud-cli typecheck
-pnpm --filter @mezair-cloud/runtime --filter @mezair-cloud/control-plane --filter @mezair-cloud/aws --filter @mezairstack/cloud-cli test
+pnpm --filter @mezair-cloud/runtime --filter @mezair-cloud/control-plane --filter @mezair-cloud/aws --filter @mezair/cloud-cli typecheck
+pnpm --filter @mezair-cloud/runtime --filter @mezair-cloud/control-plane --filter @mezair-cloud/aws --filter @mezair/cloud-cli test
 ```
 
 Before a broad PR, prefer:

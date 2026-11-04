@@ -1,6 +1,6 @@
 {
-  "name": "@mezairstack/cloud-cli",
-  "version": "0.2.1",
+  "name": "@mezair/cloud-cli",
+  "version": "0.2.2",
   "license": "MIT",
   "description": "Command-line tools for Mezair Cloud Cells, local runtime, inspection, and preview deployment.",
   "private": false,

@@ -52,10 +52,10 @@ importers:
       '@cursor/sdk':
         specifier: 1.0.40
         version: 1.0.40(zod@4.6.7)
-      '@mezairstack/cloud-cli':
+      '@mezair/cloud-cli':
         specifier: file:../mezair-cloud/packages/cli
         version: file:../mezair-cloud/packages/cli(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.51.2)(yaml@2.9.1)
-      '@mezairstack/registry-cli':
+      '@mezair/registry-cli':
         specifier: file:../mezair-registry/apps/cli
         version: file:../mezair-registry/apps/cli
       '@sentry/electron':
@@ -2191,11 +2191,11 @@ packages:
   '@mermaid-js/parser@1.2.1':
     resolution: {integrity: sha512-n12NohV3mrUyUL2o93IgG/ifeW9FTyeJn3zDxkhwa8MJ9Fxg3HQMlA3RiGmD/3UnJvheztkjjQAjA2T4LmUcpw==}
 
-  '@mezairstack/cloud-cli@file:../mezair-cloud/packages/cli':
+  '@mezair/cloud-cli@file:../mezair-cloud/packages/cli':
     resolution: {directory: ../mezair-cloud/packages/cli, type: directory}
     hasBin: true
 
-  '@mezairstack/registry-cli@file:../mezair-registry/apps/cli':
+  '@mezair/registry-cli@file:../mezair-registry/apps/cli':
     resolution: {directory: ../mezair-registry/apps/cli, type: directory}
     hasBin: true
 
@@ -11089,7 +11089,7 @@ snapshots:
     dependencies:
       '@chevrotain/types': 11.1.2
 
-  '@mezairstack/cloud-cli@file:../mezair-cloud/packages/cli(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.51.2)(yaml@2.9.1)':
+  '@mezair/cloud-cli@file:../mezair-cloud/packages/cli(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.51.2)(yaml@2.9.1)':
     dependencies:
       '@aws-sdk/client-bedrock-runtime': 3.1146.0
       '@aws-sdk/client-cloudformation': 3.1146.0
@@ -11118,7 +11118,7 @@ snapshots:
       - tsx
       - yaml
 
-  '@mezairstack/registry-cli@file:../mezair-registry/apps/cli': {}
+  '@mezair/registry-cli@file:../mezair-registry/apps/cli': {}
 
   '@modelcontextprotocol/sdk@1.32.2(zod@4.6.7)':
     dependencies:

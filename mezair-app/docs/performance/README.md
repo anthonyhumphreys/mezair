@@ -54,7 +54,7 @@ node scripts/performance/check-budgets.mjs \
   /tmp/mezair-bundles-before.json /tmp/mezair-bundles-after.json bundle
 ```
 
-The reference must exist in the local Git object database. The helper copies the same fixture and uses the candidate toolchain, removing candidate-only checks from old source. Set `CHROME_PATH` outside macOS. The runner uses a disposable profile and local files through the DevTools pipe, without a local server. `PERF_RICH=1` enables software WebGL and pop-outs only in this test browser. `PERF_SCREENSHOT=/tmp/mezair-chat.png` saves the measured view.
+The reference must exist in the local Git object database. The helper copies the same fixture and uses the candidate toolchain, removing candidate-only checks from old source. It aligns local CLI dependency names by their unchanged `file:` paths when a package scope changes; application source and the reference version stay intact. Set `CHROME_PATH` outside macOS. The runner uses a disposable profile and local files through the DevTools pipe, without a local server. `PERF_RICH=1` enables software WebGL and pop-outs only in this test browser. `PERF_SCREENSHOT=/tmp/mezair-chat.png` saves the measured view.
 
 Five pairs alternate order in one browser session. Raw samples and environment details are retained. Keep other checks idle during timing comparisons. Gzip is a size indicator, rather than Electron traffic or runtime memory.
 

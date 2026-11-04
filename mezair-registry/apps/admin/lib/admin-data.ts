@@ -1,10 +1,10 @@
 import "server-only";
 
-import { loadConfig } from "@mezairstack/config";
-import { loadActivePopularPackageIndex } from "@mezairstack/name-squatting";
-import { createObjectStore } from "@mezairstack/object-store";
-import { createPersistence, type MezairPersistence, type AnalysisReportRecord, type PolicyDecisionRecord } from "@mezairstack/persistence";
-import type { Override } from "@mezairstack/shared";
+import { loadConfig } from "@mezair/config";
+import { loadActivePopularPackageIndex } from "@mezair/name-squatting";
+import { createObjectStore } from "@mezair/object-store";
+import { createPersistence, type MezairPersistence, type AnalysisReportRecord, type PolicyDecisionRecord } from "@mezair/persistence";
+import type { Override } from "@mezair/shared";
 
 export const config = loadConfig();
 

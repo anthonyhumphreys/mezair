@@ -642,6 +642,13 @@ ADO delivery with Jira intake, no label gate, backlog selection and Mezair
 organisation viewing at desktop/compact widths. No live credential exchange,
 provider write, production migration or deployment was performed.
 
+Follow-up on 4 November 2026: the enrollment rate-limit test failure is resolved.
+Independent hosted-identity test fixtures clear the shared test SessionCoordinator's
+cooldown row before changing their fake clock. The production provider gate and
+device limits remain unchanged; within-fixture concurrent throttling is still
+asserted. All 508 backend tests, backend typecheck, hosted config validation and
+34 deployment-isolation checks pass.
+
 Rollout on 1 November 2026: source commit `4c9eb0c0` was pushed to `main`;
 migration 0009 was applied to both hosted databases and both backends deployed
 through the guarded deployment commands. Staging version

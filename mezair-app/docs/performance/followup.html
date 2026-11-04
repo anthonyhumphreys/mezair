@@ -760,9 +760,10 @@
           memory.
         </p>
         <p>
-          The full backend suite still has the previously documented enrollment rate-limit failure
-          in <code>auth.test.ts</code> (HTTP 429 instead of 200). That test and its production path
-          are unchanged by this pass; PATCH C8 records its reproduction on an unchanged checkout. No
+          Follow-up on 4 November: all 508 backend tests pass. The enrollment fixture now clears the
+          shared test Durable Object's prior cooldown timestamp before using its independent fake
+          clock. Attempts within each fixture still exercise the real provider throttle and
+          device-cap enforcement. Production authentication and rate limits are unchanged. No
           provider execution, publication or production deployment was performed.
         </p>
         <details>

@@ -1,4 +1,4 @@
-# mezair-stack monorepo
+# Mezair monorepo
 
 Four independent project workspaces: `mezair-app/`, `mezair-cloud/`, `mezair-registry/`, `mezair-website/`. Each has its own lockfile, tooling, and `AGENTS.md`; read the project-level file before working in it. Run `pnpm install` inside the project directory, never at the repo root.
 

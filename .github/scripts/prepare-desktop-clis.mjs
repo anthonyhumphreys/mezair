@@ -11,16 +11,16 @@ const products = [
   {
     workspace: "mezair-cloud",
     packageDirectory: "packages/cli",
-    name: "@mezairstack/cloud-cli",
+    name: "@mezair/cloud-cli",
     binary: "mezair-cloud",
-    filter: "@mezairstack/cloud-cli...",
+    filter: "@mezair/cloud-cli...",
   },
   {
     workspace: "mezair-registry",
     packageDirectory: "apps/cli",
-    name: "@mezairstack/registry-cli",
+    name: "@mezair/registry-cli",
     binary: "mezair-registry",
-    filter: "@mezairstack/registry-cli",
+    filter: "@mezair/registry-cli",
   },
 ];
 

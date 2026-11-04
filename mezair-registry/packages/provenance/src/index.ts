@@ -1,4 +1,4 @@
-import type { PackageVersionMetadata, ProvenanceVerificationResult } from "@mezairstack/shared";
+import type { PackageVersionMetadata, ProvenanceVerificationResult } from "@mezair/shared";
 
 export type ProvenanceVerificationInput = {
   packageName: string;

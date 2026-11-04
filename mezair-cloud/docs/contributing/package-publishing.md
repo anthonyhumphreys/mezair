@@ -4,7 +4,7 @@ Mezair Cloud is a workspace, not a bag of public npm packages.
 
 ## Rebrand cutover
 
-The `@mezairstack` npm scope and `mezair.dev` URLs are the intended release
+The `@mezair` npm scope and `mezair.dev` URLs are the intended release
 identities. This source update does not register the domain, publish packages,
 rename the hosted repository, or provision production infrastructure. Configure
 the scope and trusted publishing for `anthonyhumphreys/mezair`, publish and
@@ -21,7 +21,7 @@ lockfiles and builds their CLI packages; it does not merge the workspaces.
 
 The only public npm package in the alpha is:
 
-- `@mezairstack/cloud-cli`
+- `@mezair/cloud-cli`
 
 It owns the `mezair-cloud` binary and is the supported installation surface for
 humans, agents, examples, and CI smoke workflows.
@@ -99,7 +99,7 @@ contract honest.
 
 | Package                       | Current status | Public role now                                                   | Promotion note                                           |
 | ----------------------------- | -------------- | ----------------------------------------------------------------- | -------------------------------------------------------- |
-| `@mezairstack/cloud-cli`      | Public         | Owns `mezair-cloud` commands and examples.                        | Keep public.                                             |
+| `@mezair/cloud-cli`           | Public         | Owns `mezair-cloud` commands and examples.                        | Keep public.                                             |
 | `@mezair-cloud/runtime`       | Private        | Workspace authoring DSL used by examples and generated Cells.     | First runtime API candidate.                             |
 | `@mezair-cloud/client`        | Private        | Generated client runtime used by starter clients.                 | First client SDK candidate.                              |
 | `@mezair-cloud/builder`       | Private        | Manifest, Guard, generated-client, and bundle implementation.     | Promote only if Builder becomes a supported library API. |
@@ -112,7 +112,7 @@ contract honest.
 
 The CLI test suite includes a package-boundary check that asserts:
 
-- `@mezairstack/cloud-cli` is the only public package;
+- `@mezair/cloud-cli` is the only public package;
 - `@mezair-cloud/runtime` and `@mezair-cloud/client` are tracked as candidate
   public APIs but remain private;
 - public packages have `publishConfig.access: "public"`;

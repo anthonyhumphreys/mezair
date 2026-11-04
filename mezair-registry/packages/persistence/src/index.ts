@@ -1,5 +1,5 @@
-import type { AnalysisReport, LlmRiskReview, Override, PolicyDecision } from "@mezairstack/shared";
-import type { MezairConfig } from "@mezairstack/config";
+import type { AnalysisReport, LlmRiskReview, Override, PolicyDecision } from "@mezair/shared";
+import type { MezairConfig } from "@mezair/config";
 import { PostgresPersistence } from "./postgres.js";
 
 export { PostgresPersistence } from "./postgres.js";

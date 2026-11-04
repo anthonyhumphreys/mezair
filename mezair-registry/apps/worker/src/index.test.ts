@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { healthCheckWorkerDependencies, runWorkerCli } from "./index.js";
-import { loadConfig } from "@mezairstack/config";
+import { loadConfig } from "@mezair/config";
 
 describe("worker entrypoint", () => {
   it("runs dependency health checks in memory mode", async () => {

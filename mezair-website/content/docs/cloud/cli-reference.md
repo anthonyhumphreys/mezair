@@ -11,17 +11,17 @@ order: 180
 # CLI reference
 
 The normal user-facing command is `mezair cloud ...` through the umbrella
-`@mezairstack/cli` package:
+`@mezair/cli` package:
 
 ```bash
-npm install --global @mezairstack/cli
-npm install --global @mezairstack/cloud-cli
+npm install --global @mezair/cli
+npm install --global @mezair/cloud-cli
 
 mezair cloud check --json
 mezair cloud dev
 ```
 
-The product package is `@mezairstack/cloud-cli` and the direct binary is
+The product package is `@mezair/cloud-cli` and the direct binary is
 `mezair-cloud`. The wrapper dispatches to that binary, so these are equivalent
 when both packages are installed:
 
@@ -98,10 +98,10 @@ Creates a starter Cell:
 
 ```bash
 mezair cloud new notes
-pnpm dlx @mezairstack/cloud-cli new notes
+pnpm dlx @mezair/cloud-cli new notes
 ```
 
-The package name is `@mezairstack/cloud-cli`; the binary name is `mezair-cloud`.
+The package name is `@mezair/cloud-cli`; the binary name is `mezair-cloud`.
 
 JSON output:
 

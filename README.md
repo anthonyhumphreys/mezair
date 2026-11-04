@@ -29,7 +29,7 @@ GitHub Actions workflows live in `.github/workflows/` and are path-filtered per 
 - **mezair-cloud** — lint/typecheck/test/build CI.
 - **mezair-registry** — CI plus container images published to GitHub Container Registry (`ghcr.io/anthonyhumphreys/...`).
 - **mezair-website** — build/typecheck CI; deployed via the Vercel git integration.
-- **npm** — `@mezairstack/cloud-cli`, `@mezairstack/registry-cli`, and the thin `@mezairstack/cli` wrapper publish from release tags.
+- **npm** — `@mezair/cloud-cli`, `@mezair/registry-cli`, and the thin `@mezair/cli` wrapper publish from release tags.
 
 ## License
 

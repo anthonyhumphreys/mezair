@@ -95,15 +95,15 @@ consumers must never need to know Effect exists.
 7. Effect stays out of the Cell authoring surface. Cell code, the app DSL,
    manifests, and adapter contracts remain ordinary async TypeScript. The
    `effect` dependency belongs to `@mezair-cloud/runtime`, `@mezair-cloud/aws`,
-   and `@mezairstack/cloud-cli` only.
+   and `@mezair/cloud-cli` only.
 
 #### Verification
 
 Run from `mezair-cloud/`:
 
 ```sh
-pnpm --filter @mezair-cloud/runtime --filter @mezair-cloud/aws --filter @mezairstack/cloud-cli typecheck
-pnpm --filter @mezair-cloud/runtime --filter @mezair-cloud/aws --filter @mezairstack/cloud-cli test
+pnpm --filter @mezair-cloud/runtime --filter @mezair-cloud/aws --filter @mezair/cloud-cli typecheck
+pnpm --filter @mezair-cloud/runtime --filter @mezair-cloud/aws --filter @mezair/cloud-cli test
 ```
 
 Behavior that must hold after any reconciliation:
@@ -214,10 +214,10 @@ contract later.
 Run from `mezair-cloud/`:
 
 ```sh
-pnpm --filter @mezair-cloud/runtime --filter @mezair-cloud/control-plane --filter @mezair-cloud/aws --filter @mezairstack/cloud-cli typecheck
+pnpm --filter @mezair-cloud/runtime --filter @mezair-cloud/control-plane --filter @mezair-cloud/aws --filter @mezair/cloud-cli typecheck
 pnpm --filter @mezair-cloud/control-plane test
 pnpm --filter @mezair-cloud/aws test -- agent.test.ts
-pnpm --filter @mezairstack/cloud-cli test -- cli.test.ts
+pnpm --filter @mezair/cloud-cli test -- cli.test.ts
 mezair-cloud executions conformance --json
 cd ../mezair-app && pnpm exec tsc --noEmit -p tsconfig.node.json && pnpm exec tsc --noEmit -p tsconfig.web.json && pnpm lint && pnpm test
 ```
@@ -744,6 +744,19 @@ Use Mezair consistently in source identifiers, package names, CLI commands,
 protocols, environment variables, paths, documentation and the shared horse-M
 artwork. The SVG in `branding/mezair-mark.svg` owns the mark geometry. Keep light
 and dark presentation, reduced motion and accessible live text intact.
+
+Public npm packages and private Registry workspace packages use the `@mezair`
+scope. Public install surfaces are `@mezair/cli`, `@mezair/cloud-cli` and
+`@mezair/registry-cli`; their binaries remain `mezair`, `mezair-cloud` and
+`mezair-registry`. Keep workspace imports, scaffolds, Desktop's local file
+dependencies, lockfiles, package provenance URLs and release filters consistent.
+The npm organization is `mezair`; creation, maintainer authentication and trusted
+publishing are external prerequisites, not consequences of renaming source.
+Generated Cloud projects resolve their own installed CLI's bundled source before
+workspace/global fallbacks. The React starter uses NodeNext-compatible relative
+imports and the patched Vite 6 line. The Notes golden path packs and installs the
+CLI in isolation, creates a project through that installed binary, installs its
+dependencies with scripts disabled, and checks/builds it without workspace aliases.
 
 This is a coordinated breaking identity cutover. Renamed AAD/HKDF/proof contexts,
 stored ownership values and message/file namespaces are not a data migration.

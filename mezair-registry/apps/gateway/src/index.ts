@@ -1,4 +1,4 @@
-import { loadConfig } from "@mezairstack/config";
+import { loadConfig } from "@mezair/config";
 import { buildGateway } from "./app.js";
 
 const config = loadConfig();

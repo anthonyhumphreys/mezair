@@ -71,7 +71,7 @@ NODE
 echo "[mezair] Queueing forced LLM review for $PACKAGE_TARGET"
 MEZAIR_REGISTRY_URL="$REGISTRY_URL" \
 MEZAIR_ADMIN_TOKEN="$ADMIN_TOKEN" \
-  pnpm --dir "$ROOT_DIR" --filter @mezairstack/registry-cli dev -- llm-review "$PACKAGE_TARGET" --requested-by mezair-llm-smoke --priority high
+  pnpm --dir "$ROOT_DIR" --filter @mezair/registry-cli dev -- llm-review "$PACKAGE_TARGET" --requested-by mezair-llm-smoke --priority high
 
 node - "$ADMIN_URL" "$ADMIN_TOKEN" "$PACKAGE_NAME" "$PACKAGE_VERSION" "$MODEL" <<'NODE'
 const [adminUrl, adminToken, packageName, version, model] = process.argv.slice(2);

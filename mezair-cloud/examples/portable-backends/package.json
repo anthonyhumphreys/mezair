@@ -12,6 +12,6 @@
     "@mezair-cloud/runtime": "workspace:*"
   },
   "devDependencies": {
-    "@mezairstack/cloud-cli": "workspace:*"
+    "@mezair/cloud-cli": "workspace:*"
   }
 }

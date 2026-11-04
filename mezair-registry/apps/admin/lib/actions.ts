@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { overrideCreateRequestSchema, overrideRevokeRequestSchema, resolveOverrideExpiry } from "@mezairstack/shared";
+import { overrideCreateRequestSchema, overrideRevokeRequestSchema, resolveOverrideExpiry } from "@mezair/shared";
 import { requestLlmReview } from "@/lib/admin-api";
 import { uploadPopularPackageIndex } from "@/lib/admin-api";
 import { adminCookieName, requireAdminSession } from "@/lib/auth";

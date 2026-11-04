@@ -1,11 +1,11 @@
-import { loadConfig } from "@mezairstack/config";
-import { createLogger } from "@mezairstack/logger";
-import { loadActivePopularPackageIndex } from "@mezairstack/name-squatting";
-import { NpmDownloadsClient, NpmRegistryRouter } from "@mezairstack/npm-registry";
-import { createObjectStore } from "@mezairstack/object-store";
-import { createPersistence } from "@mezairstack/persistence";
-import { createBullMqAnalysisWorker, createJobQueue, createSqsAnalysisWorker, type AnalysisWorkerHandle } from "@mezairstack/queue";
-import type { AnalysisJob } from "@mezairstack/shared";
+import { loadConfig } from "@mezair/config";
+import { createLogger } from "@mezair/logger";
+import { loadActivePopularPackageIndex } from "@mezair/name-squatting";
+import { NpmDownloadsClient, NpmRegistryRouter } from "@mezair/npm-registry";
+import { createObjectStore } from "@mezair/object-store";
+import { createPersistence } from "@mezair/persistence";
+import { createBullMqAnalysisWorker, createJobQueue, createSqsAnalysisWorker, type AnalysisWorkerHandle } from "@mezair/queue";
+import type { AnalysisJob } from "@mezair/shared";
 import { analyseAnalysisJob, analysePackageTarget } from "./analysis.js";
 
 const logger = createLogger("mezair-worker");

@@ -1,11 +1,11 @@
 import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadConfig } from "@mezairstack/config";
-import type { NpmPackageMetadata } from "@mezairstack/npm-registry";
-import type { ObjectStore } from "@mezairstack/object-store";
-import { STATIC_ANALYSER_VERSION, type AnalysisReport } from "@mezairstack/shared";
-import { MemoryPersistence } from "@mezairstack/persistence";
-import { MemoryJobQueue, type JobQueue } from "@mezairstack/queue";
+import { loadConfig } from "@mezair/config";
+import type { NpmPackageMetadata } from "@mezair/npm-registry";
+import type { ObjectStore } from "@mezair/object-store";
+import { STATIC_ANALYSER_VERSION, type AnalysisReport } from "@mezair/shared";
+import { MemoryPersistence } from "@mezair/persistence";
+import { MemoryJobQueue, type JobQueue } from "@mezair/queue";
 import { buildGateway } from "./app.js";
 
 function testConfig(runtimeMode: "development" | "ci" | "production" = "ci") {

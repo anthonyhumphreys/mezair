@@ -22,7 +22,7 @@
     "vite": "^6.4.5"
   },
   "devDependencies": {
-    "@mezairstack/cloud-cli": "workspace:*",
+    "@mezair/cloud-cli": "workspace:*",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "typescript": "^5.9.3"

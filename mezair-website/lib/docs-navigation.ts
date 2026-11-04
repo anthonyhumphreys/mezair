@@ -34,7 +34,7 @@ export const docsProducts = [
     shortLabel: "Mezair",
     href: "/docs",
     folder: null,
-    repoName: "mezair-stack/"
+    repoName: "mezair/"
   },
   {
     id: "desktop",
@@ -82,7 +82,7 @@ export const docsProducts = [
     shortLabel: "Project",
     href: "/docs/project/repositories",
     folder: "project",
-    repoName: "mezair-stack/"
+    repoName: "mezair/"
   }
 ] as const;
 

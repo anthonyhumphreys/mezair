@@ -86,7 +86,7 @@ NODE
 )"
 
 DETAIL_OUTPUT="$(
-  MEZAIR_ADMIN_URL="$ADMIN_URL" MEZAIR_ADMIN_TOKEN="$ADMIN_TOKEN" pnpm --dir "$ROOT_DIR" --filter @mezairstack/registry-cli dev -- node-base report "$REPORT_ID"
+  MEZAIR_ADMIN_URL="$ADMIN_URL" MEZAIR_ADMIN_TOKEN="$ADMIN_TOKEN" pnpm --dir "$ROOT_DIR" --filter @mezair/registry-cli dev -- node-base report "$REPORT_ID"
 )"
 if [[ "$DETAIL_OUTPUT" != *"NON_STANDARD_PORT"* || "$DETAIL_OUTPUT" != *"198.51.100.10:8080"* ]]; then
   echo "$DETAIL_OUTPUT"

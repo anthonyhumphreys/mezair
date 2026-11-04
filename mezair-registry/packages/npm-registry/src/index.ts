@@ -1,5 +1,5 @@
 import semver from "semver";
-import type { PackageVersionMetadata, PolicyDecision } from "@mezairstack/shared";
+import type { PackageVersionMetadata, PolicyDecision } from "@mezair/shared";
 
 export type NpmPackageMetadata = {
   name: string;

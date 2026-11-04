@@ -19,7 +19,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store pnpm i
 FROM deps AS build
 COPY packages packages
 COPY apps/gateway apps/gateway
-RUN pnpm --filter @mezairstack/registry... build
+RUN pnpm --filter @mezair/registry... build
 
 FROM node:22-bookworm-slim
 WORKDIR /app

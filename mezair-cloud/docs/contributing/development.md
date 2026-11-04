@@ -87,5 +87,5 @@ Before making the repository public:
 
 Package publishing boundaries are tracked in
 [`docs/contributing/package-publishing.md`](package-publishing.md). In alpha,
-`@mezairstack/cloud-cli` is the only public npm package; workspace internals stay
+`@mezair/cloud-cli` is the only public npm package; workspace internals stay
 private until their API contracts are intentionally stabilized.

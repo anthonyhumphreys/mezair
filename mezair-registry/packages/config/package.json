@@ -1,5 +1,5 @@
 {
-  "name": "@mezairstack/config",
+  "name": "@mezair/config",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@mezairstack/shared": "workspace:*",
+    "@mezair/shared": "workspace:*",
     "zod": "^4.6.7"
   }
 }

@@ -306,7 +306,7 @@ export default function HomePage() {
                 <Button asChild variant="outline">
                   <Link href={githubRepositoryUrl}>
                     <Github aria-hidden="true" />
-                    mezair-stack on GitHub
+                    mezair on GitHub
                   </Link>
                 </Button>
                 <Button asChild variant="ghost">

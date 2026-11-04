@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { AnalysisReportRecord } from "@mezairstack/persistence";
+import type { AnalysisReportRecord } from "@mezair/persistence";
 import { AdminShell } from "@/components/admin/shell";
 import { LoginPanel } from "@/components/admin/login-panel";
 import { AuditEventTable, DecisionTable, OverrideTable, ReportTable } from "@/components/admin/data-tables";

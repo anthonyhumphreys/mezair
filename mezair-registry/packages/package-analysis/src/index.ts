@@ -1,6 +1,6 @@
 import semver from "semver";
 import { gunzipSync } from "node:zlib";
-import { STATIC_ANALYSER_VERSION, type AnalysisReport, type PackageVersionMetadata, type PolicyReason } from "@mezairstack/shared";
+import { STATIC_ANALYSER_VERSION, type AnalysisReport, type PackageVersionMetadata, type PolicyReason } from "@mezair/shared";
 
 const lifecycleScripts = new Set(["preinstall", "install", "postinstall", "prepare", "prepublish", "prepublishOnly"]);
 type DependencyGroup = "runtime" | "dev" | "optional" | "peer";

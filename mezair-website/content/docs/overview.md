@@ -41,15 +41,15 @@ Each project has its own lockfile and tooling. Install dependencies inside the p
 | --- | --- |
 | Mezair Desktop | `cd mezair-app && pnpm install && pnpm dev` |
 | Mezair Registry | `cd mezair-registry && pnpm install --ignore-scripts && docker compose -f infra/docker/docker-compose.yml up --build` |
-| Mezair Node Base | `docker run --rm -it -v "$PWD:/workspace" -w /workspace ghcr.io/anthonyhumphreys/mezair-stack/mezair-node-base:22 mezair-npm-ci-safe` |
+| Mezair Node Base | `docker run --rm -it -v "$PWD:/workspace" -w /workspace ghcr.io/anthonyhumphreys/mezair/mezair-node-base:22 mezair-npm-ci-safe` |
 | Mezair Cloud | `cd mezair-cloud && pnpm install --ignore-scripts && pnpm build && pnpm mezair-cloud --help` |
 
 If you'd rather install the command-line tools, start with the [Mezair CLI](/docs/cli):
 
 ```bash
-npm install --global @mezairstack/cli
-npm install --global @mezairstack/cloud-cli
-npm install --global @mezairstack/registry-cli
+npm install --global @mezair/cli
+npm install --global @mezair/cloud-cli
+npm install --global @mezair/registry-cli
 
 mezair cloud check --json
 mezair registry doctor

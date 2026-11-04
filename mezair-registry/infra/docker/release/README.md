@@ -4,8 +4,8 @@ This bundle runs the published Mezair Registry images with durable local storage
 
 ## Rebrand cutover
 
-The example image prefix `ghcr.io/anthonyhumphreys/mezair-stack` and the
-`@mezairstack` npm packages are intended publication destinations. This source
+The example image prefix `ghcr.io/anthonyhumphreys/mezair` and the
+`@mezair` npm packages are intended publication destinations. This source
 change does not create those packages or images. Rename/configure the hosted
 repository, publish the renamed images and CLIs, and verify their immutable
 tags before using the pull and global-install commands below. Image workflows
@@ -94,7 +94,7 @@ Both npm and pnpm read this setting. Remove the file to return that project to i
 The Registry CLI is optional for installs. For operator checks:
 
 ```bash
-npm install --global @mezairstack/registry-cli
+npm install --global @mezair/registry-cli
 MEZAIR_REGISTRY_URL=http://your-nas.example:4873 mezair-registry doctor
 ```
 

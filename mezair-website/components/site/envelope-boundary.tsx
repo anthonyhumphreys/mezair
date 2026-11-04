@@ -7,7 +7,7 @@ const wireFields = [
 ] as const;
 
 const entityFields = [
-  ["name", "mezair-stack api"],
+  ["name", "mezair api"],
   ["repositories", "2 connected"],
   ["template", "delivery-review"],
   ["settings", "model, theme"]

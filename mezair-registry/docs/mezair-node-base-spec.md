@@ -43,7 +43,7 @@ The image should:
 Personal/internal image name:
 
 ```text
-ghcr.io/anthonyhumphreys/mezair-stack/mezair-node-base:22
+ghcr.io/anthonyhumphreys/mezair/mezair-node-base:22
 ```
 
 ---
@@ -661,7 +661,7 @@ Example `.devcontainer/devcontainer.json`:
 ```json
 {
   "name": "Node with Mezair Base",
-  "image": "ghcr.io/anthonyhumphreys/mezair-stack/mezair-node-base:22",
+  "image": "ghcr.io/anthonyhumphreys/mezair/mezair-node-base:22",
   "remoteUser": "node",
   "containerEnv": {
     "MEZAIR_SECURITY_MODE": "safe",

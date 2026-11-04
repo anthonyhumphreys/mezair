@@ -1,8 +1,8 @@
 import { createGunzip } from "node:zlib";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
-import type { MezairConfig } from "@mezairstack/config";
-import { loadConfig } from "@mezairstack/config";
-import { detectNameSquatting, loadActivePopularPackageIndex } from "@mezairstack/name-squatting";
+import type { MezairConfig } from "@mezair/config";
+import { loadConfig } from "@mezair/config";
+import { detectNameSquatting, loadActivePopularPackageIndex } from "@mezair/name-squatting";
 import {
   calculatePackageAgeDays,
   decodeRoutePackageName,
@@ -16,11 +16,11 @@ import {
   filterMetadataVersions,
   toVersionMetadata,
   type NpmPackageMetadata
-} from "@mezairstack/npm-registry";
-import { createObjectStore, type ObjectStore } from "@mezairstack/object-store";
-import { createPersistence, type MezairPersistence } from "@mezairstack/persistence";
-import { evaluatePolicy } from "@mezairstack/policy-engine";
-import { createJobQueue, type JobQueue } from "@mezairstack/queue";
+} from "@mezair/npm-registry";
+import { createObjectStore, type ObjectStore } from "@mezair/object-store";
+import { createPersistence, type MezairPersistence } from "@mezair/persistence";
+import { evaluatePolicy } from "@mezair/policy-engine";
+import { createJobQueue, type JobQueue } from "@mezair/queue";
 import {
   buildMezairError,
   buildPolicyDecisionAuditEvent,
@@ -34,7 +34,7 @@ import {
   type AnalysisJob,
   type PackageTargetRequest,
   type PolicyDecision
-} from "@mezairstack/shared";
+} from "@mezair/shared";
 
 const metadataPolicyAnalyserVersion = "metadata-policy-2026-05-20.1";
 const installPolicyAnalyserVersion = "install-policy-2026-05-21.1";

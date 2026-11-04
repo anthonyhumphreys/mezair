@@ -49,7 +49,7 @@ jobs:
           fi
 
       - name: Install Worker dependencies
-        run: pnpm install --filter @mezairstack/desktop-updates-worker... --frozen-lockfile --ignore-scripts
+        run: pnpm install --filter @mezair/desktop-updates-worker... --frozen-lockfile --ignore-scripts
 
       - name: Verify Worker
         run: |

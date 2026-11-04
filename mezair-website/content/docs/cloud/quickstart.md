@@ -62,13 +62,13 @@ For normal command-line usage, install the umbrella wrapper and the Cloud
 product CLI:
 
 ```bash
-npm install --global @mezairstack/cli
-npm install --global @mezairstack/cloud-cli
+npm install --global @mezair/cli
+npm install --global @mezair/cloud-cli
 
 mezair cloud check --json
 ```
 
-`@mezairstack/cli` dispatches to the installed product CLI. The direct
+`@mezair/cli` dispatches to the installed product CLI. The direct
 `mezair-cloud` binary remains available, but the docs use `mezair cloud ...` as
 the front door so the Cloud and Registry commands share one Mezair shape.
 
@@ -84,11 +84,11 @@ cd notes
 Without a local workspace checkout, run the published CLI via `pnpm dlx`:
 
 ```bash
-pnpm dlx @mezairstack/cloud-cli new notes
+pnpm dlx @mezair/cloud-cli new notes
 cd notes
 ```
 
-The package name is `@mezairstack/cloud-cli`; it exposes the `mezair-cloud`
+The package name is `@mezair/cloud-cli`; it exposes the `mezair-cloud`
 binary. In human mode, `new` installs dependencies, runs `git init`, prints the
 Lens URL, and starts the local dev server. Use `--json` when you want a finite
 machine-readable scaffold result for an agent run.

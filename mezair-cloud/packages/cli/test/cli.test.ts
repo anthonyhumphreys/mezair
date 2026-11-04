@@ -660,7 +660,7 @@ describe("main", () => {
         status: "ok",
         docs: "/docs/cloud/doctor#packagespublicboundary",
         details: {
-          publicPackages: ["@mezairstack/cloud-cli"],
+          publicPackages: ["@mezair/cloud-cli"],
           candidatePublicApis: [
             "@mezair-cloud/runtime",
             "@mezair-cloud/client",
@@ -1643,7 +1643,7 @@ describe("main", () => {
           "mezair-cloud destroy --preview --app react-notes --yes --dry-run --json",
       });
       expect(packageJson.dependencies).toMatchObject({
-        "@mezairstack/cloud-cli": expect.any(String),
+        "@mezair/cloud-cli": expect.any(String),
         "@vitejs/plugin-react": expect.any(String),
         react: expect.any(String),
         "react-dom": expect.any(String),
@@ -1673,7 +1673,7 @@ describe("main", () => {
         readFile(path.join(cellDir, ".gitignore"), "utf8"),
       ).resolves.toContain(".mezair/local/");
       expect(tsconfig.compilerOptions.paths["@mezair-cloud/runtime"]).toContain(
-        "node_modules/@mezairstack/cloud-cli/dist/packages/runtime/src/index.ts",
+        "node_modules/@mezair/cloud-cli/dist/packages/runtime/src/index.ts",
       );
     } finally {
       process.chdir(originalCwd);
@@ -1729,7 +1729,7 @@ describe("main", () => {
         start: "expo start",
       });
       expect(packageJson.dependencies).toMatchObject({
-        "@mezairstack/cloud-cli": expect.any(String),
+        "@mezair/cloud-cli": expect.any(String),
         expo: expect.any(String),
         "expo-router": expect.any(String),
         react: expect.any(String),

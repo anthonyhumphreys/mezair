@@ -47,7 +47,7 @@ describe("verifyMetadataProvenance", () => {
 
     expect(
       verifyMetadataProvenance({
-        packageName: "@mezairstack/registry-cli",
+        packageName: "@mezair/registry-cli",
         version: "0.1.4",
         integrity: `sha512-${digest.toString("base64")}`,
         provenance: {
@@ -55,7 +55,7 @@ describe("verifyMetadataProvenance", () => {
           source: "dist.attestations",
           raw: {
             subject: {
-              name: "pkg:npm/%40mezairstack/registry-cli@0.1.4",
+              name: "pkg:npm/%40mezair/registry-cli@0.1.4",
               digest: { sha512: digest.toString("hex") }
             }
           }

@@ -37,19 +37,19 @@ importers:
 
   apps/admin:
     dependencies:
-      '@mezairstack/config':
+      '@mezair/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@mezairstack/name-squatting':
+      '@mezair/name-squatting':
         specifier: workspace:*
         version: link:../../packages/name-squatting
-      '@mezairstack/object-store':
+      '@mezair/object-store':
         specifier: workspace:*
         version: link:../../packages/object-store
-      '@mezairstack/persistence':
+      '@mezair/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
-      '@mezairstack/shared':
+      '@mezair/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@radix-ui/react-slot':
@@ -103,31 +103,31 @@ importers:
 
   apps/gateway:
     dependencies:
-      '@mezairstack/config':
+      '@mezair/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@mezairstack/logger':
+      '@mezair/logger':
         specifier: workspace:*
         version: link:../../packages/logger
-      '@mezairstack/name-squatting':
+      '@mezair/name-squatting':
         specifier: workspace:*
         version: link:../../packages/name-squatting
-      '@mezairstack/npm-registry':
+      '@mezair/npm-registry':
         specifier: workspace:*
         version: link:../../packages/npm-registry
-      '@mezairstack/object-store':
+      '@mezair/object-store':
         specifier: workspace:*
         version: link:../../packages/object-store
-      '@mezairstack/persistence':
+      '@mezair/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
-      '@mezairstack/policy-engine':
+      '@mezair/policy-engine':
         specifier: workspace:*
         version: link:../../packages/policy-engine
-      '@mezairstack/queue':
+      '@mezair/queue':
         specifier: workspace:*
         version: link:../../packages/queue
-      '@mezairstack/shared':
+      '@mezair/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       fastify:
@@ -136,40 +136,40 @@ importers:
 
   apps/worker:
     dependencies:
-      '@mezairstack/config':
+      '@mezair/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@mezairstack/llm-risk-review':
+      '@mezair/llm-risk-review':
         specifier: workspace:*
         version: link:../../packages/llm-risk-review
-      '@mezairstack/logger':
+      '@mezair/logger':
         specifier: workspace:*
         version: link:../../packages/logger
-      '@mezairstack/name-squatting':
+      '@mezair/name-squatting':
         specifier: workspace:*
         version: link:../../packages/name-squatting
-      '@mezairstack/npm-registry':
+      '@mezair/npm-registry':
         specifier: workspace:*
         version: link:../../packages/npm-registry
-      '@mezairstack/object-store':
+      '@mezair/object-store':
         specifier: workspace:*
         version: link:../../packages/object-store
-      '@mezairstack/package-analysis':
+      '@mezair/package-analysis':
         specifier: workspace:*
         version: link:../../packages/package-analysis
-      '@mezairstack/persistence':
+      '@mezair/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
-      '@mezairstack/policy-engine':
+      '@mezair/policy-engine':
         specifier: workspace:*
         version: link:../../packages/policy-engine
-      '@mezairstack/provenance':
+      '@mezair/provenance':
         specifier: workspace:*
         version: link:../../packages/provenance
-      '@mezairstack/queue':
+      '@mezair/queue':
         specifier: workspace:*
         version: link:../../packages/queue
-      '@mezairstack/shared':
+      '@mezair/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@openai/codex':
@@ -191,7 +191,7 @@ importers:
 
   packages/config:
     dependencies:
-      '@mezairstack/shared':
+      '@mezair/shared':
         specifier: workspace:*
         version: link:../shared
       zod:
@@ -200,7 +200,7 @@ importers:
 
   packages/llm-risk-review:
     dependencies:
-      '@mezairstack/shared':
+      '@mezair/shared':
         specifier: workspace:*
         version: link:../shared
       zod:
@@ -215,7 +215,7 @@ importers:
 
   packages/name-squatting:
     dependencies:
-      '@mezairstack/shared':
+      '@mezair/shared':
         specifier: workspace:*
         version: link:../shared
     devDependencies:
@@ -225,7 +225,7 @@ importers:
 
   packages/npm-registry:
     dependencies:
-      '@mezairstack/shared':
+      '@mezair/shared':
         specifier: workspace:*
         version: link:../shared
       semver:
@@ -241,7 +241,7 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.1146.0
         version: 3.1146.0
-      '@mezairstack/config':
+      '@mezair/config':
         specifier: workspace:*
         version: link:../config
     devDependencies:
@@ -251,7 +251,7 @@ importers:
 
   packages/package-analysis:
     dependencies:
-      '@mezairstack/shared':
+      '@mezair/shared':
         specifier: workspace:*
         version: link:../shared
       semver:
@@ -267,10 +267,10 @@ importers:
 
   packages/persistence:
     dependencies:
-      '@mezairstack/config':
+      '@mezair/config':
         specifier: workspace:*
         version: link:../config
-      '@mezairstack/shared':
+      '@mezair/shared':
         specifier: workspace:*
         version: link:../shared
       drizzle-orm:
@@ -286,10 +286,10 @@ importers:
 
   packages/policy-engine:
     dependencies:
-      '@mezairstack/config':
+      '@mezair/config':
         specifier: workspace:*
         version: link:../config
-      '@mezairstack/shared':
+      '@mezair/shared':
         specifier: workspace:*
         version: link:../shared
     devDependencies:
@@ -299,7 +299,7 @@ importers:
 
   packages/provenance:
     dependencies:
-      '@mezairstack/shared':
+      '@mezair/shared':
         specifier: workspace:*
         version: link:../shared
     devDependencies:
@@ -312,10 +312,10 @@ importers:
       '@aws-sdk/client-sqs':
         specifier: ^3.1146.0
         version: 3.1146.0
-      '@mezairstack/config':
+      '@mezair/config':
         specifier: workspace:*
         version: link:../config
-      '@mezairstack/shared':
+      '@mezair/shared':
         specifier: workspace:*
         version: link:../shared
       bullmq:

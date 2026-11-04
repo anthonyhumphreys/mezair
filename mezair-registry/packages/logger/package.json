@@ -1,5 +1,5 @@
 {
-  "name": "@mezairstack/logger",
+  "name": "@mezair/logger",
   "version": "0.1.0",
   "private": true,
   "type": "module",

@@ -1,4 +1,4 @@
-# @mezairstack/cloud-cli
+# @mezair/cloud-cli
 
 CLI package for Mezair Cloud.
 
@@ -12,8 +12,8 @@ stabilized.
 ## Install
 
 ```bash
-npm install --global @mezairstack/cli
-npm install --global @mezairstack/cloud-cli
+npm install --global @mezair/cli
+npm install --global @mezair/cloud-cli
 mezair cloud check --json
 ```
 

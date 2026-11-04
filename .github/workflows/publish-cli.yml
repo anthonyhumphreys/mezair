@@ -1,4 +1,4 @@
-name: Stage @mezairstack/cli for npm approval
+name: Stage @mezair/cli for npm approval
 
 on:
   push:
@@ -58,15 +58,15 @@ jobs:
           package_version="$(node -p "require('./apps/cli-wrapper/package.json').version")"
           expected_tag="cli-v${package_version}"
           if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match @mezairstack/cli version ${package_version} (${expected_tag})." >&2
+            echo "Tag ${GITHUB_REF_NAME} does not match @mezair/cli version ${package_version} (${expected_tag})." >&2
             exit 1
           fi
 
       - name: Build
-        run: pnpm --filter @mezairstack/cli build
+        run: pnpm --filter @mezair/cli build
 
       - name: Test
-        run: pnpm --filter @mezairstack/cli test
+        run: pnpm --filter @mezair/cli test
 
       - name: Stage package on npm
         working-directory: mezair-registry/apps/cli-wrapper
@@ -84,6 +84,6 @@ jobs:
           {
             echo "## npm approval required"
             echo
-            echo "\`@mezairstack/cli@${package_version}\` is staged, not yet public."
+            echo "\`@mezair/cli@${package_version}\` is staged, not yet public."
             echo "Review and approve it in npm within seven days."
           } >> "${GITHUB_STEP_SUMMARY}"

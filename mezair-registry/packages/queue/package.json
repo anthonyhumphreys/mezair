@@ -1,5 +1,5 @@
 {
-  "name": "@mezairstack/queue",
+  "name": "@mezair/queue",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,8 +14,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@mezairstack/config": "workspace:*",
-    "@mezairstack/shared": "workspace:*",
+    "@mezair/config": "workspace:*",
+    "@mezair/shared": "workspace:*",
     "@aws-sdk/client-sqs": "^3.1146.0",
     "bullmq": "^5.81.5"
   },

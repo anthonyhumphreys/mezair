@@ -1,14 +1,14 @@
 import semver from "semver";
-import type { MezairConfig } from "@mezairstack/config";
-import { createLlmRiskReviewProvider, type LlmRiskReviewProvider } from "@mezairstack/llm-risk-review";
-import { detectNameSquatting, loadPopularPackageIndex, type PopularPackageIndex } from "@mezairstack/name-squatting";
-import type { NpmRegistryClient } from "@mezairstack/npm-registry";
-import { calculatePackageAgeDays, resolveMetadataVersion, toVersionMetadata } from "@mezairstack/npm-registry";
-import type { ObjectStore } from "@mezairstack/object-store";
-import { analyseFileTree, analyseManifestChange, mergeAnalysisReports, parseNpmTarball } from "@mezairstack/package-analysis";
-import type { MezairPersistence } from "@mezairstack/persistence";
-import { evaluatePolicy } from "@mezairstack/policy-engine";
-import { FetchingProvenanceVerifier, type ProvenanceVerifier } from "@mezairstack/provenance";
+import type { MezairConfig } from "@mezair/config";
+import { createLlmRiskReviewProvider, type LlmRiskReviewProvider } from "@mezair/llm-risk-review";
+import { detectNameSquatting, loadPopularPackageIndex, type PopularPackageIndex } from "@mezair/name-squatting";
+import type { NpmRegistryClient } from "@mezair/npm-registry";
+import { calculatePackageAgeDays, resolveMetadataVersion, toVersionMetadata } from "@mezair/npm-registry";
+import type { ObjectStore } from "@mezair/object-store";
+import { analyseFileTree, analyseManifestChange, mergeAnalysisReports, parseNpmTarball } from "@mezair/package-analysis";
+import type { MezairPersistence } from "@mezair/persistence";
+import { evaluatePolicy } from "@mezair/policy-engine";
+import { FetchingProvenanceVerifier, type ProvenanceVerifier } from "@mezair/provenance";
 import {
   buildPolicyDecisionAuditEvent,
   type AnalysisJob,
@@ -19,7 +19,7 @@ import {
   type LlmRiskReviewInput,
   type PackageVersionMetadata,
   type PolicyReason
-} from "@mezairstack/shared";
+} from "@mezair/shared";
 
 export type WorkerAnalysisDependencies = {
   config: MezairConfig;

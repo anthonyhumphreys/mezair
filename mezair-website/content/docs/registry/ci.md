@@ -44,7 +44,7 @@ jobs:
 
       - run: corepack enable
 
-      - run: npm install --global @mezairstack/registry-cli
+      - run: npm install --global @mezair/registry-cli
 
       - name: Install through Mezair Registry
         run: |
@@ -64,7 +64,7 @@ jobs:
           docker run --rm \
             -v "$PWD:/workspace" \
             -w /workspace \
-            ghcr.io/anthonyhumphreys/mezair-stack/mezair-node-base:22 \
+            ghcr.io/anthonyhumphreys/mezair/mezair-node-base:22 \
             mezair-npm-ci-safe
 
       - uses: actions/upload-artifact@v4

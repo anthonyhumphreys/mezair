@@ -1,12 +1,12 @@
 {
-  "name": "@mezairstack/registry-cli",
-  "version": "0.1.4",
+  "name": "@mezair/registry-cli",
+  "version": "0.1.5",
   "license": "MIT",
   "description": "Command-line client for Mezair Registry package decisions, lockfile scans, reports, and overrides.",
   "private": false,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/anthonyhumphreys/mezair-stack.git"
+    "url": "git+https://github.com/anthonyhumphreys/mezair.git"
   },
   "type": "module",
   "bin": {

@@ -1,5 +1,5 @@
 {
-  "name": "@mezairstack/npm-registry",
+  "name": "@mezair/npm-registry",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@mezairstack/shared": "workspace:*",
+    "@mezair/shared": "workspace:*",
     "semver": "^7.8.5"
   },
   "devDependencies": {

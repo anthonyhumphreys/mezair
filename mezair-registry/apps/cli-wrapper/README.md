@@ -4,9 +4,9 @@ Umbrella dispatcher for Mezair product CLIs. Use this as the normal Mezair
 command-line entrypoint:
 
 ```bash
-npm install --global @mezairstack/cli
-npm install --global @mezairstack/cloud-cli
-npm install --global @mezairstack/registry-cli
+npm install --global @mezair/cli
+npm install --global @mezair/cloud-cli
+npm install --global @mezair/registry-cli
 
 mezair cloud check --json
 mezair registry scan package-lock.json --queue-analysis

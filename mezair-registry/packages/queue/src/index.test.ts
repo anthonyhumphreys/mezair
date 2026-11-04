@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { loadConfig } from "@mezairstack/config";
+import { loadConfig } from "@mezair/config";
 import {
   BullMqJobQueue,
   MemoryJobQueue,

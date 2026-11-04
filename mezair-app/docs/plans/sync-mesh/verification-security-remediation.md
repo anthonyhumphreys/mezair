@@ -49,7 +49,7 @@ harmful commands without physical access to a machine. Approval mode explicitly
 authorizes each bootstrap recipe or verification command and provider escalation;
 automatic sandbox modes enforce their boundary instead of relying on a prompt.
 
-[CodeQL alert #29](https://github.com/anthonyhumphreys/mezair-stack/security/code-scanning/29)
+[CodeQL alert #29](https://github.com/anthonyhumphreys/mezair/security/code-scanning/29)
 identifies input reaching a shell. Keep its specific `won't fix` disposition for
 intended authorized execution. Do not disable CodeQL or blacklist commands.
 Reopen for an authentication/source-policy bypass, a target-ceiling bypass,

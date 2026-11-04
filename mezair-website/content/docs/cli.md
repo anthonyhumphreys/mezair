@@ -21,8 +21,8 @@ mezair registry scan package-lock.json --queue-analysis
 
 Behind it are two product commands:
 
-- `mezair-cloud`, from `@mezairstack/cloud-cli`
-- `mezair-registry`, from `@mezairstack/registry-cli`
+- `mezair-cloud`, from `@mezair/cloud-cli`
+- `mezair-registry`, from `@mezair/registry-cli`
 
 You can call those directly, which is handy for scripts and for debugging. The docs use `mezair cloud …` and `mezair registry …` so there's one shape to learn.
 
@@ -31,18 +31,18 @@ You can call those directly, which is handy for scripts and for debugging. The d
 Install the `mezair` command, plus the product CLIs you need:
 
 ```bash
-npm install --global @mezairstack/cli
-npm install --global @mezairstack/cloud-cli
-npm install --global @mezairstack/registry-cli
+npm install --global @mezair/cli
+npm install --global @mezair/cloud-cli
+npm install --global @mezair/registry-cli
 ```
 
-`@mezairstack/cli` doesn't bundle the product CLIs. That keeps it small, and means you don't pull in Cloud's deployment dependencies just to check Registry policy.
+`@mezair/cli` doesn't bundle the product CLIs. That keeps it small, and means you don't pull in Cloud's deployment dependencies just to check Registry policy.
 
 To try something once without installing globally, run the product package with `npx`:
 
 ```bash
-npx @mezairstack/cloud-cli check --json
-npx @mezairstack/registry-cli doctor
+npx @mezair/cloud-cli check --json
+npx @mezair/registry-cli doctor
 ```
 
 ## Which command does what

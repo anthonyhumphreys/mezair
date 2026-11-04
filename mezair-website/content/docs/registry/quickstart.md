@@ -75,15 +75,15 @@ When the gateway runs on another machine, both the client registry URL and the g
 Install the CLI from npm:
 
 ```bash
-npm install --global @mezairstack/cli
-npm install --global @mezairstack/registry-cli
+npm install --global @mezair/cli
+npm install --global @mezair/registry-cli
 MEZAIR_REGISTRY_URL=http://localhost:4873 mezair registry explain react@latest
 ```
 
 Or run it without a global install:
 
 ```bash
-npx @mezairstack/registry-cli explain react@latest
+npx @mezair/registry-cli explain react@latest
 ```
 
 The CLI requires the gateway you started above. See [CLI](/docs/registry/cli) for endpoint configuration, admin tokens, command reference, and CI examples.
@@ -115,7 +115,7 @@ Use real `package-lock.json`, `pnpm-lock.yaml`, or `yarn.lock` files from high-t
 Use Node Base when you want the install itself to happen inside a safer container:
 
 ```bash
-docker run --rm -it -v "$PWD:/workspace" -w /workspace ghcr.io/anthonyhumphreys/mezair-stack/mezair-node-base:22 mezair-npm-ci-safe
+docker run --rm -it -v "$PWD:/workspace" -w /workspace ghcr.io/anthonyhumphreys/mezair/mezair-node-base:22 mezair-npm-ci-safe
 ```
 
 Safe mode runs `npm ci --ignore-scripts`, scans installed package manifests, and writes reports under `.mezair/reports` or `MEZAIR_REPORT_DIR`.
@@ -123,7 +123,7 @@ Safe mode runs `npm ci --ignore-scripts`, scans installed package manifests, and
 Observed mode is explicit:
 
 ```bash
-docker run --rm -it -v "$PWD:/workspace" -w /workspace ghcr.io/anthonyhumphreys/mezair-stack/mezair-node-base:22 mezair-npm-ci-observed
+docker run --rm -it -v "$PWD:/workspace" -w /workspace ghcr.io/anthonyhumphreys/mezair/mezair-node-base:22 mezair-npm-ci-observed
 ```
 
 Use observed mode only when dependency lifecycle scripts must run and you want process, network, filesystem, lifecycle, and environment evidence.

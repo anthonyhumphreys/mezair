@@ -11,6 +11,6 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store pnpm i
 
 COPY packages packages
 
-RUN pnpm --filter @mezairstack/persistence... build
+RUN pnpm --filter @mezair/persistence... build
 
-CMD ["pnpm", "--filter", "@mezairstack/persistence", "db:migrate"]
+CMD ["pnpm", "--filter", "@mezair/persistence", "db:migrate"]

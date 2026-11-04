@@ -4,9 +4,9 @@ import {
   encodePopularPackageIndex,
   parsePopularPackageIndex,
   popularPackageIndexDatedObjectKey
-} from "@mezairstack/name-squatting";
-import type { AnalysisReportRecord, NodeBaseReportRisk } from "@mezairstack/persistence";
-import { llmReviewRequestBodySchema, overrideCreateRequestSchema, overrideRevokeRequestSchema, resolveOverrideExpiry, type Override } from "@mezairstack/shared";
+} from "@mezair/name-squatting";
+import type { AnalysisReportRecord, NodeBaseReportRisk } from "@mezair/persistence";
+import { llmReviewRequestBodySchema, overrideCreateRequestSchema, overrideRevokeRequestSchema, resolveOverrideExpiry, type Override } from "@mezair/shared";
 import { config, getObjectStore, getPackageReview, getPersistence, recordEffectivePolicyConfig } from "@/lib/admin-data";
 import { isAdminTokenValue } from "@/lib/auth";
 

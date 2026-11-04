@@ -52,9 +52,9 @@ git status --short
 git push origin feature/sync-mesh--foundations
 # Only needed if the change did not trigger an automatic backend deployment:
 gh workflow run sync-backend-staging.yml \
-  --repo anthonyhumphreys/mezair-stack \
+  --repo anthonyhumphreys/mezair \
   --ref feature/sync-mesh--foundations
-gh pr checks 91 --repo anthonyhumphreys/mezair-stack
+gh pr checks 91 --repo anthonyhumphreys/mezair
 ```
 
 Dispatch only when the pushed change did not trigger an automatic backend
@@ -67,12 +67,12 @@ Then build the isolated macOS arm64 and Linux x64 previews in one run:
 ```sh
 mezair_candidate_sha="$(git rev-parse HEAD)"
 gh workflow run app-candidate-preview.yml \
-  --repo anthonyhumphreys/mezair-stack \
+  --repo anthonyhumphreys/mezair \
   --ref feature/sync-mesh--foundations \
   -f pull_request=91 -f head_sha="$mezair_candidate_sha"
 ```
 
-The [candidate workflow](https://github.com/anthonyhumphreys/mezair-stack/actions/workflows/app-candidate-preview.yml)
+The [candidate workflow](https://github.com/anthonyhumphreys/mezair/actions/workflows/app-candidate-preview.yml)
 retains separate platform artifacts for 14 days: DMG and ZIP for macOS arm64;
 AppImage, `.deb` and `.pacman` for Linux x64. Each includes a checksum manifest.
 Use both previews from the matching SHA. They have separate application data,
@@ -82,10 +82,10 @@ No tester flag setup is required. The previews are unsigned; native installation
 acceptance remains part of the rehearsal. See [candidate previews](../../candidate-previews.md)
 for platform details.
 
-Use the [backend workflow](https://github.com/anthonyhumphreys/mezair-stack/actions/workflows/sync-backend-staging.yml)
+Use the [backend workflow](https://github.com/anthonyhumphreys/mezair/actions/workflows/sync-backend-staging.yml)
 to inspect deployment progress. Automatic pushes preserve the saved staging
 managed endpoint setting; they do not silently disable it.
-The website preview is linked from [PR91](https://github.com/anthonyhumphreys/mezair-stack/pull/91).
+The website preview is linked from [PR91](https://github.com/anthonyhumphreys/mezair/pull/91).
 Confirm its commit and staging account environment before signing in.
 The staging WorkOS callback returns to `staging.mezair.dev`. For this
 rehearsal, pin that staging hostname to the verified candidate website deployment

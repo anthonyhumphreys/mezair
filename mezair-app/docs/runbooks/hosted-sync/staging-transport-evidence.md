@@ -20,14 +20,14 @@ value is not recorded here.
 Commit `a3a431d` fixed staging CI so it installs all six required runtime secrets:
 three hosted identity/service secrets and three tunnel secrets. Commit `3a8353a`
 fixed the Cloudflare native fetch receiver. Backend
-[run 37413757753](https://github.com/anthonyhumphreys/mezair-stack/actions/runs/37413757753)
+[run 37413757753](https://github.com/anthonyhumphreys/mezair/actions/runs/37413757753)
 passed 42 test files with 442 tests and all six required runtime binding checks.
 
 Commit `dedab943` fixed provider cleanup. SQLite `rowsWritten` includes index
 maintenance, so it was not a reliable count of changed rows. Cleanup now uses
 `UPDATE RETURNING`, with a regression test against real Durable Object SQLite.
 Backend
-[run 37414829188](https://github.com/anthonyhumphreys/mezair-stack/actions/runs/37414829188)
+[run 37414829188](https://github.com/anthonyhumphreys/mezair/actions/runs/37414829188)
 passed 42 test files and 443 tests.
 
 ## Smoke attempt on 6 October

@@ -100,7 +100,7 @@ export function useChatScroll({
     }
 
     if (shouldStickToBottomRef.current && !hasTranscriptSelection(container)) {
-      container.scrollTop = container.scrollHeight;
+      pinToBottom(container);
       lastScrollTopRef.current = container.scrollTop;
     } else {
       captureCurrentPosition(container, state);
@@ -167,7 +167,7 @@ export function useChatScroll({
         const state = scopeStateRef.current;
         if (!state?.restored) return;
         if (shouldStickToBottomRef.current && !hasTranscriptSelection(container)) {
-          container.scrollTop = container.scrollHeight;
+          pinToBottom(container);
           lastScrollTopRef.current = container.scrollTop;
           state.position = { mode: 'bottom' };
           setShowJumpToLatest(false);
@@ -212,6 +212,13 @@ export function useChatScroll({
   }, [containerRef, persistPosition]);
 
   return { showJumpToLatest, jumpToLatest };
+}
+
+function pinToBottom(container: HTMLDivElement): void {
+  const bottom = Math.max(0, container.scrollHeight - container.clientHeight);
+  // Rewriting scrollTop at the end of a trackpad gesture interrupts Chromium's
+  // scrolling even when nothing grew. Only correct an actual layout change.
+  if (Math.abs(container.scrollTop - bottom) > 1) container.scrollTop = bottom;
 }
 
 function findTurnTop(container: HTMLDivElement, turnKey: string): number | undefined {

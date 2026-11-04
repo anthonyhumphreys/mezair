@@ -142,7 +142,7 @@ export function ChatTranscript({
         aria-label="Chat transcript"
         data-chat-scroll-container
         tabIndex={0}
-        className={`h-full overflow-y-auto [scrollbar-gutter:stable] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${centered ? 'flex' : ''}`}
+        className={`h-full overflow-y-auto overscroll-none [scrollbar-gutter:stable] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${centered ? 'flex' : ''}`}
       >
         <div
           data-chat-transcript-content
@@ -184,7 +184,7 @@ export function ChatTranscript({
           )}
           {turns.length > 0 && (
             <VirtualChatTurns
-              key={activeThreadId ?? 'new'}
+              key={`turns:${activeThreadId ?? 'new'}`}
               turns={turns}
               scopeKey={scrollScopeKey ?? activeThreadId}
               containerRef={messagesContainerRef}
@@ -220,7 +220,7 @@ export function ChatTranscript({
           )}
 
           {activeThreadId && paneKind === 'transcript' && (
-            <ChatDelegations key={activeThreadId} threadId={activeThreadId} />
+            <ChatDelegations key={`delegations:${activeThreadId}`} threadId={activeThreadId} />
           )}
           {error && (
             <ChatErrorNotice

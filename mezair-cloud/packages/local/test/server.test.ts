@@ -614,7 +614,7 @@ describe("startLocalRuntimeServer", () => {
     }
   });
 
-  it("serves a Vite client with runtime proxying", async () => {
+  it("serves a Vite client and proxy while denying sensitive files with query parameters", async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "mezair-local-"));
     tempDirs.push(rootDir);
     await mkdir(path.join(rootDir, "src"), { recursive: true });
@@ -628,6 +628,9 @@ describe("startLocalRuntimeServer", () => {
       ].join("\n"),
       "utf8",
     );
+
+    const canary = "MEZAIR_TEST_SECRET=must-not-be-served";
+    await writeFile(path.join(rootDir, ".env"), `${canary}\n`, "utf8");
     await writeFile(
       path.join(rootDir, "src/main.ts"),
       "document.body.dataset.loaded = 'true';\n",
@@ -657,6 +660,14 @@ describe("startLocalRuntimeServer", () => {
 
     try {
       await expect(fetchText(server.clientUrl)).resolves.toContain("Vite Cell");
+      await expect(
+        fetchText(`${server.clientUrl}/src/main.ts`),
+      ).resolves.toContain("document.body.dataset.loaded");
+      for (const suffix of ["", "?raw", "?import&raw", "?import&url&inline"]) {
+        const response = await fetch(`${server.clientUrl}/.env${suffix}`);
+        expect(response.status, `Sensitive file request ${suffix}`).toBe(403);
+        expect(await response.text()).not.toContain(canary);
+      }
       await expect(
         postJson(`${server.clientUrl}/_mezair/query/ping`, { input: {} }),
       ).resolves.toMatchObject({

@@ -61,6 +61,80 @@ function Transcript({ entries }: { entries: ChatEntry[] }) {
 }
 
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+interface ScrollGeometrySnapshot {
+  scrollTop: number;
+  scrollHeight: number;
+  turnContentTop: number;
+  processingCardHeight: number;
+}
+
+function readScrollGeometry(
+  container: HTMLElement,
+  processingCard: HTMLElement,
+  turn: HTMLElement,
+): ScrollGeometrySnapshot {
+  const containerTop = container.getBoundingClientRect().top;
+  const turnTop = turn.getBoundingClientRect().top;
+  return {
+    scrollTop: container.scrollTop,
+    scrollHeight: container.scrollHeight,
+    turnContentTop: turnTop - containerTop + container.scrollTop,
+    processingCardHeight: processingCard.getBoundingClientRect().height,
+  };
+}
+
+function sameScrollGeometry(left: ScrollGeometrySnapshot, right: ScrollGeometrySnapshot): boolean {
+  return (
+    Math.abs(left.scrollTop - right.scrollTop) < 0.5 &&
+    left.scrollHeight === right.scrollHeight &&
+    Math.abs(left.turnContentTop - right.turnContentTop) < 0.5 &&
+    Math.abs(left.processingCardHeight - right.processingCardHeight) < 0.5
+  );
+}
+
+function formatScrollGeometry(geometry: ScrollGeometrySnapshot): string {
+  return `scrollTop=${geometry.scrollTop.toFixed(2)}px, scrollHeight=${geometry.scrollHeight}px, turnContentTop=${geometry.turnContentTop.toFixed(2)}px, processingCardHeight=${geometry.processingCardHeight.toFixed(2)}px`;
+}
+
+async function waitForStableExpandedGeometry(
+  container: HTMLElement,
+  disclosure: HTMLButtonElement,
+  processingCard: HTMLElement,
+  turn: HTMLElement,
+  label: string,
+  referenceScrollTop?: number,
+): Promise<{ geometry: ScrollGeometrySnapshot; maxScrollDeviation: number }> {
+  let previous = readScrollGeometry(container, processingCard, turn);
+  let stableFrames = 0;
+  let maxScrollDeviation =
+    referenceScrollTop === undefined ? 0 : Math.abs(previous.scrollTop - referenceScrollTop);
+
+  // The virtualizer batches ResizeObserver measurements through animation frames.
+  // Require several stable snapshots so expansion and streaming don't overlap that correction.
+  for (let frameNumber = 0; frameNumber < 24; frameNumber += 1) {
+    await frame();
+    if (!disclosure.isConnected || !processingCard.isConnected || !turn.isConnected) {
+      throw new Error(`${label} target detached before geometry settled.`);
+    }
+    if (disclosure.getAttribute('aria-expanded') !== 'true') {
+      throw new Error(`${label} disclosure closed before geometry settled.`);
+    }
+
+    const current = readScrollGeometry(container, processingCard, turn);
+    if (referenceScrollTop !== undefined) {
+      maxScrollDeviation = Math.max(
+        maxScrollDeviation,
+        Math.abs(current.scrollTop - referenceScrollTop),
+      );
+    }
+    stableFrames = sameScrollGeometry(previous, current) ? stableFrames + 1 : 0;
+    if (stableFrames >= 3) return { geometry: current, maxScrollDeviation };
+    previous = current;
+  }
+
+  throw new Error(`${label} did not settle within 24 frames (${formatScrollGeometry(previous)}).`);
+}
+
 const percentile = (values: number[], fraction: number) =>
   [...values].sort((a, b) => a - b)[
     Math.min(values.length - 1, Math.floor(values.length * fraction))
@@ -168,24 +242,39 @@ Object.assign(window, {
         const expand = document.querySelector<HTMLButtonElement>(
           'button[aria-label^="Expand processing"]',
         )!;
+        const processingCard = expand.closest<HTMLElement>('.processing-card');
+        const expandedTurn = expand.closest<HTMLElement>('[data-chat-turn-key]');
+        check(Boolean(processingCard && expandedTurn), 'Expanded processing must belong to a turn');
         expand.click();
-        await frame();
-        await frame();
+        const expansionLayout = await waitForStableExpandedGeometry(
+          container,
+          expand,
+          processingCard!,
+          expandedTurn!,
+          'Processing expansion',
+        );
         check(
           document.querySelectorAll('.processing-item').length === 30,
           'Expanded work must mount its 30 operations',
         );
-        const startTop = container.scrollTop;
+        const startTop = expansionLayout.geometry.scrollTop;
         changeLiveAnswer();
-        await frame();
-        await frame();
+        const streamingLayout = await waitForStableExpandedGeometry(
+          container,
+          expand,
+          processingCard!,
+          expandedTurn!,
+          'Streaming update',
+          startTop,
+        );
         check(
           document.querySelectorAll('.processing-item').length === 30,
           'Streaming must preserve expanded history',
         );
         check(
-          Math.abs(container.scrollTop - startTop) < 2,
-          'Streaming must preserve a reader’s scroll offset',
+          Math.abs(streamingLayout.geometry.scrollTop - startTop) < 2 &&
+            streamingLayout.maxScrollDeviation < 2,
+          `Streaming must preserve a reader’s scroll offset (start=${startTop.toFixed(2)}px, settled=${streamingLayout.geometry.scrollTop.toFixed(2)}px, maxDeviation=${streamingLayout.maxScrollDeviation.toFixed(2)}px, before=${formatScrollGeometry(expansionLayout.geometry)}, after=${formatScrollGeometry(streamingLayout.geometry)}).`,
         );
         const latest = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
           button.textContent?.includes('Jump to live work'),

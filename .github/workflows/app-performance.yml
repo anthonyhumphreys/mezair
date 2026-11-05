@@ -31,6 +31,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Clear inherited renderer measurements
+        run: rm -f docs/performance/ci-before.json docs/performance/ci-after.json docs/performance/ci-bundles-before.json docs/performance/ci-bundles-after.json
       - uses: pnpm/action-setup@v4
         with:
           version: 10.32.1
@@ -84,6 +86,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Clear inherited native measurements
+        run: rm -f docs/performance/native-windows-before.json docs/performance/native-windows-after.json
       - uses: pnpm/action-setup@v4
         with:
           version: 10.32.1

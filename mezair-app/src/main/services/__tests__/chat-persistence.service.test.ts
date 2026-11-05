@@ -8,6 +8,12 @@ import { SCHEMA_SQL } from '../../db/schema.js';
 const inMemoryDb = new Database(':memory:');
 inMemoryDb.exec(SCHEMA_SQL);
 
+// chat-persistence reaches the PR helper, which imports BrowserWindow. Keep
+// this service-only test independent of Electron's package install hook.
+vi.mock('electron', () => ({
+  BrowserWindow: { getAllWindows: () => [] },
+}));
+
 vi.mock('../../db/database.js', () => ({
   getDb: () => inMemoryDb,
 }));

@@ -12,6 +12,33 @@ import { CRYPTO_ENTITY_DEVICE_IDENTITY } from '../../../../cloud/contract/sealed
 
 const db = new Database(':memory:');
 db.exec(SCHEMA_SQL);
+
+// workflow.service imports Electron-backed services even though these tests
+// exercise only persistence. Mock the narrow APIs used by that dependency
+// graph so importing Electron cannot trigger its postinstall/download path.
+vi.mock('electron', () => ({
+  app: {
+    getPath: () => '/tmp/mezair-sync-persistence-test',
+    getAppPath: () => process.cwd(),
+    getVersion: () => 'test',
+    isPackaged: false,
+  },
+  BrowserWindow: {
+    getAllWindows: () => [],
+    getFocusedWindow: () => null,
+  },
+  Notification: { isSupported: () => false },
+  dialog: {
+    showMessageBox: async () => ({ response: 0, checkboxChecked: false }),
+    showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
+    showSaveDialog: async () => ({ canceled: true, filePath: undefined }),
+  },
+  shell: {
+    openExternal: async () => undefined,
+    showItemInFolder: () => undefined,
+  },
+}));
+
 vi.mock('../../db/database.js', () => ({ getDb: () => db }));
 vi.mock('../persona.service.js', () => ({
   getPersonaById: (id: string) => (id === 'coder' ? { id } : null),

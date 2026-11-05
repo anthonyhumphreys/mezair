@@ -1,4 +1,9 @@
 import type { RemoteCodexAccountAuthChoice } from './remote-chat';
+import type {
+  ThemeDesignOptions,
+  ThemeDesignRequest,
+  ThemeDesignResponse,
+} from './theme-design.js';
 import type { ChatHistoryPage, ChatHistoryPageRequest } from './history-pages';
 import type { FactoryRunPage, FactoryRunPageRequest, FactoryRunSummary } from './factories';
 import type {
@@ -850,6 +855,8 @@ export interface MezairAPI {
   };
 
   settings: {
+    getThemeDesignOptions: (force?: boolean) => Promise<ThemeDesignOptions>;
+    designTheme: (request: ThemeDesignRequest) => Promise<ThemeDesignResponse>;
     getSecretStorageStatus: () => Promise<import('./secret-storage.js').CredentialStorageStatus>;
     setupSecretVault: (
       input: import('./secret-storage.js').SecretVaultSetup,
@@ -864,6 +871,11 @@ export interface MezairAPI {
     migrateSavedCredentials: () => Promise<import('./secret-storage.js').CredentialMigrationResult>;
     get: () => Promise<AppSettings>;
     update: (settings: Partial<AppSettings>) => Promise<void>;
+    onThemeChanged: (
+      callback: (
+        settings: Pick<AppSettings, 'theme' | 'customThemes'> & { revision: number },
+      ) => void,
+    ) => () => void;
     getCodexStatus: () => Promise<CodexCliStatus>;
     getCodexRuntimeStatus: () => Promise<CodexRuntimeStatus>;
     installCodexRuntime: () => Promise<CodexRuntimeStatus>;

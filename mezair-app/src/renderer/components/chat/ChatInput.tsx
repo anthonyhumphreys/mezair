@@ -1,4 +1,12 @@
-import { memo, useState, useRef, useCallback, useEffect, type ReactNode } from 'react';
+import {
+  memo,
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  type ReactNode,
+} from 'react';
 import {
   AlertCircle,
   ChevronDown,
@@ -55,6 +63,7 @@ import {
   isCurrentComposerDraft,
   type ComposerDraftVersion,
 } from './chat-composer-intent';
+import { useComposerAutosize, type ComposerAutosizeBounds } from './composer-autosize';
 
 // Stable defaults: effects key on these props, so a fresh [] per render would loop.
 const NO_REPO_IDS: string[] = [];
@@ -72,6 +81,7 @@ const SLASH_COMMAND_MENU_ID = 'chat-slash-command-menu';
 const SKILL_MENTION_MENU_ID = 'chat-skill-mention-menu';
 const COMPACT_FOOTER_MAX_WIDTH = 600;
 const VERY_COMPACT_FOOTER_MAX_WIDTH = 420;
+const COMPOSER_EDITOR_BOUNDS: ComposerAutosizeBounds = { minHeight: 76, maxHeight: 200 };
 const SEND_SHORTCUT =
   typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘ Enter' : 'Ctrl Enter';
 
@@ -373,12 +383,13 @@ function ChatInputImpl({
     valueRef.current = value;
   }, [value]);
 
-  const resizeTextarea = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
-  }, []);
+  const composerAutosize = useComposerAutosize(textareaRef, COMPOSER_EDITOR_BOUNDS);
+
+  // Every committed value (typing, paste, voice, prefill, draft switch, send-clear) fits once,
+  // before paint, and applies any focus or caret follow-up against the committed text.
+  useLayoutEffect(() => {
+    composerAutosize.flush();
+  }, [composerAutosize, value]);
 
   useEffect(() => {
     const composer = composerWidthRef.current;
@@ -390,7 +401,7 @@ function ChatInputImpl({
       const previousWidth = previousComposerWidthRef.current;
       previousComposerWidthRef.current = width;
       if (previousWidth !== null && Math.abs(width - previousWidth) > 0.5) {
-        window.requestAnimationFrame(resizeTextarea);
+        composerAutosize.schedule();
       }
     };
 
@@ -401,7 +412,7 @@ function ChatInputImpl({
     });
     observer.observe(composer);
     return () => observer.disconnect();
-  }, [resizeTextarea]);
+  }, [composerAutosize]);
 
   const clearComposer = useCallback(() => {
     markDraftChanged();
@@ -417,8 +428,7 @@ function ChatInputImpl({
     setSkillMention(null);
     setSkillMentionError(null);
     clearDraft(draftKey);
-    window.requestAnimationFrame(resizeTextarea);
-  }, [draftKey, markDraftChanged, resizeTextarea]);
+  }, [draftKey, markDraftChanged]);
 
   const handleSend = useCallback(async () => {
     const trimmed = value.trim();
@@ -827,12 +837,11 @@ function ChatInputImpl({
         setSlashCommand(null);
         setSkillMention(null);
 
-        window.requestAnimationFrame(() => {
+        composerAutosize.schedule(() => {
           const textarea = textareaRef.current;
           if (!textarea) return;
           textarea.focus();
           textarea.setSelectionRange(nextCaretPosition, nextCaretPosition);
-          resizeTextarea();
         });
       } catch (err) {
         setAttachmentError(err instanceof Error ? err.message : 'Failed to mention file.');
@@ -843,12 +852,12 @@ function ChatInputImpl({
     [
       attachments.length,
       allowAttachments,
+      composerAutosize,
       disabled,
       fileMention,
       mentionRepoIds.length,
       markDraftChanged,
       preparingAttachments,
-      resizeTextarea,
       value,
     ],
   );
@@ -867,15 +876,14 @@ function ChatInputImpl({
       setValue(nextValue);
       setSlashCommand(null);
 
-      window.requestAnimationFrame(() => {
+      composerAutosize.schedule(() => {
         const textarea = textareaRef.current;
         if (!textarea) return;
         textarea.focus();
         textarea.setSelectionRange(nextCaretPosition, nextCaretPosition);
-        resizeTextarea();
       });
     },
-    [disabled, markDraftChanged, resizeTextarea, slashCommand, value],
+    [composerAutosize, disabled, markDraftChanged, slashCommand, value],
   );
 
   const handleSelectSkillMention = useCallback(
@@ -893,15 +901,14 @@ function ChatInputImpl({
       setSkillMention(null);
       setSkillMentionError(null);
 
-      window.requestAnimationFrame(() => {
+      composerAutosize.schedule(() => {
         const textarea = textareaRef.current;
         if (!textarea) return;
         textarea.focus();
         textarea.setSelectionRange(nextCaretPosition, nextCaretPosition);
-        resizeTextarea();
       });
     },
-    [disabled, markDraftChanged, resizeTextarea, skillMention, value],
+    [composerAutosize, disabled, markDraftChanged, skillMention, value],
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -997,24 +1004,15 @@ function ChatInputImpl({
     }
   };
 
-  const handleInput = () => {
-    resizeTextarea();
-  };
-
   const handleVoiceTranscript = useCallback(
     (text: string) => {
       if (text.trim()) {
         markDraftChanged();
         setValue((prev) => (prev ? `${prev} ${text}` : text));
-        setTimeout(() => {
-          if (textareaRef.current) {
-            textareaRef.current.focus();
-            resizeTextarea();
-          }
-        }, 0);
+        composerAutosize.schedule(() => textareaRef.current?.focus());
       }
     },
-    [markDraftChanged, resizeTextarea],
+    [composerAutosize, markDraftChanged],
   );
 
   const handleQuickPrompt = useCallback(
@@ -1025,15 +1023,14 @@ function ChatInputImpl({
       setFileMentionResults([]);
       setSlashCommand(null);
       setSkillMention(null);
-      window.requestAnimationFrame(() => {
+      composerAutosize.schedule(() => {
         const textarea = textareaRef.current;
         if (!textarea) return;
         textarea.focus();
         textarea.setSelectionRange(prompt.length, prompt.length);
-        resizeTextarea();
       });
     },
-    [markDraftChanged, resizeTextarea],
+    [composerAutosize, markDraftChanged],
   );
 
   const handleDragEnter = useCallback(
@@ -1087,6 +1084,7 @@ function ChatInputImpl({
   }, [disabled, focusRequest]);
 
   useEffect(() => {
+    composerAutosize.cancel();
     markDraftChanged();
     skipNextDraftSaveRef.current = true;
     const nextDraft = loadDraft(draftKey);
@@ -1110,7 +1108,7 @@ function ChatInputImpl({
     setFileMentionResults([]);
     setSlashCommand(null);
     setSkillMention(null);
-  }, [draftKey, markDraftChanged]);
+  }, [composerAutosize, draftKey, markDraftChanged]);
 
   useEffect(() => {
     if (!prefill) {
@@ -1138,14 +1136,13 @@ function ChatInputImpl({
       setAttachments(next);
     }
 
-    setTimeout(() => {
+    composerAutosize.schedule(() => {
       const el = textareaRef.current;
       if (!el) return;
       el.focus();
-      resizeTextarea();
       el.setSelectionRange(el.value.length, el.value.length);
-    }, 0);
-  }, [allowAttachments, markDraftChanged, prefill, resizeTextarea]);
+    });
+  }, [allowAttachments, composerAutosize, markDraftChanged, prefill]);
 
   useEffect(() => {
     if (allowAttachments) return;
@@ -1237,12 +1234,10 @@ function ChatInputImpl({
   useEffect(() => {
     if (skipNextDraftSaveRef.current) {
       skipNextDraftSaveRef.current = false;
-      window.requestAnimationFrame(resizeTextarea);
       return;
     }
     saveDraft(draftKey, value);
-    window.requestAnimationFrame(resizeTextarea);
-  }, [draftKey, resizeTextarea, value]);
+  }, [draftKey, value]);
 
   const hasContent = value.trim().length > 0 || attachments.length > 0;
   const canGuide = Boolean(followUpCapabilities?.guide && onFollowUp);
@@ -1463,7 +1458,6 @@ function ChatInputImpl({
           onKeyDown={handleKeyDown}
           onClick={handleTextareaSelection}
           onSelect={handleTextareaSelection}
-          onInput={handleInput}
           onPaste={handlePaste}
           disabled={disabled}
           aria-label="Chat message"
@@ -1598,6 +1592,8 @@ function ChatInputImpl({
                   variant="inline"
                   compact={compactFooter}
                   hideProvider={veryCompactFooter}
+                  disabled={busy}
+                  disabledReason="Stop the current run to change model or provider."
                 />
               )}
 

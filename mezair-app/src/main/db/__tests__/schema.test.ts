@@ -54,6 +54,22 @@ it('migrates existing worker nodes to approval mode without enabling them', () =
   db.close();
 });
 
+it('adds local custom theme storage without disturbing the selected built-in theme', () => {
+  const db = new Database(':memory:');
+  try {
+    db.exec(
+      "CREATE TABLE settings (id INTEGER PRIMARY KEY, theme TEXT); INSERT INTO settings VALUES (1, 'light');",
+    );
+    db.exec(MIGRATIONS[119]!);
+    expect(db.prepare('SELECT theme, custom_themes FROM settings WHERE id = 1').get()).toEqual({
+      theme: 'light',
+      custom_themes: '[]',
+    });
+  } finally {
+    db.close();
+  }
+});
+
 it('defaults workspaces to Local and preserves existing workspace Sync bindings', () => {
   const db = new Database(':memory:');
   try {
@@ -529,7 +545,7 @@ describe('fresh database schema', () => {
         ).map((column) => column.name),
       );
 
-      expect(SCHEMA_VERSION).toBe(118);
+      expect(SCHEMA_VERSION).toBe(119);
       for (const column of [
         'local_llm_mode',
         'local_llm_provider',

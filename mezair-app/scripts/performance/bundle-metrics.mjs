@@ -1,14 +1,14 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { resolveManifestChunk } from './bundle-manifest.mjs';
 
 const root = resolve(process.argv[2] ?? 'out/renderer');
 const manifest = JSON.parse(readFileSync(resolve(root, '.vite/manifest.json'), 'utf8'));
 function closure(keys) {
   const files = new Set();
   const visit = (key) => {
-    const chunk = manifest[key];
-    if (!chunk) throw new Error(`Missing manifest entry: ${key}`);
+    const chunk = resolveManifestChunk(manifest, key);
     if (files.has(chunk.file)) return;
     files.add(chunk.file);
     for (const dependency of chunk.imports ?? []) visit(dependency);

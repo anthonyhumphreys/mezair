@@ -2,56 +2,56 @@
 name: Mezair
 description: Focused developer mission control for repository-aware work.
 colors:
-  canvas: "#0b1020"
-  surface: "#111827"
-  surface-raised: "#172033"
-  border: "#33415f"
-  text-primary: "#f8fbff"
-  text-secondary: "#cbd6e6"
-  text-muted: "#95a3b8"
-  accent: "#ff8a3d"
-  success: "#48d597"
-  warning: "#ffd166"
-  info: "#5ec8ff"
-  error: "#ff6b8a"
+  canvas: '#0b1020'
+  surface: '#111827'
+  surface-raised: '#172033'
+  border: '#33415f'
+  text-primary: '#f8fbff'
+  text-secondary: '#cbd6e6'
+  text-muted: '#95a3b8'
+  accent: '#ff8a3d'
+  success: '#48d597'
+  warning: '#ffd166'
+  info: '#5ec8ff'
+  error: '#ff6b8a'
 typography:
   title:
-    fontFamily: "IBM Plex Sans, system-ui, sans-serif"
-    fontSize: "14px"
+    fontFamily: 'IBM Plex Sans, system-ui, sans-serif'
+    fontSize: '14px'
     fontWeight: 600
     lineHeight: 1.4
   body:
-    fontFamily: "IBM Plex Sans, system-ui, sans-serif"
-    fontSize: "14px"
+    fontFamily: 'IBM Plex Sans, system-ui, sans-serif'
+    fontSize: '14px'
     fontWeight: 400
     lineHeight: 1.65
   label:
-    fontFamily: "IBM Plex Sans, system-ui, sans-serif"
-    fontSize: "12px"
+    fontFamily: 'IBM Plex Sans, system-ui, sans-serif'
+    fontSize: '12px'
     fontWeight: 500
     lineHeight: 1.4
 rounded:
-  sm: "4px"
-  md: "6px"
-  lg: "8px"
-  xl: "12px"
+  sm: '4px'
+  md: '6px'
+  lg: '8px'
+  xl: '12px'
 spacing:
-  xs: "4px"
-  sm: "8px"
-  md: "12px"
-  lg: "16px"
-  xl: "24px"
+  xs: '4px'
+  sm: '8px'
+  md: '12px'
+  lg: '16px'
+  xl: '24px'
 components:
   button-secondary:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.text-secondary}"
-    rounded: "{rounded.xl}"
-    padding: "6px 12px"
+    backgroundColor: '{colors.surface}'
+    textColor: '{colors.text-secondary}'
+    rounded: '{rounded.xl}'
+    padding: '6px 12px'
   field:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.text-primary}"
-    rounded: "{rounded.xl}"
-    padding: "10px 12px"
+    backgroundColor: '{colors.canvas}'
+    textColor: '{colors.text-primary}'
+    rounded: '{rounded.xl}'
+    padding: '10px 12px'
 ---
 
 # Design System: Mezair
@@ -74,7 +74,7 @@ The system rejects dashboard clutter, nested-card sprawl, decorative status chro
 
 ## Colors
 
-The base Mezair palette is cool navy with a restrained orange action accent. The horse-M identity is monochrome; introducing it does not change the existing action, selection, focus, or semantic theme colours. Brand variants may replace the token values, but their semantic roles stay fixed.
+The default Mezair palette is cool navy with a restrained orange action accent. The horse-M identity is monochrome; the action accent belongs to the active theme and is not forced over theme selection, focus, or semantic colours. Theme variants may replace token values, but their semantic roles stay fixed.
 
 ### Primary
 
@@ -90,7 +90,17 @@ The base Mezair palette is cool navy with a restrained orange action accent. The
 
 ### Named Rules
 
-**The One Accent Rule.** Orange marks selection or action, never decoration.
+**The One Accent Rule.** The active theme's accent marks selection or action, never decoration.
+
+### Theme variants and custom palettes
+
+The app retains its Dark, Light, Prompt Whisperer, Merge Conflict, Token Bender, and Agent After Hours themes. **Code Dark** adds a neutral graphite canvas (`#121314`, `#191a1b`) with a cool blue action accent (`#48a0c7`). `System` follows the operating system's light or dark appearance.
+
+Custom themes use a fixed color-token allowlist for surfaces, borders, text, accents, semantic states, personas, syntax, and terminal colors. A saved palette resolves every token; omitted imported colors use the matching light or dark defaults. Values must be hex colors (`#rgb`, `#rgba`, `#rrggbb`, or `#rrggbbaa`). The main canvas and terminal background stay opaque. Body, syntax, and terminal text must meet 4.5:1 contrast; the active accent must meet that ratio against each app surface and its foreground against the accent. Low-contrast imports stay editable as drafts with warnings until repaired; saving a theme requires passing the checks.
+
+Import accepts standalone VS Code JSON and JSONC data. It maps supported workbench colors, TextMate scopes, and terminal ANSI colors. Includes, malformed JSONC, unsafe mapped colors, and unsupported mapped color values are rejected; imports never read referenced files or install extensions. Custom palette definitions stay local to the device. If a selected custom ID has no local definition, the app displays Dark and reports the missing palette; deleting the active local palette saves Dark as the selection. Theme application drives renderer tokens, Shiki highlighting, and live xterm colors from the same resolved palette.
+
+The default appearance view loads the theme selector and saved library. Import, editing, and design tools load when opened. The designer recommends an available general-purpose model from connected, enabled providers, with provider and model choices scoped to the current design. Refreshing choices preserves the draft and conversation; these choices do not change chat preferences.
 
 ## Typography
 

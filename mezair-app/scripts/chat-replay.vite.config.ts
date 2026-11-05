@@ -12,6 +12,10 @@ export default defineConfig({
   worker: { format: 'es' },
   root: previewRoot,
   plugins: [react(), tailwindcss()],
+  define: {
+    'process.env.MEZAIR_BUILD_BRAND': JSON.stringify('mezair'),
+    'process.env.MEZAIR_PREVIEW_BUILD': JSON.stringify(''),
+  },
   server: {
     host: '127.0.0.1',
     port: 4179,

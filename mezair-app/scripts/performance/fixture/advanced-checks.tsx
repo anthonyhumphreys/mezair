@@ -25,6 +25,69 @@ const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => r
 const settle = async (count = 5) => {
   for (let n = 0; n < count; n++) await frame();
 };
+
+interface RichPreviewSnapshot {
+  iframeCount: number;
+  sketchFrameCount: number;
+  pdfFrameCount: number;
+  pdfUrlMatches: boolean;
+  urlCount: number;
+  observerCount: number;
+  previewText: string;
+}
+
+function readRichPreviewSnapshot(
+  host: HTMLElement,
+  urls: ReadonlySet<string>,
+  observers: ReadonlySet<MutationObserver>,
+): RichPreviewSnapshot {
+  const iframes = [...host.querySelectorAll<HTMLIFrameElement>('iframe')];
+  const sketchFrames = iframes.filter((iframe) => iframe.title === 'Lifecycle probe');
+  const pdfFrames = iframes.filter((iframe) => iframe.title === 'Lifecycle PDF');
+  const pdfSource = pdfFrames[0]?.getAttribute('src');
+  return {
+    iframeCount: iframes.length,
+    sketchFrameCount: sketchFrames.length,
+    pdfFrameCount: pdfFrames.length,
+    pdfUrlMatches: pdfFrames.length === 1 && Boolean(pdfSource && urls.has(pdfSource)),
+    urlCount: urls.size,
+    observerCount: observers.size,
+    previewText: (host.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 120),
+  };
+}
+
+function formatRichPreviewSnapshot(snapshot: RichPreviewSnapshot): string {
+  return `iframes=${snapshot.iframeCount} (sketch=${snapshot.sketchFrameCount}, pdf=${snapshot.pdfFrameCount}), pdfUrlMatches=${snapshot.pdfUrlMatches}, blobUrls=${snapshot.urlCount}, observers=${snapshot.observerCount}, text=${JSON.stringify(snapshot.previewText)}`;
+}
+
+async function waitForRichPreviewReadiness(
+  host: HTMLElement,
+  urls: ReadonlySet<string>,
+  observers: ReadonlySet<MutationObserver>,
+  cycle: number,
+): Promise<RichPreviewSnapshot> {
+  let snapshot = readRichPreviewSnapshot(host, urls, observers);
+  for (let frameNumber = 0; frameNumber <= 120; frameNumber += 1) {
+    if (isRichPreviewReady(snapshot)) return snapshot;
+    if (frameNumber < 120) await frame();
+    snapshot = readRichPreviewSnapshot(host, urls, observers);
+  }
+  throw new Error(
+    `Rich preview cycle ${cycle + 1} did not become ready within 120 frames (${formatRichPreviewSnapshot(snapshot)}).`,
+  );
+}
+
+function isRichPreviewReady(snapshot: RichPreviewSnapshot): boolean {
+  return (
+    snapshot.iframeCount === 2 &&
+    snapshot.sketchFrameCount === 1 &&
+    snapshot.pdfFrameCount === 1 &&
+    snapshot.pdfUrlMatches &&
+    snapshot.urlCount === 1 &&
+    snapshot.observerCount === 1
+  );
+}
+
 const noop = () => undefined;
 const empty: never[] = [];
 const check = (condition: unknown, message: string) => {
@@ -410,16 +473,22 @@ export async function checkAdvanced() {
             </>,
           ),
         );
-        await settle(3);
+        const mounted = await waitForRichPreviewReadiness(host, urls, observers, cycle);
         check(
-          host.querySelectorAll('iframe').length === 2 && urls.size === 1,
-          'Rich previews must own one sketch frame and one PDF URL/frame',
+          mounted.iframeCount === 2 &&
+            mounted.sketchFrameCount === 1 &&
+            mounted.pdfFrameCount === 1 &&
+            mounted.pdfUrlMatches &&
+            mounted.urlCount === 1 &&
+            mounted.observerCount === 1,
+          `Rich previews must own one sketch frame and one PDF URL/frame (${formatRichPreviewSnapshot(mounted)}).`,
         );
         flushSync(() => root.render(null));
         await settle(2);
+        const released = readRichPreviewSnapshot(host, urls, observers);
         check(
-          host.querySelectorAll('iframe').length === 0 && urls.size === 0 && observers.size === 0,
-          'Closing previews must release every frame and blob URL',
+          released.iframeCount === 0 && released.urlCount === 0 && released.observerCount === 0,
+          `Closing previews must release every frame and blob URL (${formatRichPreviewSnapshot(released)}).`,
         );
       }
     } finally {

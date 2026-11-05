@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react';
 import type { AgentProvider, ChatAttachment } from '../../../shared/types';
 import type { ChatEntry } from '../../contexts/ChatContext';
 import type { ChatModelOption } from '../../utils/chat-model-options';
+import { MODEL_PROVIDER_LABELS } from '../../utils/model-picker';
 import type { ChatErrorProviderOption } from './ChatErrorNotice';
 
 /**
@@ -43,7 +44,7 @@ export function useChatErrorRecovery({
     for (const option of modelOptions) {
       if (seen.has(option.provider) || option.provider === modelProvider) continue;
       seen.add(option.provider);
-      options.push({ provider: option.provider, label: option.label });
+      options.push({ provider: option.provider, label: MODEL_PROVIDER_LABELS[option.provider] });
     }
     return options;
   }, [modelOptions, modelProvider]);

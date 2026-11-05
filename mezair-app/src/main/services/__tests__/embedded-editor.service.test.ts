@@ -2,6 +2,8 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AppSettings } from '../../../shared/types.js';
+import { getThemeColors } from '../../../shared/themes.js';
 
 vi.mock('electron', () => ({
   app: {
@@ -21,7 +23,11 @@ vi.mock('../workspace.service.js', () => ({
 }));
 
 const { getSettingsMock } = vi.hoisted(() => ({
-  getSettingsMock: vi.fn(() => ({ theme: 'system' })),
+  getSettingsMock: vi.fn(
+    (): Pick<AppSettings, 'theme'> & Partial<Pick<AppSettings, 'customThemes'>> => ({
+      theme: 'system',
+    }),
+  ),
 }));
 
 vi.mock('../settings.service.js', () => ({
@@ -154,6 +160,26 @@ describe('collectMezairEmbeddedEditorProcessTargets', () => {
 });
 
 describe('buildEmbeddedEditorUserSettings', () => {
+  it('uses a light editor for built-in and custom light themes', () => {
+    getSettingsMock.mockReturnValueOnce({ theme: 'light' });
+    expect(buildEmbeddedEditorUserSettings({})['workbench.colorTheme']).toBe(
+      'Default Light Modern',
+    );
+    getSettingsMock.mockReturnValueOnce({
+      theme: 'custom:day',
+      customThemes: [
+        { id: 'day', name: 'Day', appearance: 'light', colors: getThemeColors('light') },
+      ],
+    });
+    expect(buildEmbeddedEditorUserSettings({})['workbench.colorTheme']).toBe(
+      'Default Light Modern',
+    );
+  });
+
+  it('falls back to a dark editor for an unavailable custom theme', () => {
+    getSettingsMock.mockReturnValueOnce({ theme: 'custom:missing', customThemes: [] });
+    expect(buildEmbeddedEditorUserSettings({})['workbench.colorTheme']).toBe('Default Dark Modern');
+  });
   it('keeps user editor settings while forcing embedded-editor safety settings', () => {
     getSettingsMock.mockReturnValueOnce({ theme: 'system' });
 

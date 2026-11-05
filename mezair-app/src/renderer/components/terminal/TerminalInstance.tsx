@@ -4,6 +4,36 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 
+function terminalThemeFromRoot() {
+  const style = window.getComputedStyle(document.documentElement);
+  const color = (token: string, fallback: string) =>
+    style.getPropertyValue(`--color-terminal-${token}`).trim() || fallback;
+
+  return {
+    background: color('background', '#121314'),
+    foreground: color('foreground', '#f5f2ec'),
+    cursor: color('cursor', '#b5121b'),
+    cursorAccent: color('background', '#121314'),
+    selectionBackground: color('selection', '#b5121b33'),
+    black: color('black', '#232528'),
+    red: color('red', '#e67a79'),
+    green: color('green', '#72b589'),
+    yellow: color('yellow', '#fd9029'),
+    blue: color('blue', '#79a7c6'),
+    magenta: color('magenta', '#c77d4b'),
+    cyan: color('cyan', '#8fb2b7'),
+    white: color('white', '#f5f2ec'),
+    brightBlack: color('bright-black', '#555656'),
+    brightRed: color('bright-red', '#f0a2a1'),
+    brightGreen: color('bright-green', '#9fd0ae'),
+    brightYellow: color('bright-yellow', '#ffc17f'),
+    brightBlue: color('bright-blue', '#a7c7dd'),
+    brightMagenta: color('bright-magenta', '#e0a77c'),
+    brightCyan: color('bright-cyan', '#b1d0d3'),
+    brightWhite: color('bright-white', '#fffaf3'),
+  };
+}
+
 interface TerminalInstanceProps {
   workspaceId: string;
   repoId: string;
@@ -38,29 +68,7 @@ export function TerminalInstance({
     const pendingOutput: Array<{ sequence: number; data: string }> = [];
 
     const terminal = new Terminal({
-      theme: {
-        background: '#121314',
-        foreground: '#f5f2ec',
-        cursor: '#b5121b',
-        cursorAccent: '#121314',
-        selectionBackground: '#b5121b33',
-        black: '#232528',
-        red: '#e67a79',
-        green: '#72b589',
-        yellow: '#fd9029',
-        blue: '#79a7c6',
-        magenta: '#c77d4b',
-        cyan: '#8fb2b7',
-        white: '#f5f2ec',
-        brightBlack: '#555656',
-        brightRed: '#f0a2a1',
-        brightGreen: '#9fd0ae',
-        brightYellow: '#ffc17f',
-        brightBlue: '#a7c7dd',
-        brightMagenta: '#e0a77c',
-        brightCyan: '#b1d0d3',
-        brightWhite: '#fffaf3',
-      },
+      theme: terminalThemeFromRoot(),
       fontFamily:
         '"MesloLGS Nerd Font Mono", "MesloLGS NF", "Hack Nerd Font", "FiraCode Nerd Font", "IBM Plex Mono", monospace',
       fontSize: 14,
@@ -77,6 +85,11 @@ export function TerminalInstance({
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
+
+    const handleThemeApplied = () => {
+      terminal.options.theme = terminalThemeFromRoot();
+    };
+    window.addEventListener('mezair:theme-applied', handleThemeApplied);
 
     // Auto-fit on container resize (triggered by panel drag)
     const resizeObserver = new ResizeObserver(() => {
@@ -175,6 +188,7 @@ export function TerminalInstance({
       removeDataListener();
       removeExitListener();
       removeClosedListener();
+      window.removeEventListener('mezair:theme-applied', handleThemeApplied);
       if (terminalIdRef.current) {
         window.mezair.terminal.detach(terminalIdRef.current);
       }

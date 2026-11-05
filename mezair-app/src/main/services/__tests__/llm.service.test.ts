@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { OpenAI } from 'openai';
+import { AzureOpenAI, OpenAI } from 'openai';
 
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
@@ -69,6 +69,18 @@ describe('callLlm local model routing', () => {
     mocks.completionCreate.mockResolvedValue({
       choices: [{ message: { content: 'fallback response' } }],
     });
+  });
+
+  it('uses model defaults instead of chat sampling and reasoning overrides for text-only utilities', async () => {
+    await callLlm('Return a theme palette', 3000, 0.4, 0, {
+      provider: 'openai',
+      model: 'gpt-5.5',
+      textOnly: true,
+    });
+    const body = mocks.completionCreate.mock.calls[0][0];
+    expect(body).toMatchObject({ model: 'gpt-5.5', max_completion_tokens: 3000 });
+    expect(body).not.toHaveProperty('temperature');
+    expect(body).not.toHaveProperty('reasoning_effort');
   });
 
   it('uses the selected local model when the classifier routes locally', async () => {
@@ -185,6 +197,73 @@ describe('callLlm local model routing', () => {
     expect(mocks.completionCreate).not.toHaveBeenCalled();
   });
 
+  it('uses an explicit designer model when LLMGateway has no global model selected', async () => {
+    mocks.getSettings.mockReturnValue({
+      ...openAiSettings(),
+      llmProvider: 'llmgateway',
+      llmGatewayApiKey: 'gateway-test-key',
+      openaiModel: '',
+    });
+
+    await expect(
+      callLlm('Return a theme palette', 3000, 0.4, 0, {
+        provider: 'llmgateway',
+        model: 'deepseek-v4-flash',
+        textOnly: true,
+      }),
+    ).resolves.toBe('fallback response');
+    expect(mocks.completionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'deepseek-v4-flash' }),
+    );
+  });
+
+  it('uses the explicit saved Foundry route for designer Azure calls', async () => {
+    mocks.getSettings.mockReturnValue({
+      ...openAiSettings(),
+      llmProvider: 'openai',
+      openaiApiKey: undefined,
+      openaiModel: '',
+    });
+
+    await expect(
+      callLlm('Return a theme palette', 3000, 0.4, 0, {
+        provider: 'azure',
+        model: 'theme-deployment',
+        textOnly: true,
+        azureFoundry: {
+          endpoint: 'https://foundry.example.test',
+          apiKey: 'saved-foundry-key',
+          apiVersion: '2025-01-01-preview',
+          deploymentName: 'theme-deployment',
+        },
+      }),
+    ).resolves.toBe('fallback response');
+
+    expect(AzureOpenAI).toHaveBeenCalledWith({
+      endpoint: 'https://foundry.example.test',
+      apiKey: 'saved-foundry-key',
+      apiVersion: '2025-01-01-preview',
+    });
+    expect(mocks.completionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'theme-deployment' }),
+    );
+    const completionCalls = mocks.completionCreate.mock.calls.length;
+    await expect(
+      callLlm('Return a theme palette', 3000, 0.4, 0, {
+        provider: 'azure',
+        model: 'other-deployment',
+        textOnly: true,
+        azureFoundry: {
+          endpoint: 'https://foundry.example.test',
+          apiKey: 'saved-foundry-key',
+          apiVersion: '2025-01-01-preview',
+          deploymentName: 'theme-deployment',
+        },
+      }),
+    ).rejects.toThrow('must match the configured deployment');
+    expect(mocks.completionCreate).toHaveBeenCalledTimes(completionCalls);
+  });
+
   it('does not attempt local routing when max tokens exceed the local cap', async () => {
     const response = await callLlm('review this diff', 8192, 0.2, 0, {
       taskClass: 'code-review',
@@ -209,6 +288,29 @@ describe('Cursor CLI routing', () => {
 });
 
 describe('Codex CLI routing', () => {
+  it('does not load tools, hooks or global integrations for isolated text generation', () => {
+    const args = buildCodexExecArgs('/tmp/output.txt', 'chosen-model', true);
+    expect(args).toEqual(
+      expect.arrayContaining([
+        '--ignore-user-config',
+        '--ignore-rules',
+        '--ephemeral',
+        'features.shell_tool=false',
+        'features.apps=false',
+        'features.browser_use=false',
+        'features.hooks=false',
+        'web_search="disabled"',
+        'project_doc_max_bytes=0',
+        'features.skip_host_skill_discovery=true',
+        'skills.include_instructions=false',
+        'skills.bundled.enabled=false',
+        'cloud.skills.enabled=false',
+        '--model',
+        'chosen-model',
+      ]),
+    );
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+  });
   it('uses the supported read-only sandbox for non-interactive prompts', () => {
     expect(buildCodexExecArgs('/tmp/last-message.txt')).toEqual([
       'exec',

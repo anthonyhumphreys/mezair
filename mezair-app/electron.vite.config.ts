@@ -84,9 +84,16 @@ export default defineConfig({
     define,
     root: 'src/renderer',
     plugins: [react(), tailwindcss()],
+    esbuild: {
+      minifyIdentifiers: false,
+      minifySyntax: false,
+      minifyWhitespace: true,
+      legalComments: 'inline',
+    },
     build: {
       outDir: 'out/renderer',
       manifest: true,
+      minify: 'esbuild',
       rollupOptions: {
         input: 'src/renderer/index.html',
       },

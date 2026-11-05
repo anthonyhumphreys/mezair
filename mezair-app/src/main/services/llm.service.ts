@@ -1,5 +1,5 @@
 import { AzureOpenAI, OpenAI } from 'openai';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
@@ -36,6 +36,15 @@ export interface LlmCallOptions {
   provider?: AgentProvider;
   /** Model override for this call. Falls back to the provider's configured model. */
   model?: string;
+  /** Saved Azure AI Foundry connection for isolated theme design calls. */
+  azureFoundry?: {
+    endpoint: string;
+    apiKey: string;
+    apiVersion: string;
+    deploymentName: string;
+  };
+  /** Isolated data generation: supported providers only, in a temporary cwd. */
+  textOnly?: boolean;
 }
 
 class EmptyLlmResponseError extends Error {}
@@ -163,12 +172,36 @@ function readCodexConfig(): { baseUrl: string; model: string; envKey: string } |
  * Get or create the LLM client based on the configured provider.
  * Only used for API-backed providers. Codex and Cursor route through their CLIs.
  */
-function getClient(provider: AgentProvider = getSettings().llmProvider ?? 'openai'): {
+function getClient(
+  provider: AgentProvider = getSettings().llmProvider ?? 'openai',
+  modelOverride?: string,
+  azureFoundry?: LlmCallOptions['azureFoundry'],
+): {
   client: AzureOpenAI | OpenAI;
   model: string;
 } {
   const settings = getSettings();
   console.log(`[LLM] getClient: provider=${provider}`);
+
+  if (provider === 'azure' && azureFoundry) {
+    const endpoint = azureFoundry.endpoint.trim();
+    const apiKey = azureFoundry.apiKey.trim();
+    const apiVersion = azureFoundry.apiVersion.trim();
+    const deploymentName = azureFoundry.deploymentName.trim();
+    if (!endpoint || !apiKey || !apiVersion || !deploymentName) {
+      throw new Error(
+        'Azure AI Foundry theme design needs a key, endpoint, API version, and deployment.',
+      );
+    }
+    if (modelOverride?.trim() && modelOverride.trim() !== deploymentName) {
+      throw new Error('Azure AI Foundry theme model must match the configured deployment.');
+    }
+    console.log('[LLM] Creating isolated Azure AI Foundry client');
+    return {
+      client: new AzureOpenAI({ endpoint, apiKey, apiVersion }),
+      model: deploymentName,
+    };
+  }
 
   // Reset if provider changed
   if (cachedProvider !== provider) {
@@ -206,7 +239,7 @@ function getClient(provider: AgentProvider = getSettings().llmProvider ?? 'opena
     if (!settings.llmGatewayApiKey) {
       throw new Error('Connect LLMGateway in Settings before using this provider');
     }
-    const model = settings.openaiModel?.trim();
+    const model = modelOverride ?? settings.openaiModel?.trim();
     if (!model)
       throw new Error('Choose an LLMGateway model in Settings before using this provider.');
     if (!cachedClient) {
@@ -291,7 +324,7 @@ export function buildDevinPrintArgs(prompt: string, model?: string): string[] {
   return args;
 }
 
-export function buildCodexExecArgs(outputPath: string, model?: string): string[] {
+export function buildCodexExecArgs(outputPath: string, model?: string, textOnly = false): string[] {
   const args = [
     'exec',
     '--skip-git-repo-check',
@@ -302,6 +335,43 @@ export function buildCodexExecArgs(outputPath: string, model?: string): string[]
     '--output-last-message',
     outputPath,
   ];
+  if (textOnly) {
+    args.push('--ignore-user-config', '--ignore-rules', '--ephemeral');
+    for (const feature of [
+      'shell_tool',
+      'shell_snapshot',
+      'view_image',
+      'image_generation',
+      'apps',
+      'browser_use',
+      'computer_use',
+      'plugins',
+      'remote_plugin',
+      'plugin_discovery_prefetch',
+      'hooks',
+      'multi_agent',
+      'multi_agent_v2',
+      'skill_search',
+      'code_mode',
+      'code_mode_host',
+    ]) {
+      args.push('-c', `features.${feature}=false`);
+    }
+    args.push(
+      '-c',
+      'web_search="disabled"',
+      '-c',
+      'project_doc_max_bytes=0',
+      '-c',
+      'features.skip_host_skill_discovery=true',
+      '-c',
+      'skills.include_instructions=false',
+      '-c',
+      'skills.bundled.enabled=false',
+      '-c',
+      'cloud.skills.enabled=false',
+    );
+  }
   const trimmed = model?.trim();
   if (trimmed) args.push('--model', trimmed);
   args.push('-');
@@ -461,7 +531,7 @@ async function callCodex(
         }
       };
 
-      const child = spawn('codex', buildCodexExecArgs(outputPath, model), {
+      const child = spawn('codex', buildCodexExecArgs(outputPath, model, options?.textOnly), {
         ...(cwd && { cwd }),
         env: providerSpawnEnv({ OTEL_SDK_DISABLED: 'true' }),
         detached: process.platform !== 'win32',
@@ -491,10 +561,23 @@ async function callCodex(
       };
 
       child.stdout.on('data', (chunk: Buffer) => {
+        if (options?.textOnly && stdout.length + chunk.length > 65_536) {
+          if (settled) return;
+          settled = true;
+          clearTimers();
+          killProcessTree(child.pid, 'SIGKILL');
+          cleanup();
+          reject(
+            new Error('Theme generation output exceeded its limit. Try a simpler description.'),
+          );
+          return;
+        }
         stdout += chunk.toString();
       });
       child.stderr.on('data', (chunk: Buffer) => {
-        stderr += chunk.toString();
+        stderr = options?.textOnly
+          ? (stderr + chunk.toString()).slice(-8192)
+          : stderr + chunk.toString();
       });
 
       child.on('error', (err) => {
@@ -510,8 +593,24 @@ async function callCodex(
         clearTimers();
         if (settled) return;
         settled = true;
-        const fallback = existsSync(outputPath) ? readFileSync(outputPath, 'utf-8').trim() : '';
-        const result = stdout.trim() || fallback;
+        let fallback = '';
+        try {
+          if (existsSync(outputPath)) {
+            if (options?.textOnly && statSync(outputPath).size > 65_536) {
+              cleanup();
+              reject(
+                new Error('Theme generation output exceeded its limit. Try a simpler description.'),
+              );
+              return;
+            }
+            fallback = readFileSync(outputPath, 'utf-8').trim();
+          }
+        } catch {
+          cleanup();
+          reject(new Error('Could not read the provider response. Try again.'));
+          return;
+        }
+        const result = options?.textOnly ? fallback || stdout.trim() : stdout.trim() || fallback;
         const stderrSummary = summariseCliStderr(stderr);
         cleanup();
 
@@ -564,6 +663,10 @@ export async function callLlm(
 ): Promise<string> {
   const settings = getSettings();
   const provider = options?.provider ?? settings.llmProvider;
+  if (options?.textOnly && (provider === 'cursor' || provider === 'devin'))
+    throw new Error(
+      'Theme design needs Codex, Claude Code, OpenAI, Azure or LLMGateway. Choose one in Providers to generate a theme.',
+    );
   const modelOverride = options?.model?.trim() || undefined;
   let lastEmptyResponseMessage: string | null = null;
 
@@ -618,18 +721,19 @@ export async function callLlm(
         throw err;
       }
     } else {
-      const { client, model } = getClient(provider);
+      const { client, model } = getClient(provider, modelOverride, options?.azureFoundry);
       const effectiveModel = modelOverride ?? model;
       try {
         const body: Record<string, unknown> = {
           model: effectiveModel,
           messages: [{ role: 'user', content: userMessage }],
           max_completion_tokens: maxTokens,
-          temperature,
+          ...(options?.textOnly ? {} : { temperature }),
         };
         // Direct OpenAI API calls use the standard reasoning efforts. Codex-only max/ultra
         // travel through the Codex app-server path instead.
         if (
+          !options?.textOnly &&
           effectiveModel.startsWith('gpt-5') &&
           settings.reasoningLevel &&
           settings.reasoningLevel !== 'max' &&

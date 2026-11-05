@@ -14,8 +14,8 @@ const STATUS_CACHE_MS = 30_000;
 /**
  * Detect if Codex CLI is installed and get its status.
  */
-export async function detectCodexCli(): Promise<CodexCliStatus> {
-  if (cachedStatus && Date.now() - cachedStatus.at < STATUS_CACHE_MS) {
+export async function detectCodexCli(force = false): Promise<CodexCliStatus> {
+  if (!force && cachedStatus && Date.now() - cachedStatus.at < STATUS_CACHE_MS) {
     return cachedStatus.status;
   }
 

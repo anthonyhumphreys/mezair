@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import type { MezairAPI } from '../../../../../shared/ipc-api';
+import type { ThemeDesignOptions, ThemeDesignRequest } from '../../../../../shared/theme-design';
 import type {
   ChatArtifactAnnotation,
   ChatArtifactAnnotationInput,
@@ -10,6 +11,7 @@ import type {
 import type { SurfacesApi } from '../../../../../shared/surfaces/ipc';
 import type { SurfaceComment } from '../../../../../shared/surfaces/types';
 import { ChatReplayPreview } from '../ChatReplayPreview';
+import { ThemesPreview, THEMES_PREVIEW_CUSTOM_THEME } from '../../../settings/ThemesPreview';
 import { ComposerPreview } from '../ComposerPreview';
 import { ChatInteractionPreview } from '../ChatInteractionPreview';
 import { PreviewToolbarPreview } from '../PreviewToolbarPreview';
@@ -194,6 +196,52 @@ const localMezairBridge = {
   codexRegistry: {
     snapshot: async () => ({ skills: [] }),
   },
+  settings: {
+    getThemeDesignOptions: async (): Promise<ThemeDesignOptions> => ({
+      defaultProvider: 'codex',
+      providers: [
+        {
+          id: 'codex',
+          label: 'Synthetic Codex',
+          defaultModel: 'gpt-6.1-sol',
+          models: [
+            { id: 'gpt-6.1-sol', label: 'GPT 6.1 Sol' },
+            { id: 'gpt-6-astra', label: 'GPT 6 Astra' },
+          ],
+        },
+        {
+          id: 'claude',
+          label: 'Synthetic Claude',
+          defaultModel: 'synthetic-sonnet',
+          models: [{ id: 'synthetic-sonnet', label: 'Synthetic Sonnet' }],
+        },
+      ],
+    }),
+    designTheme: async (request: ThemeDesignRequest) => {
+      const latestUserMessage = request.messages.findLast((message) => message.role === 'user');
+      if (latestUserMessage?.content.toLowerCase().includes('fail')) {
+        throw new Error(
+          'Synthetic preview failure. Send a new prompt to retry with a different description.',
+        );
+      }
+      const hasQuestion = request.messages.some(
+        (message) => message.role === 'assistant' && message.content.includes('garage palette'),
+      );
+      if (request.mode === 'guided' && !hasQuestion) {
+        return {
+          message: 'Synthetic preview: one choice will shape the sample palette.',
+          question: {
+            text: 'Should the garage palette feel warm or technical?',
+            options: ['Warm and dramatic', 'Technical and precise'],
+          },
+        };
+      }
+      return {
+        message: 'Synthetic preview theme is ready. Review it before saving.',
+        theme: THEMES_PREVIEW_CUSTOM_THEME,
+      };
+    },
+  },
   voice: {
     requestPermission: async () => ({
       granted: false,
@@ -246,6 +294,7 @@ const validationPreview = new URLSearchParams(window.location.search).has('valid
 const skillsPreview = new URLSearchParams(window.location.search).has('skills');
 const factoriesPreview = new URLSearchParams(window.location.search).has('factories');
 const meshPreview = new URLSearchParams(window.location.search).has('mesh');
+const themesPreview = new URLSearchParams(window.location.search).has('themes');
 if (deliveryPreview) installDeliveryPreviewBridge();
 if (skillsPreview) installSkillsRecommendationsPreview();
 if (factoriesPreview) installFactoriesPreviewBridge();
@@ -254,7 +303,9 @@ if (meshPreview) installMeshPreviewBridge();
 createRoot(rootElement).render(
   <StrictMode>
     <MemoryRouter>
-      {meshPreview ? (
+      {themesPreview ? (
+        <ThemesPreview />
+      ) : meshPreview ? (
         <MeshPreview />
       ) : factoriesPreview ? (
         <FactoriesPreview />

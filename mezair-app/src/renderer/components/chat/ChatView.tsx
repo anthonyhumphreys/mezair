@@ -630,10 +630,11 @@ export function ChatView({ userRole }: ChatViewProps) {
 
   const handleModelChange = useCallback(
     (nextModel: string, nextProvider: AgentProvider, reasoningEffort?: ReasoningEffort) => {
+      if (busy) return;
       setFastMode(false);
       setModel(nextModel, nextProvider, reasoningEffort);
     },
-    [setModel],
+    [busy, setModel],
   );
 
   const handleReasoningChange = useCallback(

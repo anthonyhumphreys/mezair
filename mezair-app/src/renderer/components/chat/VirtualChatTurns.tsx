@@ -10,6 +10,7 @@ import {
   type RefObject,
 } from 'react';
 import { defaultRangeExtractor, useVirtualizer, type Range } from '@tanstack/react-virtual';
+import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import type { ComposedChatTurn } from './chat-turns';
 import { getChatTurnRequestTargets } from './chat-run-outcome';
 import { readChatScrollPosition, getSessionStorage } from './chat-scroll-position';
@@ -18,6 +19,7 @@ import {
   type RevealTranscriptRequest,
 } from '../../utils/reveal-transcript';
 import { createTranscriptViewState, TranscriptViewState } from './TranscriptViewState';
+import { createChatTurnSearch, getActiveChatTurnSearchIndex } from './chat-transcript-search';
 
 const estimateSize = () => 520;
 const WINDOW_THRESHOLD = 80;
@@ -33,7 +35,7 @@ export function VirtualChatTurns({
   scopeKey: string | null;
   containerRef: RefObject<HTMLDivElement | null>;
   pendingTurnKey?: string;
-  renderTurn: (turn: ComposedChatTurn, index: number) => ReactNode;
+  renderTurn: (turn: ComposedChatTurn, index: number, searchActive: boolean) => ReactNode;
 }) {
   const [viewState] = useState(createTranscriptViewState);
   const [initialPosition] = useState(() => readChatScrollPosition(getSessionStorage(), scopeKey));
@@ -44,7 +46,10 @@ export function VirtualChatTurns({
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [matchIndex, setMatchIndex] = useState(0);
-  const deferredQuery = useDeferredValue(query.trim().toLowerCase());
+  const [activeMatchTurnKey, setActiveMatchTurnKey] = useState<string | null>(null);
+  const deferredQuery = useDeferredValue(query.trim());
+  // Closing search releases indexed text instead of retaining it for the thread's lifetime.
+  const searchTurns = useMemo(createChatTurnSearch, [searchOpen]);
   const searchRef = useRef<HTMLInputElement>(null);
   const lastRange = useRef<number[]>([]);
   const scheduled = useRef(new Set<number>());
@@ -218,41 +223,28 @@ export function VirtualChatTurns({
     return () => window.removeEventListener('keydown', keydown);
   }, [schedule]);
   const matches = useMemo(
-    () =>
-      !searchOpen || !deferredQuery
-        ? []
-        : turns.flatMap((turn, index) => {
-            const text = [
-              turn.user?.content,
-              turn.answer?.content,
-              ...[...turn.work, ...turn.trailingWork].map((item) =>
-                item.kind === 'event'
-                  ? [item.event.command, item.event.output, item.event.filePath, item.event.text]
-                      .filter(Boolean)
-                      .join('\n')
-                  : item.content,
-              ),
-            ]
-              .filter(Boolean)
-              .join('\n');
-            return text.toLowerCase().includes(deferredQuery) ? [index] : [];
-          }),
-    [turns, deferredQuery, searchOpen],
+    () => (searchOpen ? searchTurns(turns, deferredQuery) : []),
+    [turns, deferredQuery, searchOpen, searchTurns],
   );
+  const activeMatchIndex = getActiveChatTurnSearchIndex(matches, activeMatchTurnKey, matchIndex);
+  const activeMatch = matches[activeMatchIndex];
   useEffect(() => {
     setMatchIndex(0);
-    if (matches.length) reveal(matches[0]);
+    const firstMatch = matches[0];
+    setActiveMatchTurnKey(firstMatch?.turnKey ?? null);
+    if (firstMatch) reveal(firstMatch.index);
     // A stream update must not steal the reading position; only a new search does.
   }, [deferredQuery, searchOpen]);
   const moveMatch = (direction: number) => {
     if (!matches.length) return;
-    const next = (matchIndex + direction + matches.length) % matches.length;
+    const next = (activeMatchIndex + direction + matches.length) % matches.length;
     setMatchIndex(next);
-    reveal(matches[next]);
+    setActiveMatchTurnKey(matches[next].turnKey);
+    reveal(matches[next].index);
   };
   const row = (turn: ComposedChatTurn, index: number) => (
     <TranscriptViewState key={turn.key} store={viewState} path={turn.key}>
-      {renderTurn(turn, index)}
+      {renderTurn(turn, index, searchOpen && activeMatch?.index === index)}
     </TranscriptViewState>
   );
   return (
@@ -260,62 +252,101 @@ export function VirtualChatTurns({
       {searchOpen && (
         <div
           role="search"
-          className="sticky top-0 z-20 mb-4 flex items-center gap-2 rounded-lg border border-border bg-bg-elevated p-2 text-xs"
+          className="sticky top-0 z-20 mb-4 rounded-lg border border-border bg-bg-elevated p-2 text-xs"
         >
-          <input
-            ref={searchRef}
-            aria-label="Find in loaded conversation"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setMatchIndex(0);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                moveMatch(event.shiftKey ? -1 : 1);
+          <div className="flex min-w-0 items-center gap-2">
+            <input
+              ref={searchRef}
+              aria-label="Find in loaded conversation"
+              maxLength={512}
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setMatchIndex(0);
+                setActiveMatchTurnKey(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  moveMatch(event.shiftKey ? -1 : 1);
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  setSearchOpen(false);
+                  setQuery('');
+                  containerRef.current?.focus();
+                }
+              }}
+              className="min-w-0 flex-1 rounded bg-bg-primary px-2 py-1 text-text-primary"
+              placeholder="Find in loaded conversation…"
+            />
+            <span
+              role="status"
+              className="whitespace-nowrap text-text-secondary"
+              aria-label={
+                matches.length
+                  ? `${activeMatchIndex + 1} of ${matches.length} matching turns`
+                  : 'No matching turns'
               }
-              if (event.key === 'Escape') {
-                event.preventDefault();
+            >
+              {matches.length ? `${activeMatchIndex + 1}/${matches.length} turns` : '0 turns'}
+            </span>
+            <button
+              type="button"
+              aria-label="Previous match"
+              disabled={!matches.length}
+              onClick={() => moveMatch(-1)}
+              title="Previous matching turn (Shift+Enter)"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-text-secondary hover:bg-bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+            >
+              <ChevronUp size={14} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label="Next match"
+              disabled={!matches.length}
+              onClick={() => moveMatch(1)}
+              title="Next matching turn (Enter)"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-text-secondary hover:bg-bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+            >
+              <ChevronDown size={14} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label="Close conversation search"
+              onClick={() => {
                 setSearchOpen(false);
                 setQuery('');
                 containerRef.current?.focus();
-              }
-            }}
-            className="min-w-0 flex-1 rounded bg-bg-primary px-2 py-1 text-text-primary"
-          />
-          <span role="status">
-            {matches.length
-              ? `${Math.min(matchIndex + 1, matches.length)}/${matches.length}`
-              : '0 matches'}
-          </span>
-          <button
-            type="button"
-            aria-label="Previous match"
-            disabled={!matches.length}
-            onClick={() => moveMatch(-1)}
+              }}
+              title="Close conversation search (Esc)"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-text-secondary hover:bg-bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <X size={14} aria-hidden="true" />
+            </button>
+          </div>
+          <p
+            className="mt-1 flex min-h-4 min-w-0 items-baseline gap-0.5 overflow-hidden whitespace-nowrap px-1 text-text-secondary"
+            data-chat-search-preview
           >
-            ↑
-          </button>
-          <button
-            type="button"
-            aria-label="Next match"
-            disabled={!matches.length}
-            onClick={() => moveMatch(1)}
-          >
-            ↓
-          </button>
-          <button
-            type="button"
-            aria-label="Close conversation search"
-            onClick={() => {
-              setSearchOpen(false);
-              setQuery('');
-              containerRef.current?.focus();
-            }}
-          >
-            ×
-          </button>
+            {activeMatch ? (
+              <>
+                <span className="shrink-0 text-text-muted">Turn {activeMatch.index + 1} · </span>
+                <span className="min-w-0 max-w-[30%] truncate">{activeMatch.before}</span>
+                <mark className="min-w-0 max-w-[50%] shrink-0 truncate rounded-sm bg-accent/20 text-text-primary">
+                  {activeMatch.text}
+                </mark>
+                <span className="min-w-0 flex-1 truncate">{activeMatch.after}</span>
+              </>
+            ) : (
+              <span className="min-w-0 truncate">
+                {deferredQuery
+                  ? 'No matching turns in loaded history.'
+                  : 'Search loaded messages, questions, and work.'}
+              </span>
+            )}
+          </p>
         </div>
       )}
       <div

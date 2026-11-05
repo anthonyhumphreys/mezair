@@ -4,6 +4,7 @@ import type { AgentUIIntent } from './agent-ui-intents.js';
 import type { RepoIndexJobState, RepoIndexJobTier, RepoIndexTier } from './index-jobs.js';
 import type { BootstrapRecipe } from '../../cloud/contract/bootstrap.js';
 import type { EnvironmentProviderId } from '../../cloud/contract/environment.js';
+import type { CustomTheme } from './themes.js';
 
 export interface RepoInfo {
   id: string; // SHA256 of repo path
@@ -2746,6 +2747,8 @@ export type AppTheme =
   | 'system'
   | 'light'
   | 'dark'
+  | 'code-dark'
+  | `custom:${string}`
   | 'prompt-whisperer'
   | 'merge-conflict'
   | 'token-bender'
@@ -2886,6 +2889,8 @@ export interface AppSettings {
   telemetryEnabled: boolean;
   usageStatisticsEnabled: boolean;
   theme: AppTheme;
+  /** Locally stored custom palettes; theme definitions are not synced between devices. */
+  customThemes?: CustomTheme[];
   userRole?: UserRole;
   /** ST8: keep every tool visible/openable regardless of the chosen role. */
   showAllTools?: boolean;

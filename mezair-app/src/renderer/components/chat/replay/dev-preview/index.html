@@ -18,6 +18,41 @@
   </head>
   <body>
     <div id="root"></div>
+    <main
+      id="preview-startup-error"
+      role="alert"
+      hidden
+      style="
+        padding: 32px;
+        max-width: 760px;
+        margin: auto;
+        color: #f8fbff;
+        background: #0b1020;
+        font: 16px/1.6 system-ui;
+      "
+    >
+      <h1 style="font-size: 20px">The local preview could not start</h1>
+      <p>Reload once. If this message returns, share the error below so it can be fixed.</p>
+      <pre id="preview-error-message" style="white-space: pre-wrap; overflow-wrap: anywhere"></pre>
+    </main>
+    <script>
+      (() => {
+        const showError = (reason) => {
+          const root = document.getElementById('root');
+          const notice = document.getElementById('preview-startup-error');
+          const message = document.getElementById('preview-error-message');
+          if (!root || !notice || !message) return;
+          root.hidden = true;
+          notice.hidden = false;
+          message.textContent =
+            reason instanceof Error ? reason.message : String(reason || 'Unknown preview error');
+        };
+        window.addEventListener('error', (event) => {
+          if (event.error || event.message) showError(event.error || event.message);
+        });
+        window.addEventListener('unhandledrejection', (event) => showError(event.reason));
+      })();
+    </script>
     <script type="module" src="/main.tsx"></script>
   </body>
 </html>

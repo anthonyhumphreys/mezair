@@ -57,7 +57,9 @@ export function ChatAccessLevelChip({
   compact?: boolean;
 }) {
   const [confirmTarget, setConfirmTarget] = useState<ChatAccessOption | null>(null);
-  const resolvedOptions = options ?? chatAccessOptionsForProvider(undefined);
+  const resolvedOptions = (options ?? chatAccessOptionsForProvider(undefined)).filter(
+    (option) => onSelectOption || !option.permissionProfile,
+  );
   const selectedOption = resolvedOptions.find((option) =>
     chatAccessOptionSelected(option, value, appliedMode),
   );
@@ -73,7 +75,7 @@ export function ChatAccessLevelChip({
   };
 
   const requestSelect = (option: ChatAccessOption) => {
-    if (chatAccessOptionSelected(option, value, appliedMode)) return;
+    if (option.disabledReason || chatAccessOptionSelected(option, value, appliedMode)) return;
     if (option.level === 'full-access') {
       setConfirmTarget(option);
       return;
@@ -102,7 +104,7 @@ export function ChatAccessLevelChip({
             )}
             title={
               disabled
-                ? 'This access level is enforced for the current persona'
+                ? 'Thread access is locked for the current run or persona'
                 : `Thread access: ${chipLabel}`
             }
             aria-label={`Thread access: ${chipLabel}`}
@@ -119,15 +121,26 @@ export function ChatAccessLevelChip({
         menuClassName="w-80"
       >
         <MenuLabel>Thread access</MenuLabel>
+        {resolvedOptions.length === 0 && (
+          <p className="px-3 py-2 text-xs text-text-secondary">
+            This provider reported no configurable access modes.
+          </p>
+        )}
+        <p className="px-3 pb-2 text-xs leading-4 text-text-secondary">
+          Delegated agents inherit this access. Provider and destination limits still apply.
+        </p>
         {resolvedOptions.map((option, index) => {
           const selected = chatAccessOptionSelected(option, value, appliedMode);
           return (
-            <div key={option.appliedMode ?? option.level ?? index}>
+            <div
+              key={`${option.appliedMode ?? option.level ?? index}:${option.level ?? option.collaborationMode}`}
+            >
               {index > 0 && option.elevated && !resolvedOptions[index - 1]?.elevated && (
                 <MenuSeparator />
               )}
               <MenuItem
                 checked={selected}
+                disabled={Boolean(option.disabledReason)}
                 icon={
                   option.level === 'read-only' ? (
                     <Lock size={13} />
@@ -155,7 +168,7 @@ export function ChatAccessLevelChip({
                     )}
                   </span>
                   <span className="mt-0.5 block text-xs font-normal leading-4 text-text-tertiary">
-                    {option.description}
+                    {option.disabledReason ?? option.description}
                   </span>
                 </span>
               </MenuItem>
@@ -167,7 +180,7 @@ export function ChatAccessLevelChip({
       <ConfirmDialog
         open={confirmTarget !== null}
         title="Allow full access for this thread?"
-        description="The agent will be able to run commands and change files anywhere on this machine without asking first. This applies to the current thread only."
+        description={`${confirmTarget?.description ?? 'Skip tool approval prompts.'} This applies to this thread and inherited delegated work. Explicit task and destination restrictions still apply.`}
         confirmLabel="Allow full access"
         tone="danger"
         onConfirm={() => {

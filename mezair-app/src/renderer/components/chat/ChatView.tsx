@@ -574,17 +574,28 @@ export function ChatView({ userRole }: ChatViewProps) {
   const accessOptions = useMemo(
     () =>
       chatAccessOptionsForProvider(agentProvider, capabilities?.accessModes).filter(
-        (option) => !runTarget.remote || option.collaborationMode !== 'plan',
+        (option) =>
+          !runTarget.remote || (option.collaborationMode !== 'plan' && !option.permissionProfile),
       ),
     [agentProvider, capabilities?.accessModes, runTarget.remote],
   );
-  const appliedAccessMode =
-    (!runTarget.remote ? session?.appliedMode : undefined) ??
-    expectedAcpAppliedMode(
-      agentProvider,
-      threadAccess.level,
-      runTarget.remote ? 'default' : collaborationMode,
-    );
+  const personaReadOnly = activePersona?.capabilities.canWriteFiles === false;
+  const appliedAccessMode = runTarget.remote
+    ? undefined
+    : isAcpAgentProvider(agentProvider)
+      ? expectedAcpAppliedMode(
+          agentProvider,
+          threadAccess.level,
+          collaborationMode,
+          !personaReadOnly,
+          threadAccess.permissionProfile,
+        )
+      : personaReadOnly || collaborationMode === 'plan'
+        ? 'read-only'
+        : threadAccess.level === 'on-request' && threadAccess.permissionProfile === 'auto-review'
+          ? 'auto-review'
+          : undefined;
+
   const slashCommands = useMemo(() => buildSlashCommands(agentLabel), [agentLabel]);
   const combinedThreadStatuses = useMemo(
     () => ({ ...liveThreadStatuses, ...runTarget.threadStatuses }),
@@ -623,7 +634,7 @@ export function ChatView({ userRole }: ChatViewProps) {
       // Leaving plan via the access chip must reset the collaboration mode —
       // otherwise the provider keeps applying 'plan' regardless of level.
       if (collaborationMode === 'plan') setCollaborationMode('default');
-      if (option.level) threadAccess.setLevel(option.level);
+      if (option.level) threadAccess.setLevel(option.level, option.permissionProfile ?? 'default');
     },
     [collaborationMode, setCollaborationMode, threadAccess.setLevel],
   );
@@ -1340,7 +1351,11 @@ export function ChatView({ userRole }: ChatViewProps) {
               scaffoldModeActive || isTemporaryChat ? undefined : threadAccess.setLevel
             }
             codexModeDisabled={
-              isTemporaryChat || isItsmPersona || activeThread?.purpose === 'side-question'
+              (runTarget.remote ? runTarget.busy : busy) ||
+              isTemporaryChat ||
+              personaReadOnly ||
+              isItsmPersona ||
+              activeThread?.purpose === 'side-question'
             }
             accessOptions={accessOptions}
             accessAppliedMode={appliedAccessMode}

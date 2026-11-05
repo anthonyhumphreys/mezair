@@ -14,6 +14,7 @@ export interface AgentToolSessionContext {
   repoIds: readonly string[];
   provider: AgentProvider;
   mode: CodexMode;
+  permissionProfile?: import('../../shared/agent-access.js').PermissionProfile;
   features: readonly Feature[];
   /** Main-owned allowlist for narrowly scoped workers. Omitted for interactive chats. */
   allowedToolNames?: readonly string[];

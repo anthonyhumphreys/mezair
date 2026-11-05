@@ -68,8 +68,15 @@ Branching starts a new Claude thread with conversation context.
 | --- | --- |
 | Agent | Uses Claude's default permission checks. |
 | Accept edits | Applies file edits without asking and keeps Claude's other permission checks. |
-| Full access | Bypasses Claude's permission checks. Choose this only when you intend that access. |
+| Auto review | Claude reviews tool actions automatically. Availability depends on your CLI, account and model; unsupported configurations report an error. |
+| Allowed tools only | Uses Claude's configured allow rules and denies actions that would need approval. |
+| Full access | Skips ordinary tool approval prompts. Provider and organisation restrictions still apply. |
 | Plan | Uses Claude's planning mode. This is not a filesystem sandbox. |
+
+Local tasks delegated from a chat inherit its access and approval controls unless
+you explicitly restrict the task to read-only. Mezair shows the tasks and their
+access before starting them. Restrictions that another provider cannot preserve
+are rejected; changing providers does not grant broader access.
 
 ## Workflows and automations
 

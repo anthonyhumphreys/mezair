@@ -14,6 +14,7 @@ import {
   reconcileThreadAccessStore,
   resolveChatAccessChipLabel,
   resolveThreadAccessLevel,
+  resolveThreadPermissionProfile,
   setThreadAccessLevel,
   type ThreadAccessStore,
 } from '../thread-access';
@@ -112,6 +113,23 @@ describe('setThreadAccessLevel', () => {
   });
 });
 
+describe('native permission profile persistence', () => {
+  it('keeps approval controls on their thread and resets them when an access level changes', () => {
+    const store: ThreadAccessStore = {
+      defaultLevel: 'on-request',
+      appliedLevel: null,
+      defaultProfile: 'auto-review',
+      threads: { first: 'on-request', second: 'on-request' },
+      profiles: { first: 'auto-review' },
+    };
+    expect(resolveThreadPermissionProfile(store, 'first')).toBe('auto-review');
+    expect(resolveThreadPermissionProfile(store, 'second')).toBe('default');
+    expect(
+      resolveThreadPermissionProfile(setThreadAccessLevel(store, 'first', 'full-access'), 'first'),
+    ).toBe('default');
+  });
+});
+
 describe('reconcileThreadAccessStore', () => {
   it('keeps the store when settings match what we applied', () => {
     const store: ThreadAccessStore = {
@@ -153,7 +171,7 @@ describe('markAccessLevelApplied', () => {
 
 describe('chatAccessOptionsForProvider', () => {
   it('returns the four CodexMode levels for Codex-family providers', () => {
-    const options = chatAccessOptionsForProvider('codex');
+    const options = chatAccessOptionsForProvider('codex').filter((o) => !o.permissionProfile);
     expect(options.map((option) => option.level)).toEqual([
       'read-only',
       'on-request',
@@ -165,7 +183,7 @@ describe('chatAccessOptionsForProvider', () => {
 
   it('returns Cursor modes ask/agent/plan mapped to transport levels', () => {
     const options = chatAccessOptionsForProvider('cursor');
-    expect(options.map((option) => option.appliedMode)).toEqual(['ask', 'agent', 'plan']);
+    expect(options.map((option) => option.appliedMode)).toEqual(['ask', 'agent', 'plan', 'agent']);
     expect(options[0].level).toBe('read-only');
     expect(options[1].level).toBe('on-request');
     expect(options[2].collaborationMode).toBe('plan');
@@ -185,6 +203,38 @@ describe('chatAccessOptionsForProvider', () => {
     expect(options.find((option) => option.appliedMode === 'smart')?.level).toBe('workspace-auto');
   });
 
+  it('does not replace an explicitly empty capability list with defaults', () => {
+    expect(chatAccessOptionsForProvider('devin', [])).toEqual([]);
+  });
+  it.each(['claude', 'cursor', 'devin'] as const)(
+    'never claims that %s Ask or Plan is a strict sandbox',
+    (provider) => {
+      const options = chatAccessOptionsForProvider(provider);
+      expect(options.find((o) => o.appliedMode === 'plan')?.description).toContain(
+        'not a filesystem sandbox',
+      );
+      const ask = options.find((o) => o.appliedMode === 'ask');
+      if (ask) expect(ask.disabledReason).toContain('Strict read-only');
+    },
+  );
+  it('distinguishes Cursor Full access from Agent even though both use agent mode', () => {
+    const options = chatAccessOptionsForProvider('cursor');
+    expect(resolveChatAccessChipLabel(options, 'full-access', 'agent')).toBe('Full access');
+    expect(options.filter((o) => chatAccessOptionSelected(o, 'full-access', 'agent'))).toHaveLength(
+      1,
+    );
+  });
+  it('offers provider-native approval refinements separately from sandbox authority', () => {
+    expect(
+      chatAccessOptionsForProvider('codex').find((o) => o.permissionProfile === 'auto-review'),
+    ).toMatchObject({ level: 'on-request', label: 'Approve for me' });
+    const claude = chatAccessOptionsForProvider('claude');
+    expect(claude.find((o) => o.appliedMode === 'accept-edits')?.permissionProfile).toBe(
+      'accept-edits',
+    );
+    expect(claude.find((o) => o.appliedMode === 'auto')?.permissionProfile).toBe('auto-review');
+    expect(claude.find((o) => o.appliedMode === 'dont-ask')?.permissionProfile).toBe('dont-ask');
+  });
   it('honours a session-advertised accessModes subset and drops unknown ids', () => {
     const options = chatAccessOptionsForProvider('devin', ['ask', 'bogus-mode']);
     expect(options.map((option) => option.appliedMode)).toEqual(['ask']);
@@ -221,9 +271,9 @@ describe('expectedAcpAppliedMode', () => {
 
 describe('chatAppliedModeLabel', () => {
   it('labels ACP mode ids and ignores Codex internals', () => {
-    expect(chatAppliedModeLabel('ask')).toBe('Read only');
+    expect(chatAppliedModeLabel('ask')).toBe('Ask');
     expect(chatAppliedModeLabel('accept-edits')).toBe('Accept edits');
-    expect(chatAppliedModeLabel('smart')).toBe('Auto approve');
+    expect(chatAppliedModeLabel('smart')).toBe('Smart');
     expect(chatAppliedModeLabel('bypass')).toBe('Full access');
     expect(chatAppliedModeLabel('plan')).toBe('Plan');
     expect(chatAppliedModeLabel('workspace-write')).toBeNull();
@@ -248,7 +298,7 @@ describe('chatAccessOptionSelected / resolveChatAccessChipLabel', () => {
   });
 
   it('labels the chip with the applied mode when it differs', () => {
-    expect(resolveChatAccessChipLabel(devinOptions, 'full-access', 'smart')).toBe('Auto approve');
+    expect(resolveChatAccessChipLabel(devinOptions, 'full-access', 'smart')).toBe('Smart');
     expect(resolveChatAccessChipLabel(devinOptions, 'on-request', 'accept-edits')).toBe(
       'Accept edits',
     );

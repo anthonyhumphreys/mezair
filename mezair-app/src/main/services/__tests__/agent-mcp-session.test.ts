@@ -217,6 +217,7 @@ describe('codex-session agent MCP wiring', () => {
       repoIds: ['r1', 'r2'],
       provider: 'codex',
       mode: 'on-request',
+      permissionProfile: 'default',
       features: ROLE_FEATURES['ba-brm'],
     });
     mocks.settings.userRole = undefined;

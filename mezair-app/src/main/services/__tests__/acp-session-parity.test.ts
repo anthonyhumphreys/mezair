@@ -288,13 +288,11 @@ describe('ACP session parity (cursor/devin)', () => {
     expect(session.continuity).toBe('transcript-seeded');
   });
 
-  it('clamps a canWriteFiles:false persona to ask even when settings allow auto (H1)', async () => {
-    const proc = createFakeAcpProcess();
-    const session = await startAcpSession(proc, { provider: 'cursor' }, 'reader');
-
-    await sendConfiguredMessage(proc, session.id, 'look at this');
-    const setMode = writtenRequests(proc, 'session/set_mode');
-    expect(setMode[0].params).toMatchObject({ modeId: 'ask' });
+  it('rejects read-only personas before spawning an ACP provider', async () => {
+    await expect(startSession(['/repo'], ['r1'], 'reader', { provider: 'cursor' })).rejects.toThrow(
+      'read-only sandbox',
+    );
+    expect(spawn).not.toHaveBeenCalled();
   });
 
   it('queues a busy-send and flushes it via session/prompt when the turn completes (H2)', async () => {
@@ -623,5 +621,76 @@ describe('ACP session parity (cursor/devin)', () => {
       sessionId: session.id,
       kind: 'permissions',
     });
+  });
+  it('auto-approves Cursor tool requests only while the thread has Full access', async () => {
+    mocks.settings.codexMode = 'full-access';
+    const proc = createFakeAcpProcess();
+    const session = await startAcpSession(proc);
+    await sendConfiguredMessage(proc, session.id, 'run tests');
+    emit(proc, {
+      jsonrpc: '2.0',
+      id: 'full-perm',
+      method: 'session/request_permission',
+      params: {
+        sessionId: 'acp-1',
+        toolCall: { title: 'Run tests', kind: 'execute' },
+        options: [{ optionId: 'allow-once', kind: 'allow_once', name: 'Allow once' }],
+      },
+    });
+    expect(listPendingApprovalRequests()).toHaveLength(0);
+    expect(
+      proc.written.some((line) => line.includes('full-perm') && line.includes('allow-once')),
+    ).toBe(true);
+    expect(events.some((e) => e.event.type === 'approval_request')).toBe(false);
+  });
+
+  it('uses Codex automatic approval review without changing the workspace sandbox', async () => {
+    const proc = createFakeAcpProcess();
+    const session = await startAcpSession(proc, { provider: 'codex' });
+    await sendMessage(session.id, 'implement', [], {
+      permissionMode: 'on-request',
+      permissionProfile: 'auto-review',
+    });
+    expect(writtenRequests(proc, 'turn/start').at(-1)?.params).toMatchObject({
+      approvalPolicy: 'on-request',
+      approvalsReviewer: 'auto_review',
+      sandboxPolicy: { type: 'workspaceWrite' },
+    });
+    emit(proc, {
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: { turn: { id: 'first', status: 'completed' } },
+    });
+    await sendMessage(session.id, 'next', [], {
+      permissionMode: 'on-request',
+      permissionProfile: 'default',
+    });
+    expect(writtenRequests(proc, 'turn/start').at(-1)?.params).toMatchObject({
+      approvalsReviewer: 'user',
+    });
+  });
+  it('reads the access modes advertised by the live ACP session', async () => {
+    const proc = createFakeAcpProcess();
+    mocks.spawnResults.push(proc);
+    const starting = startSession(['/repo'], ['r1'], 'coder', { provider: 'devin' });
+    await waitForSpawn();
+    emit(proc, INIT_RESULT(true));
+    emit(proc, {
+      jsonrpc: '2.0',
+      id: 's1',
+      result: {
+        sessionId: 'acp-1',
+        modes: {
+          availableModes: [{ id: 'accept-edits', name: 'Code' }],
+          currentModeId: 'accept-edits',
+        },
+      },
+    });
+    const session = await starting;
+    expect(session.capabilities?.accessModes).toEqual(['accept-edits']);
+    await expect(
+      sendMessage(session.id, 'run', [], { permissionMode: 'full-access' }),
+    ).rejects.toThrow('does not advertise');
+    expect(writtenRequests(proc, 'session/prompt')).toHaveLength(0);
   });
 });

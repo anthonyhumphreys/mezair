@@ -862,8 +862,11 @@ existing agent-client session controls; Claude is not an ACP subprocess.
 - Attach Mezair MCP through SDK stdin configuration with the existing
   session-scoped bearer. Never put it in process arguments or diagnostics.
 - Map permission controls to Claude's default, acceptEdits,
-  bypassPermissions and plan modes. Plan mode is not a filesystem sandbox;
-  strict read-only and temporary chats remain unavailable. Factory workers,
+  auto, dontAsk, bypassPermissions and plan modes. Auto review depends on the
+  installed CLI/account/model and must surface rejection without falling back
+  to bypass. Plan mode is not a filesystem sandbox;
+  strict read-only personas, sessions and temporary chats remain unavailable.
+  Reject these before spawning rather than substituting plan mode. Factory workers,
   browser execution and cloud credential delivery remain on their existing
   provider allowlists. Local workflows and automations use `claude --print`.
 - Audit capabilities honestly: native resume uses SDK `resume` on this device;
@@ -879,6 +882,39 @@ Verification from `mezair-app/`: run both Desktop TypeScript projects, lint,
 regression tests, then the Desktop suite and build. Live probes must use
 minimal prompts and preserve the user's model preference; the initial
 Haiku stream smoke check used a single `OK` response.
+
+### C16: Provider-aware thread access and delegated authority
+
+Status: active
+Owner project: `mezair-app`
+
+Keep provider mode mappings in `src/shared/agent-access.ts`. Prefer live ACP
+session capabilities, including an explicitly empty list, and reject modes the
+provider does not advertise. Ask, Plan, Accept edits and Smart describe native
+agent/approval behavior; they must not claim an OS filesystem sandbox. Cursor
+Full access auto-approves individual ACP tool permission requests without
+persisting an allow-always rule or bypassing provider/organisation denials.
+Codex exposes automatic approval review separately from the workspace sandbox;
+Claude exposes its native auto-review and allowlist-only controls. Persist these
+per-thread approval refinements separately from the four sandbox/access levels.
+Translate native Smart/Accept edits before another provider interprets the
+transport level; do not turn them into Codex's no-escalation workspace sandbox.
+Reject a cross-provider strict workspace-only request that cannot be enforced,
+and fence pending proposals if the coordinator's approval settings change.
+
+Carry thread access explicitly on session start and each normal send. Changing
+one thread must not overwrite global defaults or another thread's access.
+Reviewed local delegations inherit the coordinator's access unless the task
+explicitly requests read-only. Freeze the originating ceiling, recheck it at
+approval, preserve persona restrictions, and inherit it for expanded children.
+Remote tasks retain their read-only default and target ceilings; current-tracked
+review remains strictly read-only. Saved workflows, factories and automations
+retain their existing app ceilings. A provider approval mode is not a substitute
+for strict read-only execution: Cursor/Devin print workers reject that contract;
+Claude print workers retain their read-only tool allowlist with MCP disabled.
+These controls apply to Mezair-managed delegation. Provider-native subprocesses
+and arbitrary shell-launched CLIs remain subject to the provider's own controls
+and inherited process sandbox; do not claim Mezair rewrites their permission flags.
 
 ### C15: Consented anonymous website and Desktop statistics
 

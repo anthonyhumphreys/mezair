@@ -386,6 +386,38 @@ describe('contextual workflow presets', () => {
 });
 
 describe('cross-environment delegation', () => {
+  it.each([
+    ['claude', 'default'],
+    ['devin', 'auto-review'],
+  ] as const)(
+    'translates %s approval behavior before spawning a Codex specialist',
+    (provider, profile) => {
+      const current = run(['parent']);
+      current.nodes[0].provider = provider;
+      current.nodes[0].permissionMode = 'workspace-auto';
+      expandWorkflowTeam(current, current.nodes[0], [
+        { profileId: 'reviewer', name: 'Review', prompt: 'Inspect' },
+      ]);
+      expect(current.nodes[1]).toMatchObject({
+        provider: 'openai',
+        permissionMode: 'on-request',
+        permissionProfile: profile,
+      });
+    },
+  );
+  it('rejects unsupported sandbox inheritance before mutating the graph', () => {
+    const current = run(['parent']);
+    current.nodes[0].permissionMode = 'workspace-auto';
+    current.orchestration!.profiles[0].provider = 'devin';
+    expect(() =>
+      expandWorkflowTeam(current, current.nodes[0], [
+        { profileId: 'reviewer', name: 'Review', prompt: 'Inspect' },
+      ]),
+    ).toThrow('strict workspace-only');
+    expect(current.nodes).toHaveLength(1);
+    expect(current.nodeRuns).toHaveLength(1);
+    expect(current.edges).toHaveLength(0);
+  });
   it('keeps an approved specialist target and bounds remote children to one task', () => {
     const current = run(['parent']);
     current.nodes[0].teamStrategy = 'autonomous';

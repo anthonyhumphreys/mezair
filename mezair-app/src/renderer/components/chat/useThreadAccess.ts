@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import type { PermissionProfile } from '../../../shared/agent-access';
 import type { CodexMode } from '../../../shared/types';
 import {
   isChatAccessLevel,
@@ -6,21 +7,13 @@ import {
   readThreadAccessStore,
   reconcileThreadAccessStore,
   resolveThreadAccessLevel,
+  resolveThreadPermissionProfile,
   setThreadAccessLevel,
   writeThreadAccessStore,
   type ThreadAccessStore,
 } from './thread-access';
 
-/**
- * CH1 — per-thread access state.
- *
- * The durable per-thread field (`ChatThread.codexMode` + IPC/schema) belongs
- * to the shared/main workstream; until it lands this hook persists overrides
- * renderer-side via `thread-access.ts` (localStorage keyed per workspace)
- * and pushes the effective level into `settings.codexMode` — the transport
- * the agent session actually reads — whenever the active thread changes or
- * the user picks a new level.
- */
+/** Per-thread selection. Requests carry access explicitly; app defaults are never overwritten. */
 export function useThreadAccess(
   workspaceId: string | undefined,
   activeThreadId: string | null,
@@ -38,7 +31,6 @@ export function useThreadAccess(
   const workspaceDefault = options?.workspaceDefault ?? null;
   const onWorkspaceDefaultChange = options?.onWorkspaceDefaultChange;
   const [store, setStore] = useState<ThreadAccessStore | null>(null);
-  const appliedForThreadRef = useRef<string | null>(null);
 
   // Load the workspace store, then reconcile against the live settings value
   // so an external Settings → Workspace change becomes the new default.
@@ -53,8 +45,8 @@ export function useThreadAccess(
       .then((settings) => {
         if (cancelled) return;
         const live = isChatAccessLevel(settings.codexMode) ? settings.codexMode : undefined;
-        setStore((current) => {
-          const base = current ?? readThreadAccessStore(workspaceId);
+        setStore(() => {
+          const base = readThreadAccessStore(workspaceId);
           const next = reconcileThreadAccessStore(base, live);
           if (next !== base) writeThreadAccessStore(workspaceId, next);
           return next;
@@ -66,25 +58,10 @@ export function useThreadAccess(
     };
   }, [workspaceId]);
 
-  // When the active thread changes, push its resolved level into the
-  // transport so the session honours the thread's override.
-  useEffect(() => {
-    if (!store || !activeThreadId) return;
-    if (appliedForThreadRef.current === activeThreadId) return;
-    appliedForThreadRef.current = activeThreadId;
-    const level = resolveThreadAccessLevel(store, activeThreadId, workspaceDefault);
-    void window.mezair.settings
-      .update({ codexMode: level })
-      .then(() => {
-        setStore((current) => (current ? markAccessLevelApplied(current, level) : current));
-      })
-      .catch((err) => console.error('[Chat] Failed to apply thread access level:', err));
-  }, [activeThreadId, store, workspaceDefault]);
-
   const level = resolveThreadAccessLevel(store, activeThreadId, workspaceDefault);
 
   const setLevel = useCallback(
-    (mode: CodexMode) => {
+    (mode: CodexMode, profile: PermissionProfile = 'default') => {
       setStore((current) => {
         const base: ThreadAccessStore = current ?? {
           defaultLevel: mode,
@@ -92,15 +69,15 @@ export function useThreadAccess(
           threads: {},
         };
         const next = markAccessLevelApplied(setThreadAccessLevel(base, activeThreadId, mode), mode);
+        const selected = mode === 'on-request' ? profile : 'default';
+        if (activeThreadId) next.profiles = { ...next.profiles, [activeThreadId]: selected };
+        else next.defaultProfile = selected;
         if (workspaceId) writeThreadAccessStore(workspaceId, next);
         return next;
       });
       // On an empty thread the chip is choosing this workspace's default —
       // keep Settings → Workspace in sync.
       if (!activeThreadId) onWorkspaceDefaultChange?.(mode);
-      void window.mezair.settings
-        .update({ codexMode: mode })
-        .catch((err) => console.error('[Chat] Failed to update access mode:', err));
     },
     [activeThreadId, workspaceId, onWorkspaceDefaultChange],
   );
@@ -108,6 +85,7 @@ export function useThreadAccess(
   return {
     /** Effective access level for the active thread. */
     level,
+    permissionProfile: resolveThreadPermissionProfile(store, activeThreadId),
     setLevel,
     /** Per-thread overrides for rail badges. */
     threadLevels: store?.threads,

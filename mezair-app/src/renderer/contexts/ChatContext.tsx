@@ -1,3 +1,9 @@
+import { supportsPermissionProfile } from '../../shared/agent-access';
+import {
+  readThreadAccessStore,
+  resolveThreadAccessLevel,
+  resolveThreadPermissionProfile,
+} from '../components/chat/thread-access';
 import { ChatStateChannels } from './ChatChannels';
 import { isPendingChatUserEntry } from '../utils/chat-entry-order';
 import { createChatNavigationRequests } from '../utils/chat-navigation-request';
@@ -263,7 +269,13 @@ export function useChatNavigation(): ChatNavigationValue {
 }
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const { repos, activeWorkspace, activeScaffoldSession, refreshWorkspaces } = useWorkspace();
+  const {
+    repos,
+    activeWorkspace,
+    activeScaffoldSession,
+    refreshWorkspaces,
+    workspaceAccessDefault,
+  } = useWorkspace();
   const navigationRequests = useRef(createChatNavigationRequests());
   const navigationWorkspaceIdRef = useRef(activeWorkspace?.id ?? null);
   if (navigationWorkspaceIdRef.current !== (activeWorkspace?.id ?? null))
@@ -2175,6 +2187,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      const threadPermissionMode =
+        isTemporaryChat || thread.purpose === 'side-question'
+          ? 'read-only'
+          : activeWorkspace
+            ? resolveThreadAccessLevel(
+                readThreadAccessStore(activeWorkspace.id),
+                thread.id,
+                workspaceAccessDefault,
+              )
+            : undefined;
+      const storedProfile = activeWorkspace
+        ? resolveThreadPermissionProfile(readThreadAccessStore(activeWorkspace.id), thread.id)
+        : 'default';
+      const permissionProfile =
+        threadPermissionMode === 'on-request' &&
+        supportsPermissionProfile(modelProvider, storedProfile)
+          ? storedProfile
+          : 'default';
       const timestamp = new Date().toISOString();
       const userEntry: ChatEntry = {
         kind: 'user',
@@ -2228,12 +2258,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   threadId: thread.id,
                   provider: modelProvider,
                   model: turnModel,
+                  codexMode: threadPermissionMode,
                   ...designOptions,
                 }
               : {
                   threadId: thread.id,
                   provider: modelProvider,
                   model: turnModel,
+                  codexMode: threadPermissionMode,
                   ...designOptions,
                 };
           startedSession = isTemporaryChat
@@ -2283,6 +2315,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         try {
           await window.mezair.chat.send(startedSession.id, providerMessage, attachments, {
             collaborationMode,
+            permissionMode: threadPermissionMode,
+            permissionProfile,
             model: turnModel,
             reasoningEffort: reasoningLevel,
             serviceTier,
@@ -2332,6 +2366,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       try {
         await window.mezair.chat.send(currentSessionForThread.id, providerMessage, attachments, {
           collaborationMode,
+          permissionMode: threadPermissionMode,
+          permissionProfile,
           model: turnModel,
           reasoningEffort: reasoningLevel,
           serviceTier,
@@ -2374,6 +2410,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       activeReposState,
       activeScaffoldSession,
       activeWorkspace,
+      workspaceAccessDefault,
       isTemporaryChat,
       applyThreadState,
       buildEnrichedMessage,

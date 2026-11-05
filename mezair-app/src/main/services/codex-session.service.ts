@@ -98,6 +98,15 @@ import {
 } from './codex-agent-ui.adapter.js';
 import { isAcpAgentProvider, type AcpAgentProvider } from '../../shared/agent-providers.js';
 import { supportsNativeResume } from './provider-capability.service.js';
+import {
+  ACP_ACCESS_MODES,
+  advertisedAccessModes,
+  providerAccessMode,
+  portableAgentAccess,
+  isPermissionProfile,
+  supportsPermissionProfile,
+  type PermissionProfile,
+} from '../../shared/agent-access.js';
 import { isPermissionMode } from '../../../cloud/contract/permissions.js';
 import { ROLE_FEATURES } from '../../shared/types.js';
 import type { AgentToolSessionContext } from '../agent-tools/dispatch.js';
@@ -139,6 +148,7 @@ interface ManagedSession {
   mode: CodexMode;
   /** Access mode pinned by the session caller, such as a read-only side chat. */
   modeOverride?: CodexMode;
+  permissionProfile?: PermissionProfile;
   process: AgentProcess;
   /** Isolated process group captured at spawn time on POSIX. */
   processGroupId?: number;
@@ -157,6 +167,7 @@ interface ManagedSession {
   acpLoadSession?: boolean;
   /** `agentCapabilities.mcpCapabilities` from the ACP initialize result. */
   acpMcpCapabilities?: AcpMcpCapabilities;
+  acpAccessModes?: string[];
   /** Deferred session start while the initialize result is in flight (resume needs the advertised capability first). */
   acpPendingSessionStart?: { resumeSessionId?: string };
   /** True once session/load was sent — a failure falls back to session/new once. */
@@ -340,26 +351,7 @@ export function resolveAcpSessionMode(
   codexMode: CodexMode,
   collaborationMode?: ChatSendOptions['collaborationMode'],
 ): string {
-  if (provider === 'claude') {
-    if (collaborationMode === 'plan' || codexMode === 'read-only') return 'plan';
-    if (codexMode === 'full-access') return 'bypass';
-    return codexMode === 'workspace-auto' ? 'accept-edits' : 'agent';
-  }
-  if (provider === 'devin') {
-    if (collaborationMode === 'plan') return 'plan';
-    switch (codexMode) {
-      case 'read-only':
-        return 'ask';
-      case 'workspace-auto':
-        return 'smart';
-      case 'full-access':
-        return 'bypass';
-      default:
-        return 'accept-edits';
-    }
-  }
-  if (collaborationMode === 'plan') return 'plan';
-  return codexMode === 'read-only' ? 'ask' : 'agent';
+  return providerAccessMode(provider, codexMode, collaborationMode);
 }
 
 /**
@@ -450,6 +442,10 @@ export async function startSession(
       : undefined;
   const model = gatewayConfig?.model ?? configuredModel;
   const codexPolicy = resolvePersonaCodexPolicy(mode, personaId);
+  if (isAcpAgentProvider(agentProvider) && codexPolicy.sandbox === 'read-only')
+    throw new Error(
+      `${acpProviderLabel(agentProvider)} cannot enforce this persona's read-only sandbox.`,
+    );
   const systemPrompt = options?.temporaryChat
     ? buildTemporaryChatSystemPrompt(personaId)
     : options?.scaffold
@@ -686,7 +682,7 @@ export async function startSession(
       sandbox: codexPolicy.sandbox,
       ...(options?.temporaryChat ? { ephemeral: true } : {}),
     };
-    session.appliedMode = codexPolicy.sandbox;
+    session.appliedMode = codexPolicy.sandbox === 'read-only' ? 'read-only' : mode;
     if (options?.forkFromProviderThreadId) {
       sendCodexJsonRpc(proc, 'thread/fork', {
         threadId: options.forkFromProviderThreadId,
@@ -795,19 +791,38 @@ export async function sendMessage(
     currentMode: session.mode,
   });
 
+  if (options?.permissionProfile !== undefined && !isPermissionProfile(options.permissionProfile))
+    throw new Error('Invalid permission profile.');
+  const profile =
+    mode === 'on-request'
+      ? (options?.permissionProfile ?? session.permissionProfile ?? 'default')
+      : 'default';
+  if (!supportsPermissionProfile(session.agentProvider, profile))
+    throw new Error(`${session.agentProvider} does not support this permission profile.`);
   if (session.continuationNeedsRefresh && session.appThreadId && !session.temporaryChat)
     session.continuationContext =
       captureThreadContinuation(session.appThreadId).context || undefined;
   const providerMessage = prependThreadContinuation(session.continuationContext, message);
+  const codexPolicy = resolvePersonaCodexPolicy(mode, session.personaId, {
+    planMode: options?.collaborationMode === 'plan',
+  });
+  if (
+    isAcpAgentProvider(session.provider) &&
+    codexPolicy.sandbox === 'read-only' &&
+    (options?.collaborationMode !== 'plan' ||
+      getPersonaById(session.personaId)?.capabilities.canWriteFiles === false)
+  )
+    throw new Error(
+      `${acpProviderLabel(session.provider)} cannot enforce a read-only sandbox. Choose another provider.`,
+    );
+  session.mode = codexPolicy.sandbox === 'read-only' ? 'read-only' : mode;
+  session.permissionProfile = session.mode === 'on-request' ? profile : 'default';
+
   session.status = 'busy';
   setSessionThreadAttention(session, 'working');
   broadcastEvent(sessionId, { type: 'status', status: 'thinking' });
 
   session.model = model;
-  const codexPolicy = resolvePersonaCodexPolicy(mode, session.personaId, {
-    planMode: options?.collaborationMode === 'plan',
-  });
-  session.mode = codexPolicy.sandbox === 'read-only' ? 'read-only' : mode;
 
   try {
     if (isAcpAgentProvider(session.provider)) {
@@ -817,12 +832,16 @@ export async function sendMessage(
       // H1: feed the persona-clamped session.mode (read-only for
       // canWriteFiles:false personas and plan mode), not raw settings.codexMode,
       // or a read-only persona would still run in agent/smart mode.
-      const acpModeId = resolveAcpSessionMode(
+      const acpModeId = providerAccessMode(
         session.provider,
         session.mode ?? mode,
         options?.collaborationMode,
+        session.permissionProfile,
       );
-      session.appliedMode = acpModeId;
+      if (session.acpAccessModes && !session.acpAccessModes.includes(acpModeId))
+        throw new Error(
+          `${acpProviderLabel(session.provider)} does not advertise access mode ${acpModeId}. Choose another mode.`,
+        );
       // Mode changes go through the standard `session/set_mode`; model selection
       // uses `session/set_config_option` against the agent's `model` config
       // option. Both agents reject the legacy `session/set_config` method.
@@ -833,6 +852,7 @@ export async function sendMessage(
       // Apply controls before the prompt. ACP agents can reject a config
       // change once the concurrent prompt has already started running.
       await sendProviderRequestAndWait(session, 'session/set_mode', modeRequest);
+      session.appliedMode = acpModeId;
       assertSessionActive(session);
       const acpModel = resolveAcpModelValue(session.provider, model);
       if (acpModel) {
@@ -863,7 +883,8 @@ export async function sendMessage(
     const effort = gatewayConfig
       ? gatewayConfig.effort
       : normaliseReasoningEffort(options?.reasoningEffort ?? settings.reasoningLevel);
-    session.appliedMode = codexPolicy.sandbox;
+    session.appliedMode =
+      profile !== 'default' && session.mode === 'on-request' ? profile : session.mode;
     sendFollowUpAwareProviderRequest(
       session,
       'turn/start',
@@ -871,6 +892,7 @@ export async function sendMessage(
         threadId: session.threadId,
         input: buildUserInput(providerMessage, attachments),
         approvalPolicy: codexPolicy.approvalPolicy,
+        approvalsReviewer: profile === 'auto-review' ? 'auto_review' : 'user',
         sandboxPolicy: sandboxModeToTurnPolicy(codexPolicy.sandbox, session.cwd),
         model,
         ...(options?.serviceTier !== undefined ? { serviceTier: options.serviceTier } : {}),
@@ -1017,7 +1039,7 @@ export function getAgentToolSessionContext(sessionId: string): AgentToolSessionC
     repoIds: session.repoIds,
     provider: session.agentProvider,
     // A persona-clamped read-only session stays read-only whatever the caller pinned.
-    mode: session.mode === 'read-only' ? 'read-only' : (session.modeOverride ?? session.mode),
+    ...portableAgentAccess(session.agentProvider, session.mode, session.permissionProfile),
     features: (role && ROLE_FEATURES[role]) || [],
   };
 }
@@ -1967,6 +1989,8 @@ function observeAcpInitializeResult(session: ManagedSession, line: string): void
   }
   if (msg.method !== undefined || msg.id === undefined || msg.error !== undefined) return;
   const result = msg.result as Record<string, unknown> | undefined;
+  const accessModes = advertisedAccessModes(result);
+  if (accessModes !== undefined) session.acpAccessModes = accessModes;
   const capabilities = result?.agentCapabilities as Record<string, unknown> | undefined;
   if (capabilities) {
     session.acpLoadSession = capabilities.loadSession === true;
@@ -2074,6 +2098,22 @@ function handleServerMessage(session: ManagedSession, line: string): void {
             grantRoot: event.approvalGrantRoot,
             createdAt: new Date().toISOString(),
           });
+        }
+        if (
+          session.provider === 'cursor' &&
+          session.mode === 'full-access' &&
+          kind === 'permissions' &&
+          Array.isArray(event.approvalPermissions?.options) &&
+          event.approvalPermissions.options.some(
+            (option) =>
+              option &&
+              typeof option === 'object' &&
+              option.kind === 'allow_once' &&
+              typeof option.optionId === 'string',
+          )
+        ) {
+          resolveApproval(session.id, event.approvalRequestId, 'accept');
+          return;
         }
         emitCompanionEvent('approvals');
       }
@@ -2286,6 +2326,7 @@ async function flushPendingPlanFeedback(session: ManagedSession): Promise<void> 
   try {
     await sendMessage(session.id, queued.join('\n'), [], {
       model: session.model,
+      collaborationMode: session.appliedMode === 'plan' ? 'plan' : undefined,
       permissionMode: session.mode,
     });
   } catch (error) {
@@ -2435,6 +2476,7 @@ export async function deliverStructuredAgentFeedback(
   } else if (delivery === 'prompt') {
     await sendMessage(session.id, payload, [], {
       model: session.model,
+      collaborationMode: session.appliedMode === 'plan' ? 'plan' : undefined,
       permissionMode: session.mode,
     });
   } else if (delivery === 'queue') {
@@ -2572,18 +2614,6 @@ function isAcpAuthError(message: string): boolean {
   return /auth|login|sign.?in|credential|unauthorized|401|forbidden|403/i.test(message);
 }
 
-/**
- * Distinct provider-side access modes for ACP agents (H9): Cursor collapses
- * Mezair's four CodexMode levels to ask/agent/plan, so the renderer should only
- * offer these. Codex-family providers leave this unset — all four levels are
- * distinct there.
- */
-const ACP_ACCESS_MODES: Record<AcpAgentProvider, string[]> = {
-  claude: ['agent', 'accept-edits', 'bypass', 'plan'],
-  cursor: ['ask', 'agent', 'plan'],
-  devin: ['ask', 'accept-edits', 'smart', 'bypass', 'plan'],
-};
-
 /** True when a later session could natively continue this provider thread. */
 function sessionSupportsResume(session: ManagedSession): boolean {
   if (isAcpAgentProvider(session.provider)) {
@@ -2603,7 +2633,9 @@ function sessionCapabilities(session: ManagedSession): CodexSessionCapabilities 
     readOnlySession: !acpProvider,
     // Goal lifecycle events are Codex-only (thread/goal/*); ACP agents emit none.
     goals: !acpProvider,
-    ...(acpProvider ? { accessModes: ACP_ACCESS_MODES[acpProvider] } : {}),
+    ...(acpProvider
+      ? { accessModes: [...(session.acpAccessModes ?? ACP_ACCESS_MODES[acpProvider])] }
+      : {}),
   };
 }
 

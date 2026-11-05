@@ -63,11 +63,16 @@ import { resolveCodexRuntime } from './codex-runtime.service.js';
 import { getLlmGatewayCodexConfigArgs } from '../../shared/llm-gateway.js';
 import { resolveLlmGatewayModelConfig } from './llm-gateway.service.js';
 import { triggerWatchtowerEvent } from './automation.service.js';
-import { isAcpAgentProvider, type AcpAgentProvider } from '../../shared/agent-providers.js';
+import {
+  AGENT_PROVIDERS,
+  isAcpAgentProvider,
+  type AcpAgentProvider,
+} from '../../shared/agent-providers.js';
 import { ROLE_FEATURES } from '../../shared/types.js';
 import { openWorkflowValidationTools } from './workflow-validation-tools.js';
 import { cancelAgentQuestionsForSession } from './agent-question.service.js';
 import { providerSpawnEnv } from './agent-spawn-env.js';
+import { workflowAccessMode } from '../../shared/agent-access.js';
 import { acpProviderLabel, buildAcpPrintInvocation } from './acp-print-cli.js';
 import { computeBootstrapDigest, getWorkspaceBootstrap } from './bootstrap-policy.service.js';
 import { workspaceDefinitionRevision } from './sync-entity-domain.js';
@@ -139,14 +144,6 @@ const activeRuns = new Map<
   string,
   { run: WorkflowRun; controller: AbortController; completion: Promise<void> }
 >();
-const AGENT_PROVIDERS: AgentProvider[] = [
-  'codex',
-  'cursor',
-  'devin',
-  'openai',
-  'azure',
-  'llmgateway',
-];
 
 export function normaliseWorkflowNodes(
   nodes: WorkflowNode[],
@@ -818,6 +815,9 @@ async function runCodexThread(input: {
   model: string;
   reasoningEffort: WorkflowNode['reasoningEffort'];
   permissionMode?: import('../../shared/types.js').CodexMode;
+  permissionProfile?: import('../../shared/agent-access.js').PermissionProfile;
+  /** Main-owned: a reviewed chat delegation already carries its originating ceiling. */
+  inheritChatAccess?: boolean;
   systemPrompt: string;
   prompt: string;
   displayPrompt?: string;
@@ -858,9 +858,10 @@ async function runCodexThread(input: {
     ? gatewayConfig.effort
     : resolveCodexReasoningEffort(model, input.reasoningEffort);
   const sessionId = randomUUID();
-  const accessMode = constrainPermissionMode(
-    input.permissionMode ?? settings.codexMode ?? 'on-request',
-    settings.codexMode ?? 'on-request',
+  const accessMode = workflowAccessMode(
+    input.permissionMode,
+    settings.codexMode,
+    input.inheritChatAccess,
   );
   const personaPolicy = resolvePersonaCodexPolicy(accessMode, input.personaId);
   const toolAccess = input.factoryRunId
@@ -874,10 +875,10 @@ async function runCodexThread(input: {
           workspaceId: input.workspaceId,
           repoIds: input.repoRows.map((repo) => repo.id),
           provider: input.provider,
-          mode: constrainPermissionMode(
-            personaPolicy.sandbox === 'read-only' ? 'read-only' : accessMode,
-            currentSettings.codexMode ?? 'on-request',
-          ),
+          mode:
+            personaPolicy.sandbox === 'read-only'
+              ? 'read-only'
+              : workflowAccessMode(accessMode, currentSettings.codexMode, input.inheritChatAccess),
           features: currentSettings.userRole ? ROLE_FEATURES[currentSettings.userRole] : [],
         };
       });
@@ -1049,6 +1050,12 @@ async function runCodexThread(input: {
       cwd,
       developerInstructions: input.systemPrompt,
       approvalPolicy: personaPolicy.approvalPolicy,
+      approvalsReviewer:
+        accessMode === 'on-request' &&
+        input.inheritChatAccess &&
+        input.permissionProfile === 'auto-review'
+          ? 'auto_review'
+          : 'user',
       sandbox: personaPolicy.sandbox,
       model,
     };
@@ -1090,6 +1097,9 @@ async function runAcpCliThread(input: {
   provider: AcpAgentProvider;
   model: string;
   permissionMode?: import('../../shared/types.js').CodexMode;
+  permissionProfile?: import('../../shared/agent-access.js').PermissionProfile;
+  /** Main-owned: a reviewed chat delegation already carries its originating ceiling. */
+  inheritChatAccess?: boolean;
   systemPrompt: string;
   prompt: string;
   displayPrompt?: string;
@@ -1122,15 +1132,17 @@ async function runAcpCliThread(input: {
 
   const combinedPrompt = [input.systemPrompt, input.prompt].join('\n\n');
   const label = acpProviderLabel(input.provider);
-  const accessMode = constrainPermissionMode(
-    input.permissionMode ?? settings.codexMode ?? 'on-request',
-    settings.codexMode ?? 'on-request',
+  const accessMode = workflowAccessMode(
+    input.permissionMode,
+    settings.codexMode,
+    input.inheritChatAccess,
   );
   const policy = resolvePersonaCodexPolicy(accessMode, input.personaId);
   const { executable, args } = buildAcpPrintInvocation({
     provider: input.provider,
     model: input.model,
     mode: accessMode,
+    permissionProfile: input.inheritChatAccess ? input.permissionProfile : undefined,
     policy,
     prompt: combinedPrompt,
   });
@@ -1555,6 +1567,10 @@ function launchWorkflow(run: WorkflowRun): Promise<void> {
             model: node.model,
             reasoningEffort: node.reasoningEffort,
             permissionMode: node.permissionMode,
+            permissionProfile: node.permissionProfile,
+            inheritChatAccess:
+              Boolean(current.chatOrigin) &&
+              !factoryRunIdFromRequest(current.chatOrigin?.requestId),
             signal,
             systemPrompt: [
               workflowSystemPrompt(

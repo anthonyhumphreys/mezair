@@ -96,19 +96,37 @@ describe('buildAcpPrintInvocation', () => {
     ]);
   });
 
-  it('omits --model for the devin auto default and clamps read-only to auto', () => {
-    const { args } = buildAcpPrintInvocation({
-      provider: 'devin',
-      model: 'auto',
-      mode: 'full-access',
-      policy: READ_ONLY,
-      prompt: 'look only',
-    });
-    expect(args).toContain('auto');
-    expect(args).not.toContain('--model');
-    expect(args.indexOf('--permission-mode')).toBe(args.indexOf('auto') - 1);
-  });
+  it.each(['cursor', 'devin'] as const)(
+    'rejects a read-only %s worker instead of substituting approval mode',
+    (provider) => {
+      expect(() =>
+        buildAcpPrintInvocation({
+          provider,
+          model: 'auto',
+          mode: 'full-access',
+          policy: READ_ONLY,
+          prompt: 'inspect',
+        }),
+      ).toThrow('cannot guarantee a read-only sandbox');
+    },
+  );
 
+  it.each([
+    ['claude', 'auto'],
+    ['devin', 'smart'],
+    ['cursor', '--auto-review'],
+  ] as const)('preserves inherited automatic review for %s', (provider, flag) => {
+    const invocation = buildAcpPrintInvocation({
+      provider,
+      mode: 'on-request',
+      permissionProfile: 'auto-review',
+      policy: { approvalPolicy: 'on-request', sandbox: 'workspace-write' },
+      prompt: 'inspect',
+    });
+    expect(invocation.args).toContain(flag);
+    expect(invocation.args).not.toContain('--force');
+    expect(invocation.args).not.toContain('dangerous');
+  });
   it('builds a cursor print invocation with model and mode flags', () => {
     const { executable, args } = buildAcpPrintInvocation({
       provider: 'cursor',

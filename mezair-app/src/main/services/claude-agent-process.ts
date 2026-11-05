@@ -122,6 +122,8 @@ export class ClaudeAgentProcess extends EventEmitter implements AgentProcess {
         agent: 'default',
         'accept-edits': 'acceptEdits',
         bypass: 'bypassPermissions',
+        auto: 'auto',
+        'dont-ask': 'dontAsk',
         plan: 'plan',
         ask: 'plan',
       } as const;

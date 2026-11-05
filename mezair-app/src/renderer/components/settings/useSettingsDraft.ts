@@ -108,7 +108,7 @@ export interface SettingsDraft {
    * picker, Mezair Cloud toggle, LLMGateway connect). Never touches unrelated
    * dirty keys (ST1).
    */
-  applyPersisted: (patch: Partial<AppSettings>) => void;
+  applyPersisted: (patch: Partial<AppSettings>, options?: { notifySaved?: boolean }) => void;
   /** Flush pending autosave writes immediately (e.g. before a connection test). */
   flushAutosave: () => Promise<boolean>;
   saveInstant: (patch: Partial<AppSettings>) => Promise<boolean>;
@@ -137,7 +137,10 @@ export function useSettingsDraft(options?: UseSettingsDraftOptions): SettingsDra
       .get()
       .then((settings) => {
         if (cancelled) return;
-        dispatch({ type: 'hydrate', settings });
+        // A remote theme update can arrive while this initial read is in
+        // flight. Keep its newer persisted palette when hydrating the rest.
+        const latestTheme = pickSettingsKeys(stateRef.current.persisted, ['theme', 'customThemes']);
+        dispatch({ type: 'hydrate', settings: { ...settings, ...latestTheme } });
       })
       .catch((error) => {
         optionsRef.current?.onError?.(
@@ -256,10 +259,12 @@ export function useSettingsDraft(options?: UseSettingsDraftOptions): SettingsDra
   );
 
   const applyPersisted = useCallback(
-    (patch: Partial<AppSettings>) => {
+    (patch: Partial<AppSettings>, applyOptions?: { notifySaved?: boolean }) => {
       dispatch({ type: 'apply-external', patch });
       scheduleTickExpiry();
-      optionsRef.current?.onSaved?.(Object.keys(patch) as Array<keyof AppSettings>);
+      if (applyOptions?.notifySaved !== false) {
+        optionsRef.current?.onSaved?.(Object.keys(patch) as Array<keyof AppSettings>);
+      }
     },
     [dispatch, scheduleTickExpiry],
   );

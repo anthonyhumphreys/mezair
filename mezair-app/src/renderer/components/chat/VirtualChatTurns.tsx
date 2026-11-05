@@ -19,7 +19,7 @@ import {
   type RevealTranscriptRequest,
 } from '../../utils/reveal-transcript';
 import { createTranscriptViewState, TranscriptViewState } from './TranscriptViewState';
-import { createChatTurnSearch } from './chat-transcript-search';
+import { createChatTurnSearch, getActiveChatTurnSearchIndex } from './chat-transcript-search';
 
 const estimateSize = () => 520;
 const WINDOW_THRESHOLD = 80;
@@ -46,6 +46,7 @@ export function VirtualChatTurns({
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [matchIndex, setMatchIndex] = useState(0);
+  const [activeMatchTurnKey, setActiveMatchTurnKey] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(query.trim());
   // Closing search releases indexed text instead of retaining it for the thread's lifetime.
   const searchTurns = useMemo(createChatTurnSearch, [searchOpen]);
@@ -225,17 +226,20 @@ export function VirtualChatTurns({
     () => (searchOpen ? searchTurns(turns, deferredQuery) : []),
     [turns, deferredQuery, searchOpen, searchTurns],
   );
-  const activeMatchIndex = Math.min(matchIndex, Math.max(0, matches.length - 1));
+  const activeMatchIndex = getActiveChatTurnSearchIndex(matches, activeMatchTurnKey, matchIndex);
   const activeMatch = matches[activeMatchIndex];
   useEffect(() => {
     setMatchIndex(0);
-    if (matches.length) reveal(matches[0].index);
+    const firstMatch = matches[0];
+    setActiveMatchTurnKey(firstMatch?.turnKey ?? null);
+    if (firstMatch) reveal(firstMatch.index);
     // A stream update must not steal the reading position; only a new search does.
   }, [deferredQuery, searchOpen]);
   const moveMatch = (direction: number) => {
     if (!matches.length) return;
     const next = (activeMatchIndex + direction + matches.length) % matches.length;
     setMatchIndex(next);
+    setActiveMatchTurnKey(matches[next].turnKey);
     reveal(matches[next].index);
   };
   const row = (turn: ComposedChatTurn, index: number) => (
@@ -259,6 +263,7 @@ export function VirtualChatTurns({
               onChange={(event) => {
                 setQuery(event.target.value);
                 setMatchIndex(0);
+                setActiveMatchTurnKey(null);
               }}
               onKeyDown={(event) => {
                 if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;

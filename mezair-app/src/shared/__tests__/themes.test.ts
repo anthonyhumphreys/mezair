@@ -91,20 +91,72 @@ describe('custom theme palettes', () => {
     ).toThrow('bg-primary” must be opaque');
   });
 
-  it('keeps every built-in palette contrast-safe and preserves Code Dark values', () => {
-    for (const theme of BUILT_IN_THEMES) {
-      expect(() =>
-        normalizeCustomTheme({
-          id: `copy-${theme.id}`,
-          name: theme.name,
-          appearance: theme.appearance,
-          colors: theme.colors,
-        }),
-      ).not.toThrow(theme.id);
-    }
+  it.each(BUILT_IN_THEMES)('keeps built-in theme $id contrast-safe', (theme) => {
+    expect(() =>
+      normalizeCustomTheme({
+        id: `copy-${theme.id}`,
+        name: theme.name,
+        appearance: theme.appearance,
+        colors: theme.colors,
+      }),
+    ).not.toThrow();
+  });
+
+  it('preserves Code Dark values', () => {
     expect(getThemeColors('code-dark')['bg-primary']).toBe('#121314');
     expect(getThemeColors('code-dark')['bg-secondary']).toBe('#191a1b');
     expect(getThemeColors('code-dark').accent).toBe('#48a0c7');
+  });
+
+  it('checks contrast for every syntax foreground against the syntax canvas', () => {
+    const base = BUILT_IN_THEMES.find((theme) => theme.id === 'code-dark')!;
+    const foregrounds = [
+      'syntax-text',
+      'syntax-constant',
+      'syntax-string',
+      'syntax-comment',
+      'syntax-keyword',
+      'syntax-parameter',
+      'syntax-function',
+      'syntax-string-expression',
+      'syntax-punctuation',
+      'syntax-link',
+    ] as const;
+
+    for (const token of foregrounds) {
+      const unreadable = {
+        ...base,
+        colors: { ...base.colors, [token]: base.colors['syntax-background'] },
+      };
+      expect(
+        getThemeContrastWarnings(unreadable).some((warning) =>
+          warning.startsWith(
+            `Theme colors “${token}” and “syntax-background” need at least 4.5:1 contrast`,
+          ),
+        ),
+      ).toBe(true);
+      expect(() => normalizeCustomTheme(unreadable)).toThrow(
+        `Theme colors “${token}” and “syntax-background” need at least 4.5:1 contrast`,
+      );
+    }
+  });
+
+  it('composites a transparent syntax canvas over the code block surface', () => {
+    const base = BUILT_IN_THEMES.find((theme) => theme.id === 'code-dark')!;
+    const theme = {
+      ...base,
+      colors: {
+        ...base.colors,
+        'bg-primary': '#000000',
+        'bg-tertiary': '#333333',
+        'syntax-background': '#00000000',
+        'syntax-text': '#777777',
+      },
+    };
+
+    expect(getThemeContrastWarnings(theme)).toContain(
+      'Theme colors “syntax-text” and “syntax-background” need at least 4.5:1 contrast (currently 2.82:1).',
+    );
   });
 
   it('validates renderer palettes without loading the importer or changing palette values', () => {

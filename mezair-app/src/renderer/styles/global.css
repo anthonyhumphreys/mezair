@@ -72,7 +72,7 @@
   --color-syntax-background: #232528;
   --color-syntax-constant: #ffd43b;
   --color-syntax-string: #9ad0a8;
-  --color-syntax-comment: #8b847b;
+  --color-syntax-comment: #969088;
   --color-syntax-keyword: #dd8a8e;
   --color-syntax-parameter: #fd7e14;
   --color-syntax-function: #99c4de;
@@ -183,8 +183,8 @@ html[data-theme='merge-conflict'] {
   --color-text-secondary: #ead0df;
   --color-text-tertiary: #c498b4;
   --color-text-muted: #c8a2ba;
-  --color-accent: #ff5c8a;
-  --color-accent-glow: rgba(255, 92, 138, 0.24);
+  --color-accent: #ff698a;
+  --color-accent-glow: rgba(255, 105, 138, 0.24);
   --color-accent-foreground: #120d18;
   --color-success: #61e2a1;
   --color-warning: #ffd166;
@@ -206,8 +206,8 @@ html[data-theme='token-bender'] {
   --color-text-secondary: #d8d2ff;
   --color-text-tertiary: #aaa1da;
   --color-text-muted: #a89fda;
-  --color-accent: #9f7aea;
-  --color-accent-glow: rgba(159, 122, 234, 0.24);
+  --color-accent: #9f96ea;
+  --color-accent-glow: rgba(159, 150, 234, 0.24);
   --color-accent-foreground: #100f2a;
   --color-success: #64e3a0;
   --color-warning: #ffe066;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentUIQuestionIntent } from '../../../../shared/agent-ui-intents';
 import { composeChatTurns, type ComposedChatTurn } from '../chat-turns';
-import { createChatTurnSearch } from '../chat-transcript-search';
+import { createChatTurnSearch, getActiveChatTurnSearchIndex } from '../chat-transcript-search';
 
 const makeTurn = (content: string): ComposedChatTurn =>
   composeChatTurns([
@@ -107,6 +107,17 @@ describe('loaded conversation search', () => {
     expect(search([updated], 'old')).toEqual([]);
     expect(search([updated], 'new')).toHaveLength(1);
     expect(search([makeTurn('Unrelated thread')], 'new')).toEqual([]);
+  });
+
+  it('keeps the selected turn active when earlier turns are prepended', () => {
+    const search = createChatTurnSearch();
+    const first = makeTurn('First target');
+    const selected = makeTurn('Selected target');
+    const initialMatches = search([first, selected], 'target');
+    const prependedMatches = search([makeTurn('Earlier target'), first, selected], 'target');
+
+    expect(getActiveChatTurnSearchIndex(prependedMatches, initialMatches[1].turnKey, 1)).toBe(2);
+    expect(getActiveChatTurnSearchIndex(prependedMatches, null, 0)).toBe(0);
   });
 
   it('bounds the excerpt around a match in long output', () => {

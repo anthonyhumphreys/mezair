@@ -22,6 +22,11 @@ function themeId(theme: AppTheme): string {
   return theme.startsWith('custom:') ? theme.slice('custom:'.length) : '';
 }
 
+function resolveSystemSwatchTheme(defaultTheme: AppTheme): AppTheme {
+  if (defaultTheme !== 'system') return defaultTheme;
+  return (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true) ? 'dark' : 'light';
+}
+
 function ColorSwatches({ colors }: { colors: ThemeColors }) {
   return (
     <span className="flex shrink-0 overflow-hidden rounded-md border border-border-subtle">
@@ -88,6 +93,22 @@ export function ThemeSettingsPanel() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [workspaceIntent, setWorkspaceIntent] = useState<WorkspaceIntent | null>(null);
   const [workspaceThemeId, setWorkspaceThemeId] = useState<string | undefined>();
+  const [systemTheme, setSystemTheme] = useState(() =>
+    resolveSystemSwatchTheme(brand.defaultTheme),
+  );
+
+  useEffect(() => {
+    if (brand.defaultTheme !== 'system') {
+      setSystemTheme(brand.defaultTheme);
+      return;
+    }
+    const mediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (!mediaQuery) return;
+    const updateSystemTheme = () => setSystemTheme(mediaQuery.matches ? 'dark' : 'light');
+    updateSystemTheme();
+    mediaQuery.addEventListener('change', updateSystemTheme);
+    return () => mediaQuery.removeEventListener('change', updateSystemTheme);
+  }, [brand.defaultTheme]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -165,7 +186,7 @@ export function ThemeSettingsPanel() {
     setError(null);
   };
 
-  const systemColors = getThemeColors(brand.defaultTheme);
+  const systemColors = getThemeColors(systemTheme);
 
   return (
     <SettingsPanel

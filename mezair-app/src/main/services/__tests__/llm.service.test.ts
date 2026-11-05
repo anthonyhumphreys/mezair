@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { OpenAI } from 'openai';
+import { AzureOpenAI, OpenAI } from 'openai';
 
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
@@ -195,6 +195,73 @@ describe('callLlm local model routing', () => {
       'Choose an LLMGateway model',
     );
     expect(mocks.completionCreate).not.toHaveBeenCalled();
+  });
+
+  it('uses an explicit designer model when LLMGateway has no global model selected', async () => {
+    mocks.getSettings.mockReturnValue({
+      ...openAiSettings(),
+      llmProvider: 'llmgateway',
+      llmGatewayApiKey: 'gateway-test-key',
+      openaiModel: '',
+    });
+
+    await expect(
+      callLlm('Return a theme palette', 3000, 0.4, 0, {
+        provider: 'llmgateway',
+        model: 'deepseek-v4-flash',
+        textOnly: true,
+      }),
+    ).resolves.toBe('fallback response');
+    expect(mocks.completionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'deepseek-v4-flash' }),
+    );
+  });
+
+  it('uses the explicit saved Foundry route for designer Azure calls', async () => {
+    mocks.getSettings.mockReturnValue({
+      ...openAiSettings(),
+      llmProvider: 'openai',
+      openaiApiKey: undefined,
+      openaiModel: '',
+    });
+
+    await expect(
+      callLlm('Return a theme palette', 3000, 0.4, 0, {
+        provider: 'azure',
+        model: 'theme-deployment',
+        textOnly: true,
+        azureFoundry: {
+          endpoint: 'https://foundry.example.test',
+          apiKey: 'saved-foundry-key',
+          apiVersion: '2025-01-01-preview',
+          deploymentName: 'theme-deployment',
+        },
+      }),
+    ).resolves.toBe('fallback response');
+
+    expect(AzureOpenAI).toHaveBeenCalledWith({
+      endpoint: 'https://foundry.example.test',
+      apiKey: 'saved-foundry-key',
+      apiVersion: '2025-01-01-preview',
+    });
+    expect(mocks.completionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'theme-deployment' }),
+    );
+    const completionCalls = mocks.completionCreate.mock.calls.length;
+    await expect(
+      callLlm('Return a theme palette', 3000, 0.4, 0, {
+        provider: 'azure',
+        model: 'other-deployment',
+        textOnly: true,
+        azureFoundry: {
+          endpoint: 'https://foundry.example.test',
+          apiKey: 'saved-foundry-key',
+          apiVersion: '2025-01-01-preview',
+          deploymentName: 'theme-deployment',
+        },
+      }),
+    ).rejects.toThrow('must match the configured deployment');
+    expect(mocks.completionCreate).toHaveBeenCalledTimes(completionCalls);
   });
 
   it('does not attempt local routing when max tokens exceed the local cap', async () => {

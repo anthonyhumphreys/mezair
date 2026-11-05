@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import {
   Routes,
   Route,
@@ -313,8 +313,11 @@ function AppContent() {
   const [onboardingPreviewStep, setOnboardingPreviewStep] = useState<OnboardingPreviewStep | null>(
     null,
   );
+  const themeEventRevisionRef = useRef(-1);
+  const themeStateGenerationRef = useRef(0);
 
   const checkConnections = useCallback(async () => {
+    const themeStateGeneration = themeStateGenerationRef.current;
     try {
       const settings = await window.mezair.settings.get();
       const brand = await window.brand.get();
@@ -323,8 +326,10 @@ function AppContent() {
         window.mezair.shares.pickupPending().catch(() => false),
       ]);
 
-      setAppTheme(settings.theme ?? brand.defaultTheme);
-      setCustomThemes(settings.customThemes ?? []);
+      if (themeStateGenerationRef.current === themeStateGeneration) {
+        setAppTheme(settings.theme ?? brand.defaultTheme);
+        setCustomThemes(settings.customThemes ?? []);
+      }
       setCloudFeaturesEnabled(settings.cloudFeaturesEnabled);
       if (settings.userRole) {
         setUserRole(settings.userRole);
@@ -413,9 +418,20 @@ function AppContent() {
 
   useEffect(() => {
     const handleThemesChanged = (event: Event) => {
-      const detail = (event as CustomEvent<{ theme?: AppTheme; customThemes?: CustomTheme[] }>)
-        .detail;
-      if (detail?.theme !== undefined) setAppTheme(detail.theme);
+      const detail = (
+        event as CustomEvent<{
+          theme?: AppTheme;
+          customThemes?: CustomTheme[];
+          revision?: number;
+        }>
+      ).detail;
+      if (!detail) return;
+      if (detail.revision !== undefined) {
+        if (detail.revision <= themeEventRevisionRef.current) return;
+        themeEventRevisionRef.current = detail.revision;
+      }
+      themeStateGenerationRef.current += 1;
+      if (detail.theme !== undefined) setAppTheme(detail.theme);
       if (detail?.customThemes !== undefined) {
         try {
           setCustomThemes(normalizeCustomThemesForRenderer(detail.customThemes));
@@ -427,6 +443,13 @@ function AppContent() {
 
     window.addEventListener('mezair:themes-changed', handleThemesChanged);
     return () => window.removeEventListener('mezair:themes-changed', handleThemesChanged);
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = window.mezair.settings.onThemeChanged((detail) => {
+      window.dispatchEvent(new CustomEvent('mezair:themes-changed', { detail }));
+    });
+    return unsubscribe;
   }, []);
 
   useEffect(() => {

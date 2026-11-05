@@ -60,6 +60,7 @@ export function SettingsView({
   const [statusError, setStatusError] = useState<string | null>(null);
   const [previewPending, setPreviewPending] = useState(false);
   const [pendingEdits, setPendingEdits] = useState<Record<string, PendingSettingsEdit>>({});
+  const themeEventRevisionRef = useRef(-1);
   const registerPendingEdit = useCallback((id: string, edit: PendingSettingsEdit | null) => {
     setPendingEdits((current) => {
       if (current[id] === edit || (!current[id] && !edit)) return current;
@@ -92,6 +93,29 @@ export function SettingsView({
     },
     onError: (message) => setStatusError(message),
   });
+
+  useEffect(() => {
+    const handleThemeChange = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          theme?: AppSettings['theme'];
+          customThemes?: AppSettings['customThemes'];
+          revision?: number;
+        }>
+      ).detail;
+      if (!detail) return;
+      if (detail.revision !== undefined) {
+        if (detail.revision <= themeEventRevisionRef.current) return;
+        themeEventRevisionRef.current = detail.revision;
+      }
+      const patch: Partial<AppSettings> = {};
+      if (detail.theme !== undefined) patch.theme = detail.theme;
+      if (detail.customThemes !== undefined) patch.customThemes = detail.customThemes;
+      if (Object.keys(patch).length) draft.applyPersisted(patch, { notifySaved: false });
+    };
+    window.addEventListener('mezair:themes-changed', handleThemeChange);
+    return () => window.removeEventListener('mezair:themes-changed', handleThemeChange);
+  }, [draft.applyPersisted]);
 
   // React to deep links: `/settings/:category#panel` (or `?category=` until
   // the param route lands in App.tsx).

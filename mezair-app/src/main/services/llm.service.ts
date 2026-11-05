@@ -36,6 +36,13 @@ export interface LlmCallOptions {
   provider?: AgentProvider;
   /** Model override for this call. Falls back to the provider's configured model. */
   model?: string;
+  /** Saved Azure AI Foundry connection for isolated theme design calls. */
+  azureFoundry?: {
+    endpoint: string;
+    apiKey: string;
+    apiVersion: string;
+    deploymentName: string;
+  };
   /** Isolated data generation: supported providers only, in a temporary cwd. */
   textOnly?: boolean;
 }
@@ -165,12 +172,36 @@ function readCodexConfig(): { baseUrl: string; model: string; envKey: string } |
  * Get or create the LLM client based on the configured provider.
  * Only used for API-backed providers. Codex and Cursor route through their CLIs.
  */
-function getClient(provider: AgentProvider = getSettings().llmProvider ?? 'openai'): {
+function getClient(
+  provider: AgentProvider = getSettings().llmProvider ?? 'openai',
+  modelOverride?: string,
+  azureFoundry?: LlmCallOptions['azureFoundry'],
+): {
   client: AzureOpenAI | OpenAI;
   model: string;
 } {
   const settings = getSettings();
   console.log(`[LLM] getClient: provider=${provider}`);
+
+  if (provider === 'azure' && azureFoundry) {
+    const endpoint = azureFoundry.endpoint.trim();
+    const apiKey = azureFoundry.apiKey.trim();
+    const apiVersion = azureFoundry.apiVersion.trim();
+    const deploymentName = azureFoundry.deploymentName.trim();
+    if (!endpoint || !apiKey || !apiVersion || !deploymentName) {
+      throw new Error(
+        'Azure AI Foundry theme design needs a key, endpoint, API version, and deployment.',
+      );
+    }
+    if (modelOverride?.trim() && modelOverride.trim() !== deploymentName) {
+      throw new Error('Azure AI Foundry theme model must match the configured deployment.');
+    }
+    console.log('[LLM] Creating isolated Azure AI Foundry client');
+    return {
+      client: new AzureOpenAI({ endpoint, apiKey, apiVersion }),
+      model: deploymentName,
+    };
+  }
 
   // Reset if provider changed
   if (cachedProvider !== provider) {
@@ -208,7 +239,7 @@ function getClient(provider: AgentProvider = getSettings().llmProvider ?? 'opena
     if (!settings.llmGatewayApiKey) {
       throw new Error('Connect LLMGateway in Settings before using this provider');
     }
-    const model = settings.openaiModel?.trim();
+    const model = modelOverride ?? settings.openaiModel?.trim();
     if (!model)
       throw new Error('Choose an LLMGateway model in Settings before using this provider.');
     if (!cachedClient) {
@@ -690,7 +721,7 @@ export async function callLlm(
         throw err;
       }
     } else {
-      const { client, model } = getClient(provider);
+      const { client, model } = getClient(provider, modelOverride, options?.azureFoundry);
       const effectiveModel = modelOverride ?? model;
       try {
         const body: Record<string, unknown> = {

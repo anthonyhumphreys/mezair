@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { access, readdir, rm } from 'node:fs/promises';
 
-const mocks = vi.hoisted(() => ({ callLlm: vi.fn(), getOptions: vi.fn() }));
+const mocks = vi.hoisted(() => ({ callLlm: vi.fn(), getOptions: vi.fn(), getSettings: vi.fn() }));
 vi.mock('../llm.service.js', () => ({ callLlm: mocks.callLlm }));
 vi.mock('../theme-design-models.js', () => ({ getThemeDesignOptions: mocks.getOptions }));
+vi.mock('../settings.service.js', () => ({ getSettings: mocks.getSettings }));
 
 import {
   buildThemeDesignPrompt,
@@ -45,6 +46,12 @@ beforeEach(() => {
     ],
   });
   mocks.callLlm.mockResolvedValue(candidate);
+  mocks.getSettings.mockReturnValue({
+    foundryEndpoint: '',
+    foundryApiKey: undefined,
+    foundryApiVersion: '2024-10-21',
+    foundryDeploymentName: '',
+  });
 });
 afterEach(async () => {
   await Promise.all(
@@ -154,6 +161,39 @@ describe('theme design boundary', () => {
     await expect(designTheme(request, 101)).rejects.toThrow('Provider unavailable');
     await expect(access(mocks.callLlm.mock.calls[1][4].cwd)).rejects.toThrow();
     await expect(designTheme(request, 101)).resolves.toHaveProperty('theme');
+  });
+
+  it('passes the current saved Foundry route for the selected Azure deployment', async () => {
+    mocks.getOptions.mockResolvedValue({
+      providers: [
+        {
+          id: 'azure',
+          label: 'Azure AI Foundry',
+          defaultModel: 'theme-deployment',
+          models: [{ id: 'theme-deployment', label: 'Theme deployment' }],
+        },
+      ],
+      defaultProvider: 'azure',
+    });
+    mocks.getSettings.mockReturnValue({
+      foundryEndpoint: 'https://foundry.example.test',
+      foundryApiKey: 'saved-foundry-key',
+      foundryApiVersion: '2025-01-01-preview',
+      foundryDeploymentName: 'theme-deployment',
+    });
+
+    await designTheme({ ...request, provider: 'azure', model: 'theme-deployment' }, 303);
+
+    expect(mocks.callLlm.mock.calls[0][4]).toMatchObject({
+      provider: 'azure',
+      model: 'theme-deployment',
+      azureFoundry: {
+        endpoint: 'https://foundry.example.test',
+        apiKey: 'saved-foundry-key',
+        apiVersion: '2025-01-01-preview',
+        deploymentName: 'theme-deployment',
+      },
+    });
   });
 
   it('rejects duplicate in-flight requests from a window', async () => {

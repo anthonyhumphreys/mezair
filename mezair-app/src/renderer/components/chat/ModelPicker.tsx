@@ -171,12 +171,16 @@ export function ModelPicker({
             aria-label="Choose model"
             style={position}
             onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
               if (event.key === 'Escape') {
-                event.preventDefault();
+                // Keep Escape from reaching parent overlays even while an IME
+                // is composing. In that case leave the model picker open.
                 event.stopPropagation();
+                if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+                event.preventDefault();
                 close();
+                return;
               }
+              if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
             }}
             onBlur={(event) => {
               if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget))

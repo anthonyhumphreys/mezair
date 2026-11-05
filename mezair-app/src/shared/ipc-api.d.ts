@@ -871,6 +871,11 @@ export interface MezairAPI {
     migrateSavedCredentials: () => Promise<import('./secret-storage.js').CredentialMigrationResult>;
     get: () => Promise<AppSettings>;
     update: (settings: Partial<AppSettings>) => Promise<void>;
+    onThemeChanged: (
+      callback: (
+        settings: Pick<AppSettings, 'theme' | 'customThemes'> & { revision: number },
+      ) => void,
+    ) => () => void;
     getCodexStatus: () => Promise<CodexCliStatus>;
     getCodexRuntimeStatus: () => Promise<CodexRuntimeStatus>;
     installCodexRuntime: () => Promise<CodexRuntimeStatus>;

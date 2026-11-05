@@ -858,6 +858,14 @@ const api: MezairAPI = {
     migrateSavedCredentials: () => ipcRenderer.invoke('settings:secret-storage-migrate'),
     get: () => ipcRenderer.invoke('settings:get'),
     update: (settings) => ipcRenderer.invoke('settings:update', settings),
+    onThemeChanged: (callback) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        settings: Parameters<typeof callback>[0],
+      ) => callback(settings);
+      ipcRenderer.on('settings:theme-changed', handler);
+      return () => ipcRenderer.removeListener('settings:theme-changed', handler);
+    },
     getCodexStatus: () => ipcRenderer.invoke('settings:codex-status'),
     getCodexRuntimeStatus: () => ipcRenderer.invoke('settings:codex-runtime-status'),
     installCodexRuntime: () => ipcRenderer.invoke('settings:codex-runtime-install'),

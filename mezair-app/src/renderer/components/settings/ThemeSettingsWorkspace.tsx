@@ -38,7 +38,22 @@ const COLOR_GROUPS: ReadonlyArray<{
   },
   { label: 'Text', keys: ['text-primary', 'text-secondary', 'text-tertiary'] },
   { label: 'Accent', keys: ['accent', 'accent-foreground'] },
-  { label: 'Syntax', keys: ['syntax-background', 'syntax-text'] },
+  {
+    label: 'Syntax',
+    keys: [
+      'syntax-background',
+      'syntax-text',
+      'syntax-constant',
+      'syntax-string',
+      'syntax-comment',
+      'syntax-keyword',
+      'syntax-parameter',
+      'syntax-function',
+      'syntax-string-expression',
+      'syntax-punctuation',
+      'syntax-link',
+    ],
+  },
   { label: 'Terminal', keys: ['terminal-background', 'terminal-foreground'] },
 ];
 
@@ -494,12 +509,41 @@ export default function ThemeSettingsWorkspace({
 
   const saveEdit = async () => {
     if (!editing || !editing.name.trim()) return;
+    if (!customThemes.some((theme) => theme.id === editing.id)) {
+      setError(
+        'This theme was deleted in another window. Your edits are still here; save them as a new theme or cancel.',
+      );
+      return;
+    }
     try {
       const normalized = normalizeCustomTheme({ ...editing, name: editing.name.trim() });
       const nextThemes = customThemes.map((theme) =>
         theme.id === normalized.id ? normalized : theme,
       );
       if ((await updateCustomThemes(nextThemes)) && mountedRef.current) setEditing(null);
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error ? saveError.message : 'These theme changes could not be saved.',
+      );
+    }
+  };
+
+  const saveEditAsNew = async () => {
+    if (!editing || !editing.name.trim()) return;
+    if (customThemes.length >= 32) {
+      setError('You can save up to 32 custom themes. Delete one before saving this theme as new.');
+      return;
+    }
+    try {
+      const copy = normalizeCustomTheme({
+        ...editing,
+        id: makeThemeId(),
+        name: `${editing.name.trim()} copy`.slice(0, 60),
+      });
+      if ((await updateCustomThemes([...customThemes, copy])) && mountedRef.current) {
+        setEditing(null);
+        setError(null);
+      }
     } catch (saveError) {
       setError(
         saveError instanceof Error ? saveError.message : 'These theme changes could not be saved.',
@@ -647,6 +691,13 @@ export default function ThemeSettingsWorkspace({
 
   const savePendingThemes = useCallback(async () => {
     if (busy || designBusy || importBusy) return false;
+    if (editing && !customThemes.some((theme) => theme.id === editing.id)) {
+      const message =
+        'This theme was deleted in another window. Save your edits as a new theme or cancel before leaving Settings.';
+      reportError(message);
+      setError(message);
+      return false;
+    }
     if (!candidate && !editingHasChanges) {
       reportError(
         'Theme design is not finished yet. Complete it or discard the draft before leaving Settings.',
@@ -962,6 +1013,16 @@ export default function ThemeSettingsWorkspace({
                     {busy && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
                     Save changes
                   </Button>
+                  {!customThemes.some((theme) => theme.id === editing.id) && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy || !editing.name.trim()}
+                      onClick={() => void saveEditAsNew()}
+                    >
+                      Save as new theme
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"

@@ -6,6 +6,7 @@ import type { ThemeDesignRequest, ThemeDesignResponse } from '../../shared/theme
 import { getThemeColors, normalizeCustomTheme, THEME_COLOR_TOKENS } from '../../shared/themes.js';
 import { callLlm } from './llm.service.js';
 import { getThemeDesignOptions } from './theme-design-models.js';
+import { getSettings } from './settings.service.js';
 
 const MAX_HISTORY_CHARS = 16_000;
 const activeDesigns = new Set<number>();
@@ -57,7 +58,7 @@ ${ask ? 'Ask ONE useful question about an individual themeable element (surfaces
 Response shape: {"message":"brief rationale","question":{"text":"one question","options":["choice 1","choice 2"]}} OR {"message":"brief rationale","theme":{"name":"short name","appearance":"dark or light","colors":{"token":"#hex"}}}.
 Never return both question and theme. Messages max 2000 chars; question max 300; at most 5 options of 120 chars.
 Theme colors are overrides of the selected light/dark base. Use ONLY these token names: ${THEME_COLOR_TOKENS.join(', ')}.
-Use ONLY #rgb, #rgba, #rrggbb or #rrggbbaa colour values. Keep body and secondary text at least 4.5:1 against all app surfaces, and button labels at least 4.5:1 against the accent. The accent itself also serves as link text and focus: it MUST contrast at least 4.5:1 against every app surface, including bg-hover and bg-elevated. For a red dark theme prefer a bright coral-red accent and dark button labels to maintain this contrast. Main canvas and terminal backgrounds must be opaque. Prefer subtle surfaces, clear focus, and restrained accent usage. Do not add trademarks or external assets.
+Use ONLY #rgb, #rgba, #rrggbb or #rrggbbaa colour values. Keep body and secondary text at least 4.5:1 against all app surfaces, and button labels at least 4.5:1 against the accent. The accent itself also serves as link text and focus: it MUST contrast at least 4.5:1 against every app surface, including bg-hover and bg-elevated. Every syntax foreground (syntax-text, syntax-constant, syntax-string, syntax-comment, syntax-keyword, syntax-parameter, syntax-function, syntax-string-expression, syntax-punctuation and syntax-link) must have at least 4.5:1 contrast against syntax-background. For a red dark theme prefer a bright coral-red accent and dark button labels to maintain this contrast. Main canvas and terminal backgrounds must be opaque. Prefer subtle surfaces, clear focus, and restrained accent usage. Do not add trademarks or external assets.
 Dark base: ${JSON.stringify(getThemeColors('code-dark'))}
 Light base: ${JSON.stringify(getThemeColors('light'))}
 Current candidate: ${JSON.stringify(input.currentTheme ?? null)}
@@ -147,6 +148,7 @@ export async function designTheme(input: unknown, owner: number): Promise<ThemeD
       throw new Error(
         'That theme model is no longer available. Refresh the designer and choose another model.',
       );
+    const azureFoundry = provider.id === 'azure' ? getThemeFoundryRoute(model) : undefined;
     directory = await prepareThemeDesignWorkspace();
     const raw = await callLlm(buildThemeDesignPrompt(request), 3000, 0.4, 0, {
       cwd: directory,
@@ -154,6 +156,7 @@ export async function designTheme(input: unknown, owner: number): Promise<ThemeD
       textOnly: true,
       provider: provider.id,
       model,
+      ...(azureFoundry ? { azureFoundry } : {}),
     });
     const mustGenerate =
       request.mode === 'generate' ||
@@ -163,4 +166,27 @@ export async function designTheme(input: unknown, owner: number): Promise<ThemeD
     activeDesigns.delete(owner);
     if (directory) await rm(directory, { recursive: true, force: true });
   }
+}
+
+function getThemeFoundryRoute(
+  model: string,
+): NonNullable<Parameters<typeof callLlm>[4]>['azureFoundry'] {
+  const settings = getSettings();
+  const endpoint = settings.foundryEndpoint.trim();
+  const apiKey = settings.foundryApiKey?.trim() ?? '';
+  const deploymentName = settings.foundryDeploymentName.trim();
+  if (!endpoint || !apiKey || !deploymentName) {
+    throw new Error('Azure AI Foundry settings changed. Refresh the theme designer and try again.');
+  }
+  if (model !== deploymentName) {
+    throw new Error(
+      'The selected Azure deployment changed. Refresh the theme designer and try again.',
+    );
+  }
+  return {
+    endpoint,
+    apiKey,
+    apiVersion: settings.foundryApiVersion || '2024-10-21',
+    deploymentName,
+  };
 }

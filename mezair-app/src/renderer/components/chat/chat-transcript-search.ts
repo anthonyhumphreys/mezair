@@ -2,9 +2,22 @@ import type { ComposedChatTurn } from './chat-turns';
 
 export interface ChatTurnSearchMatch {
   index: number;
+  turnKey: string;
   before: string;
   text: string;
   after: string;
+}
+
+export function getActiveChatTurnSearchIndex(
+  matches: ChatTurnSearchMatch[],
+  selectedTurnKey: string | null,
+  fallbackIndex: number,
+): number {
+  if (selectedTurnKey) {
+    const selectedIndex = matches.findIndex((match) => match.turnKey === selectedTurnKey);
+    if (selectedIndex >= 0) return selectedIndex;
+  }
+  return Math.min(Math.max(fallbackIndex, 0), Math.max(matches.length - 1, 0));
 }
 
 /** Index immutable turns only while their conversation search is open. */
@@ -50,6 +63,7 @@ export function createChatTurnSearch() {
       return [
         {
           index,
+          turnKey: turn.key,
           before: (start > 0 ? '…' : '') + text.slice(start, match.index).replace(/\s+/g, ' '),
           text: match[0],
           after:

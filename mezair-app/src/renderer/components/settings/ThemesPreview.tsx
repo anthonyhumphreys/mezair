@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { AppSettings, AppTheme } from '../../../shared/types';
-import { normalizeCustomThemesForRenderer } from '../../../shared/theme-palette';
+import { getThemeColors, normalizeCustomThemesForRenderer } from '../../../shared/theme-palette';
 import { SettingsContextProvider } from './SettingsContext';
 import type { SettingsContextValue } from './SettingsContext';
 import type { SettingsDraft } from './useSettingsDraft';
@@ -14,6 +14,7 @@ export const THEMES_PREVIEW_CUSTOM_THEME = normalizeCustomThemesForRenderer([
     appearance: 'dark',
     source: 'generated',
     colors: {
+      ...getThemeColors('dark'),
       accent: '#ff6b6b',
       'accent-foreground': '#111318',
       'accent-glow': '#ff6b6b33',
@@ -29,6 +30,7 @@ const THEMES_PREVIEW_LIBRARY_THEME = normalizeCustomThemesForRenderer([
     appearance: 'dark',
     source: 'imported',
     colors: {
+      ...getThemeColors('dark'),
       accent: '#8fe388',
       'accent-foreground': '#111318',
       'accent-glow': '#8fe38833',

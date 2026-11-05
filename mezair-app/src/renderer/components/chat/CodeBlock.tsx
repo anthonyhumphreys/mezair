@@ -199,13 +199,13 @@ function FencedCodeBlock({
               <div key={i}>{i + 1}</div>
             ))}
           </div>
-          <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden px-3 py-3 font-mono leading-relaxed [&_pre]:!m-0 [&_pre]:!bg-transparent [&_pre]:!p-0 [&_pre]:!leading-relaxed [&_code]:!bg-transparent [&_code]:!leading-relaxed">
+          <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden bg-syntax-background px-3 py-3 font-mono leading-relaxed [&_pre]:!m-0 [&_pre]:!bg-transparent [&_pre]:!p-0 [&_pre]:!leading-relaxed [&_code]:!bg-transparent [&_code]:!leading-relaxed">
             {/* Highlighted code — HTML is pre-sanitized by highlightCode() with DOMPurify */}
             {highlightedHtml ? (
               <div dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
             ) : (
               // Fallback while loading
-              <pre className="overflow-visible whitespace-pre bg-transparent p-0 text-xs font-mono leading-relaxed text-text-secondary">
+              <pre className="overflow-visible whitespace-pre bg-transparent p-0 text-xs font-mono leading-relaxed text-syntax-text">
                 <code>{visibleCode}</code>
               </pre>
             )}

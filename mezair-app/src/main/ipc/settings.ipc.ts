@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import { designTheme } from '../services/theme-design.service.js';
 import { getThemeDesignOptions } from '../services/theme-design-models.js';
 import { clearOverviewCaches } from '../services/overview.service.js';
@@ -52,6 +52,8 @@ import {
   exchangeNotionOAuthCode,
 } from '../services/notion.service.js';
 import { resumeSyncAfterCredentialStorageReady } from '../services/sync-runtime.service.js';
+
+let themeSettingsRevision = 0;
 
 export function registerSettingsHandlers(): void {
   ipcMain.handle('settings:theme-design-options', (_event, force: unknown) => {
@@ -116,7 +118,7 @@ export function registerSettingsHandlers(): void {
     }
   });
 
-  ipcMain.handle('settings:update', (_event, partial: Partial<AppSettings>) => {
+  ipcMain.handle('settings:update', (event, partial: Partial<AppSettings>) => {
     try {
       // Don't update secrets if the masked placeholder was sent back
       const cleaned = { ...partial };
@@ -131,6 +133,23 @@ export function registerSettingsHandlers(): void {
       if (cleaned.notionOauthToken === '••••••••') delete cleaned.notionOauthToken;
 
       updateSettings(cleaned);
+      if (cleaned.theme !== undefined || cleaned.customThemes !== undefined) {
+        const current = getSettings();
+        const themeUpdate = {
+          theme: current.theme,
+          customThemes: current.customThemes ?? [],
+          revision: ++themeSettingsRevision,
+        };
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (win.webContents.id === event.sender.id) continue;
+          try {
+            if (win.isDestroyed() || win.webContents.isDestroyed()) continue;
+            win.webContents.send('settings:theme-changed', themeUpdate);
+          } catch {
+            console.warn('[Settings IPC] Could not notify a window about saved theme settings.');
+          }
+        }
+      }
       clearOverviewCaches();
       resetLlmClient();
       invalidateAppleLocalModelStatus();

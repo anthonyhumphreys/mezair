@@ -437,15 +437,21 @@ function collectThemeContrastWarnings(colors: ThemeColors, appearance: 'light' |
       4.5,
     );
   }
-  const syntaxBackground = composite(parseHex(colors['syntax-background']), primarySurface);
-  addContrastWarning(
-    warnings,
-    colors['syntax-text'],
-    syntaxBackground,
+  const syntaxBackground = composite(parseHex(colors['syntax-background']), tertiarySurface);
+  for (const token of [
     'syntax-text',
-    'syntax-background',
-    4.5,
-  );
+    'syntax-constant',
+    'syntax-string',
+    'syntax-comment',
+    'syntax-keyword',
+    'syntax-parameter',
+    'syntax-function',
+    'syntax-string-expression',
+    'syntax-punctuation',
+    'syntax-link',
+  ] as const) {
+    addContrastWarning(warnings, colors[token], syntaxBackground, token, 'syntax-background', 4.5);
+  }
   const terminalBackgroundColor = parseHex(colors['terminal-background']);
   if (terminalBackgroundColor.a < 1) {
     warnings.push(

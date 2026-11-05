@@ -189,11 +189,12 @@ export function ChatTranscript({
               scopeKey={scrollScopeKey ?? activeThreadId}
               containerRef={messagesContainerRef}
               pendingTurnKey={pendingQuestionTarget?.turnKey}
-              renderTurn={(turn, turnIndex) => (
+              renderTurn={(turn, turnIndex, searchActive) => (
                 <ChatTranscriptTurn
                   key={`${activeThreadId ?? 'new'}:${turn.key}`}
                   turn={turn}
                   turnIndex={turnIndex}
+                  searchActive={searchActive}
                   activeThreadId={activeThreadId}
                   changeReviewThreadId={changeReviewThreadId}
                   busy={busy && turnIndex === turns.length - 1}
@@ -263,6 +264,7 @@ type ChatTranscriptTurnProps = Pick<
 > & {
   turn: ComposedChatTurn;
   turnIndex: number;
+  searchActive?: boolean;
   pendingQuestionTarget: ChatQuestionTarget | null;
   laterTurnEditedPaths?: string[];
   reviewRequest?: { requestId: number; filePath: string };
@@ -273,6 +275,7 @@ type ChatTranscriptTurnProps = Pick<
 const ChatTranscriptTurn = memo(function ChatTranscriptTurn({
   turn,
   turnIndex,
+  searchActive = false,
   activeThreadId,
   changeReviewThreadId,
   busy,
@@ -307,7 +310,8 @@ const ChatTranscriptTurn = memo(function ChatTranscriptTurn({
     <section
       key={`${activeThreadId ?? 'new'}:${turn.key}`}
       data-chat-turn-key={turn.key}
-      className="w-full space-y-4"
+      data-chat-search-active={searchActive || undefined}
+      className={`w-full space-y-4 ${searchActive ? 'rounded-sm outline outline-1 outline-offset-4 outline-accent/50' : ''}`}
       aria-label={`Turn ${turnIndex + 1}`}
     >
       {turn.user && (

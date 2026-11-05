@@ -29,6 +29,8 @@ export function ModelPicker({
   variant = 'default',
   compact = false,
   hideProvider = false,
+  disabled = false,
+  disabledReason,
 }: {
   model: string;
   provider: AgentProvider;
@@ -43,6 +45,8 @@ export function ModelPicker({
   variant?: 'default' | 'inline';
   compact?: boolean;
   hideProvider?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
 }) {
   const id = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -56,6 +60,14 @@ export function ModelPicker({
     : createModelPickerPresets(options, provider, model);
   const active = findActiveModelPreset(presets, provider, model, reasoningEffort, options);
   const slider = preferences.style === 'slider' && !browse;
+  const menuOpen = open && !disabled;
+
+  useLayoutEffect(() => {
+    if (disabled && open) {
+      setOpen(false);
+      triggerRef.current?.focus();
+    }
+  }, [disabled, open]);
 
   const close = (restoreFocus = true) => {
     setOpen(false);
@@ -63,7 +75,7 @@ export function ModelPicker({
   };
 
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!menuOpen) return;
     const reposition = () => {
       const rect = triggerRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -89,10 +101,10 @@ export function ModelPicker({
       window.removeEventListener('resize', reposition);
       window.removeEventListener('scroll', reposition, true);
     };
-  }, [open, fullWidth, placement]);
+  }, [menuOpen, fullWidth, placement]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!menuOpen) return;
     const outside = (event: PointerEvent) => {
       if (
         !panelRef.current?.contains(event.target as Node) &&
@@ -103,23 +115,29 @@ export function ModelPicker({
     document.addEventListener('pointerdown', outside);
     if (slider) panelRef.current?.querySelector<HTMLInputElement>('input[type="range"]')?.focus();
     return () => document.removeEventListener('pointerdown', outside);
-  }, [open, slider]);
+  }, [menuOpen, slider]);
 
   return (
     <>
       <button
         ref={triggerRef}
         type="button"
-        aria-label={`Choose model: ${MODEL_PROVIDER_LABELS[provider]}, ${selected?.label ?? model}`}
-        aria-expanded={open}
+        aria-label={`Choose model: ${MODEL_PROVIDER_LABELS[provider]}, ${selected?.label ?? model}${disabled && disabledReason ? `. ${disabledReason}` : ''}`}
+        aria-expanded={menuOpen}
         aria-haspopup="dialog"
-        aria-controls={open ? id : undefined}
-        title={`${MODEL_PROVIDER_LABELS[provider]} · ${selected?.label ?? model}`}
+        aria-controls={menuOpen ? id : undefined}
+        aria-disabled={disabled}
+        title={
+          disabled && disabledReason
+            ? disabledReason
+            : `${MODEL_PROVIDER_LABELS[provider]} · ${selected?.label ?? model}`
+        }
         onClick={() => {
+          if (disabled) return;
           setBrowse(false);
           setOpen(!open);
         }}
-        className={`flex min-w-0 items-center gap-2 text-left text-xs text-text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+        className={`flex min-w-0 items-center gap-2 text-left text-xs text-text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent aria-disabled:cursor-not-allowed aria-disabled:opacity-60 ${
           variant === 'inline'
             ? `h-9 min-w-0 rounded-full px-2 text-text-secondary hover:bg-bg-tertiary hover:text-text-primary ${compact ? 'w-full max-w-none flex-1' : 'max-w-52'}`
             : `rounded-lg border border-border-subtle bg-bg-secondary px-2.5 hover:border-border hover:bg-bg-hover ${fullWidth ? 'min-h-10 w-full' : 'h-8 max-w-64'}`
@@ -144,7 +162,7 @@ export function ModelPicker({
         </span>
         <ChevronDown size={12} className="shrink-0 text-text-secondary" />
       </button>
-      {open &&
+      {menuOpen &&
         createPortal(
           <div
             ref={panelRef}
@@ -153,6 +171,7 @@ export function ModelPicker({
             aria-label="Choose model"
             style={position}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
               if (event.key === 'Escape') {
                 event.preventDefault();
                 event.stopPropagation();

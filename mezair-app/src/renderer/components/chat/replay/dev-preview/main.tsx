@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import type { MezairAPI } from '../../../../../shared/ipc-api';
-import type { ThemeDesignRequest } from '../../../../../shared/theme-design';
+import type { ThemeDesignOptions, ThemeDesignRequest } from '../../../../../shared/theme-design';
 import type {
   ChatArtifactAnnotation,
   ChatArtifactAnnotationInput,
@@ -197,6 +197,26 @@ const localMezairBridge = {
     snapshot: async () => ({ skills: [] }),
   },
   settings: {
+    getThemeDesignOptions: async (): Promise<ThemeDesignOptions> => ({
+      defaultProvider: 'codex',
+      providers: [
+        {
+          id: 'codex',
+          label: 'Synthetic Codex',
+          defaultModel: 'gpt-6.1-sol',
+          models: [
+            { id: 'gpt-6.1-sol', label: 'GPT 6.1 Sol' },
+            { id: 'gpt-6-astra', label: 'GPT 6 Astra' },
+          ],
+        },
+        {
+          id: 'claude',
+          label: 'Synthetic Claude',
+          defaultModel: 'synthetic-sonnet',
+          models: [{ id: 'synthetic-sonnet', label: 'Synthetic Sonnet' }],
+        },
+      ],
+    }),
     designTheme: async (request: ThemeDesignRequest) => {
       const latestUserMessage = request.messages.findLast((message) => message.role === 'user');
       if (latestUserMessage?.content.toLowerCase().includes('fail')) {

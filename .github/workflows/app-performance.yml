@@ -43,6 +43,8 @@ jobs:
         working-directory: .
         run: node .github/scripts/prepare-desktop-clis.mjs
       - run: pnpm install --frozen-lockfile
+      - name: Verify bundle manifest resolution
+        run: node --test scripts/performance/bundle-manifest.test.mjs
       - name: Build both production fixtures
         run: |
           node scripts/performance/prepare-baseline.mjs "$PERF_BASE_REF" "$RUNNER_TEMP/perf-baseline"

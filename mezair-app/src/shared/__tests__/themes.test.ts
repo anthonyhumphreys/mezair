@@ -8,6 +8,7 @@ import {
   normalizeCustomThemes,
   THEME_COLOR_TOKENS,
 } from '../themes';
+import { normalizeCustomThemesForRenderer } from '../theme-palette';
 
 describe('custom theme palettes', () => {
   it('resolves a complete safe palette from a partial definition', () => {
@@ -104,6 +105,45 @@ describe('custom theme palettes', () => {
     expect(getThemeColors('code-dark')['bg-primary']).toBe('#121314');
     expect(getThemeColors('code-dark')['bg-secondary']).toBe('#191a1b');
     expect(getThemeColors('code-dark').accent).toBe('#48a0c7');
+  });
+
+  it('validates renderer palettes without loading the importer or changing palette values', () => {
+    const safe = normalizeCustomThemesForRenderer([
+      {
+        id: 'renderer-safe',
+        name: 'Renderer safe',
+        appearance: 'light',
+        colors: BUILT_IN_THEMES.find((theme) => theme.id === 'light')!.colors,
+      },
+    ]);
+    expect(safe[0].colors.accent).toBe(
+      BUILT_IN_THEMES.find((theme) => theme.id === 'light')!.colors.accent,
+    );
+
+    expect(() =>
+      normalizeCustomThemesForRenderer([
+        {
+          id: 'unsafe-renderer',
+          name: 'Unsafe renderer',
+          appearance: 'dark',
+          colors: {
+            ...BUILT_IN_THEMES.find((theme) => theme.id === 'dark')!.colors,
+            accent: 'url(https://example.com/pixel)',
+          },
+        },
+      ]),
+    ).toThrow('must be a hex color');
+
+    expect(() =>
+      normalizeCustomThemesForRenderer([
+        {
+          id: 'partial-renderer',
+          name: 'Partial renderer',
+          appearance: 'dark',
+          colors: { accent: '#fff' },
+        },
+      ]),
+    ).toThrow('is missing color');
   });
 
   it('imports JSONC workbench, TextMate, and terminal colors without reading includes', () => {

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { access, readdir, rm } from 'node:fs/promises';
 
-const mocks = vi.hoisted(() => ({ callLlm: vi.fn(), getSettings: vi.fn() }));
+const mocks = vi.hoisted(() => ({ callLlm: vi.fn(), getOptions: vi.fn() }));
 vi.mock('../llm.service.js', () => ({ callLlm: mocks.callLlm }));
-vi.mock('../settings.service.js', () => ({ getSettings: mocks.getSettings }));
+vi.mock('../theme-design-models.js', () => ({ getThemeDesignOptions: mocks.getOptions }));
 
 import {
   buildThemeDesignPrompt,
@@ -15,7 +15,9 @@ import {
 
 const request = {
   mode: 'generate' as const,
-  messages: [{ role: 'user' as const, content: 'A graphite workspace with a Ferrari red accent' }],
+  messages: [
+    { role: 'user' as const, content: 'A graphite workspace with a restrained red accent' },
+  ],
 };
 const candidate = JSON.stringify({
   message: 'A restrained red accent with readable graphite surfaces.',
@@ -25,7 +27,23 @@ const directories: string[] = [];
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.getSettings.mockReturnValue({ llmProvider: 'codex', openaiModel: 'chosen-model' });
+  mocks.getOptions.mockResolvedValue({
+    defaultProvider: 'codex',
+    providers: [
+      {
+        id: 'codex',
+        label: 'Codex',
+        defaultModel: 'chosen-model',
+        models: [{ id: 'chosen-model', label: 'Chosen' }],
+      },
+      {
+        id: 'claude',
+        label: 'Claude Code',
+        defaultModel: 'sonnet',
+        models: [{ id: 'sonnet', label: 'Sonnet' }],
+      },
+    ],
+  });
   mocks.callLlm.mockResolvedValue(candidate);
 });
 afterEach(async () => {
@@ -111,10 +129,20 @@ describe('theme design boundary', () => {
 
   it('does not silently reroute providers whose hooks cannot be isolated', async () => {
     for (const llmProvider of ['cursor', 'devin']) {
-      mocks.getSettings.mockReturnValueOnce({ llmProvider, openaiModel: 'auto' });
-      await expect(designTheme(request, 100)).rejects.toThrow(/Choose one in Providers/);
+      await expect(designTheme({ ...request, provider: llmProvider }, 100)).rejects.toThrow(
+        /Connect or enable/,
+      );
     }
     expect(mocks.callLlm).not.toHaveBeenCalled();
+  });
+
+  it('honors designer overrides and rejects models outside that provider catalog', async () => {
+    await designTheme({ ...request, provider: 'claude', model: 'sonnet' }, 100);
+    expect(mocks.callLlm.mock.calls[0][4]).toMatchObject({ provider: 'claude', model: 'sonnet' });
+    await expect(
+      designTheme({ ...request, provider: 'codex', model: 'unknown-model' }, 100),
+    ).rejects.toThrow(/no longer available/);
+    expect(mocks.callLlm).toHaveBeenCalledTimes(1);
   });
 
   it('preserves selected provider/model and cleans its workspace on success and failure', async () => {

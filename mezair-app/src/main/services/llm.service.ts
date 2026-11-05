@@ -697,11 +697,12 @@ export async function callLlm(
           model: effectiveModel,
           messages: [{ role: 'user', content: userMessage }],
           max_completion_tokens: maxTokens,
-          temperature,
+          ...(options?.textOnly ? {} : { temperature }),
         };
         // Direct OpenAI API calls use the standard reasoning efforts. Codex-only max/ultra
         // travel through the Codex app-server path instead.
         if (
+          !options?.textOnly &&
           effectiveModel.startsWith('gpt-5') &&
           settings.reasoningLevel &&
           settings.reasoningLevel !== 'max' &&

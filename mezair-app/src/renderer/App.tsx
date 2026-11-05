@@ -21,7 +21,7 @@ import { WorkspaceCreator } from './components/workspace/WorkspaceCreator';
 import { WelcomeOverlay } from './components/onboard/WelcomeOverlay';
 import { RoleHiddenNotice } from './components/shared/RoleHiddenNotice';
 import type { UserRole, Feature, AppTheme } from '../shared/types';
-import { normalizeCustomThemes, type CustomTheme } from '../shared/themes';
+import { normalizeCustomThemesForRenderer, type CustomTheme } from '../shared/theme-palette';
 import { ROLE_FEATURES } from '../shared/types';
 import { resolveLegacyRoute } from './utils/sidebar-navigation';
 
@@ -418,7 +418,7 @@ function AppContent() {
       if (detail?.theme !== undefined) setAppTheme(detail.theme);
       if (detail?.customThemes !== undefined) {
         try {
-          setCustomThemes(normalizeCustomThemes(detail.customThemes));
+          setCustomThemes(normalizeCustomThemesForRenderer(detail.customThemes));
         } catch (error) {
           console.error('[Theme] Ignoring invalid theme update:', error);
         }

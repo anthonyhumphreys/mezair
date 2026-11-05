@@ -71,6 +71,18 @@ describe('callLlm local model routing', () => {
     });
   });
 
+  it('uses model defaults instead of chat sampling and reasoning overrides for text-only utilities', async () => {
+    await callLlm('Return a theme palette', 3000, 0.4, 0, {
+      provider: 'openai',
+      model: 'gpt-5.5',
+      textOnly: true,
+    });
+    const body = mocks.completionCreate.mock.calls[0][0];
+    expect(body).toMatchObject({ model: 'gpt-5.5', max_completion_tokens: 3000 });
+    expect(body).not.toHaveProperty('temperature');
+    expect(body).not.toHaveProperty('reasoning_effort');
+  });
+
   it('uses the selected local model when the classifier routes locally', async () => {
     mocks.callPreferredLocalModel.mockResolvedValue({
       ok: true,

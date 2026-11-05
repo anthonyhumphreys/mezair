@@ -1,43 +1,45 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { AppSettings, AppTheme } from '../../../shared/types';
-import { normalizeCustomTheme } from '../../../shared/themes';
+import { normalizeCustomThemesForRenderer } from '../../../shared/theme-palette';
 import { SettingsContextProvider } from './SettingsContext';
 import type { SettingsContextValue } from './SettingsContext';
 import type { SettingsDraft } from './useSettingsDraft';
 import { ThemeSettingsPanel } from './ThemeSettingsPanel';
 import { applyAppTheme } from '../../utils/app-theme';
 
-export const THEMES_PREVIEW_CUSTOM_THEME = normalizeCustomTheme({
-  id: 'ferrari-garage',
-  name: 'Ferrari Garage',
-  appearance: 'dark',
-  source: 'generated',
-  colors: {
-    accent: '#ff6b6b',
-    'accent-foreground': '#111318',
-    'accent-glow': '#ff6b6b33',
-    'accent-gradient-end': '#ff9970',
+export const THEMES_PREVIEW_CUSTOM_THEME = normalizeCustomThemesForRenderer([
+  {
+    id: 'graphite-red',
+    name: 'Graphite Red',
+    appearance: 'dark',
+    source: 'generated',
+    colors: {
+      accent: '#ff6b6b',
+      'accent-foreground': '#111318',
+      'accent-glow': '#ff6b6b33',
+      'accent-gradient-end': '#ff9970',
+    },
   },
-});
+])[0]!;
 
-const THEMES_PREVIEW_LIBRARY_THEME = normalizeCustomTheme({
-  id: 'midnight-lime',
-  name: 'Midnight Lime',
-  appearance: 'dark',
-  source: 'imported',
-  colors: {
-    accent: '#8fe388',
-    'accent-foreground': '#111318',
-    'accent-glow': '#8fe38833',
-    'accent-gradient-end': '#c0f38b',
+const THEMES_PREVIEW_LIBRARY_THEME = normalizeCustomThemesForRenderer([
+  {
+    id: 'midnight-lime',
+    name: 'Midnight Lime',
+    appearance: 'dark',
+    source: 'imported',
+    colors: {
+      accent: '#8fe388',
+      'accent-foreground': '#111318',
+      'accent-glow': '#8fe38833',
+      'accent-gradient-end': '#c0f38b',
+    },
   },
-});
+])[0]!;
 
 const INITIAL_SETTINGS: Partial<AppSettings> = {
   theme: 'dark',
   customThemes: [THEMES_PREVIEW_LIBRARY_THEME],
-  llmProvider: 'codex',
-  openaiModel: 'gpt-5.6-sol',
 };
 
 export function ThemesPreview() {

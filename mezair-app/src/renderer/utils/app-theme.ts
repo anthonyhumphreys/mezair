@@ -5,7 +5,8 @@ import {
   THEME_COLOR_TOKENS,
   type CustomTheme,
   type ThemeColors,
-} from '../../shared/themes.js';
+  normalizeCustomThemesForRenderer,
+} from '../../shared/theme-palette.js';
 
 export interface AppThemeApplication {
   requestedTheme: AppTheme;
@@ -21,13 +22,14 @@ export function applyAppTheme(
   customThemes: readonly CustomTheme[] = [],
   root: HTMLElement = document.documentElement,
 ): AppThemeApplication {
+  const safeCustomThemes = normalizeCustomThemesForRenderer(customThemes);
   let effectiveTheme = requestedTheme;
   let missingCustomTheme: string | undefined;
   let selectedCustomTheme: CustomTheme | undefined;
 
   if (requestedTheme.startsWith('custom:')) {
     const id = requestedTheme.slice('custom:'.length);
-    selectedCustomTheme = customThemes.find((candidate) => candidate.id === id);
+    selectedCustomTheme = safeCustomThemes.find((candidate) => candidate.id === id);
     if (!selectedCustomTheme) {
       missingCustomTheme = id;
       effectiveTheme = 'dark';

@@ -100,6 +100,8 @@ Custom themes use a fixed color-token allowlist for surfaces, borders, text, acc
 
 Import accepts standalone VS Code JSON and JSONC data. It maps supported workbench colors, TextMate scopes, and terminal ANSI colors. Includes, malformed JSONC, unsafe mapped colors, and unsupported mapped color values are rejected; imports never read referenced files or install extensions. Custom palette definitions stay local to the device. If a selected custom ID has no local definition, the app displays Dark and reports the missing palette; deleting the active local palette saves Dark as the selection. Theme application drives renderer tokens, Shiki highlighting, and live xterm colors from the same resolved palette.
 
+The default appearance view loads the theme selector and saved library. Import, editing, and design tools load when opened. The designer recommends an available general-purpose model from connected, enabled providers, with provider and model choices scoped to the current design. Refreshing choices preserves the draft and conversation; these choices do not change chat preferences.
+
 ## Typography
 
 **Display Font:** IBM Plex Sans (system-ui fallback)

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { ThemeDesignRequest, ThemeDesignResponse } from '../../shared/theme-design.js';
 import { getThemeColors, normalizeCustomTheme, THEME_COLOR_TOKENS } from '../../shared/themes.js';
 import { callLlm } from './llm.service.js';
-import { getSettings } from './settings.service.js';
+import { getThemeDesignOptions } from './theme-design-models.js';
 
 const MAX_HISTORY_CHARS = 16_000;
 const activeDesigns = new Set<number>();
@@ -36,6 +36,10 @@ export function validateThemeDesignRequest(input: unknown): ThemeDesignRequest {
   return {
     mode: input.mode as ThemeDesignRequest['mode'],
     messages,
+    ...(input.provider === undefined
+      ? {}
+      : { provider: text(input.provider, 20, 'Theme provider') as ThemeDesignRequest['provider'] }),
+    ...(input.model === undefined ? {} : { model: text(input.model, 200, 'Theme model') }),
     ...(input.currentTheme === undefined
       ? {}
       : { currentTheme: normalizeCustomTheme(input.currentTheme, { validateContrast: false }) }),
@@ -123,11 +127,6 @@ export async function prepareThemeDesignWorkspace(): Promise<string> {
 
 export async function designTheme(input: unknown, owner: number): Promise<ThemeDesignResponse> {
   const request = validateThemeDesignRequest(input);
-  const settings = getSettings();
-  if (settings.llmProvider === 'cursor' || settings.llmProvider === 'devin')
-    throw new Error(
-      'Theme design needs Codex, Claude Code, OpenAI, Azure or LLMGateway. Choose one in Providers to generate a theme.',
-    );
   if (activeDesigns.has(owner) || activeDesigns.size >= 2)
     throw new Error(
       'A theme design is already running. Wait for it to finish before trying again.',
@@ -135,13 +134,26 @@ export async function designTheme(input: unknown, owner: number): Promise<ThemeD
   activeDesigns.add(owner);
   let directory: string | undefined;
   try {
+    const available = await getThemeDesignOptions();
+    const provider = available.providers.find(
+      (option) => option.id === (request.provider ?? available.defaultProvider),
+    );
+    if (!provider)
+      throw new Error(
+        'Connect or enable a supported theme provider in Providers, then refresh the designer.',
+      );
+    const model = request.model ?? provider.defaultModel;
+    if (!provider.models.some((option) => option.id === model))
+      throw new Error(
+        'That theme model is no longer available. Refresh the designer and choose another model.',
+      );
     directory = await prepareThemeDesignWorkspace();
     const raw = await callLlm(buildThemeDesignPrompt(request), 3000, 0.4, 0, {
       cwd: directory,
       taskClass: 'simple-json',
       textOnly: true,
-      provider: settings.llmProvider,
-      model: settings.openaiModel,
+      provider: provider.id,
+      model,
     });
     const mustGenerate =
       request.mode === 'generate' ||

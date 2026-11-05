@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import { designTheme } from '../services/theme-design.service.js';
+import { getThemeDesignOptions } from '../services/theme-design-models.js';
 import { clearOverviewCaches } from '../services/overview.service.js';
 import type { SecretStorageProvider, SecretVaultSetup } from '../../shared/secret-storage.js';
 import {
@@ -53,6 +54,11 @@ import {
 import { resumeSyncAfterCredentialStorageReady } from '../services/sync-runtime.service.js';
 
 export function registerSettingsHandlers(): void {
+  ipcMain.handle('settings:theme-design-options', (_event, force: unknown) => {
+    if (force !== undefined && typeof force !== 'boolean')
+      throw new Error('Invalid model refresh request.');
+    return getThemeDesignOptions(force === true);
+  });
   ipcMain.handle('settings:design-theme', (event, input: unknown) =>
     designTheme(input, event.sender.id),
   );

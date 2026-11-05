@@ -1,5 +1,9 @@
 import type { RemoteCodexAccountAuthChoice } from './remote-chat';
-import type { ThemeDesignRequest, ThemeDesignResponse } from './theme-design.js';
+import type {
+  ThemeDesignOptions,
+  ThemeDesignRequest,
+  ThemeDesignResponse,
+} from './theme-design.js';
 import type { ChatHistoryPage, ChatHistoryPageRequest } from './history-pages';
 import type { FactoryRunPage, FactoryRunPageRequest, FactoryRunSummary } from './factories';
 import type {
@@ -851,6 +855,7 @@ export interface MezairAPI {
   };
 
   settings: {
+    getThemeDesignOptions: (force?: boolean) => Promise<ThemeDesignOptions>;
     designTheme: (request: ThemeDesignRequest) => Promise<ThemeDesignResponse>;
     getSecretStorageStatus: () => Promise<import('./secret-storage.js').CredentialStorageStatus>;
     setupSecretVault: (

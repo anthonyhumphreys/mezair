@@ -468,10 +468,7 @@ function clearRuntimeAfterExit(workspaceId?: string): void {
 function buildStatus(): EmbeddedEditorStatus {
   const embeddedProvider = detectEmbeddedProvider();
   const externalCommand = findFirstAvailableCommand(['code', 'codium', 'cursor']) as
-    | 'code'
-    | 'codium'
-    | 'cursor'
-    | null;
+    'code' | 'codium' | 'cursor' | null;
 
   if (runtimeProcessHasExited()) {
     runtimeState.lastError =
@@ -991,14 +988,20 @@ export function buildWorkbenchUrl(
   return url.toString();
 }
 
-function getEditorColorTheme(appTheme: AppTheme): string {
-  return appTheme === 'system' ? 'Default Light Modern' : 'Default Dark Modern';
+function getEditorColorTheme(appTheme: AppTheme, customAppearance?: 'light' | 'dark'): string {
+  return appTheme === 'light' || customAppearance === 'light'
+    ? 'Default Light Modern'
+    : 'Default Dark Modern';
 }
 
 export function buildEmbeddedEditorUserSettings(
   existingSettings: Record<string, unknown>,
 ): Record<string, unknown> {
-  const appTheme = getSettings().theme;
+  const appSettings = getSettings();
+  const appTheme = appSettings.theme;
+  const customAppearance = appTheme.startsWith('custom:')
+    ? appSettings.customThemes?.find((theme) => `custom:${theme.id}` === appTheme)?.appearance
+    : undefined;
   const themeSettings: Record<string, unknown> =
     appTheme === 'system'
       ? {
@@ -1008,7 +1011,7 @@ export function buildEmbeddedEditorUserSettings(
         }
       : {
           'window.autoDetectColorScheme': false,
-          'workbench.colorTheme': getEditorColorTheme(appTheme),
+          'workbench.colorTheme': getEditorColorTheme(appTheme, customAppearance),
           'workbench.preferredLightColorTheme': 'Default Light Modern',
           'workbench.preferredDarkColorTheme': 'Default Dark Modern',
         };

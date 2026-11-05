@@ -11,6 +11,11 @@ import type {
   LlmGatewayBillingMode,
   WorkItemConnection,
 } from '../../shared/types.js';
+import {
+  normalizeCustomTheme,
+  normalizeCustomThemes,
+  type CustomTheme,
+} from '../../shared/themes.js';
 import { setUsageStatisticsEnabled } from './usage-statistics.service.js';
 import {
   DEFAULT_CODEX_MODEL,
@@ -82,6 +87,7 @@ interface SettingsRow {
   code_review_quick_glance_rubric: string | null;
   code_review_senior_dev_rubric: string | null;
   theme: string | null;
+  custom_themes: string | null;
   user_role: string | null;
   active_workspace_id: string | null;
   github_pat: Buffer | null;
@@ -95,6 +101,7 @@ const APP_THEMES: AppTheme[] = [
   'system',
   'light',
   'dark',
+  'code-dark',
   'prompt-whisperer',
   'merge-conflict',
   'token-bender',
@@ -114,8 +121,53 @@ const AGENT_PROVIDERS: AgentProvider[] = [
   'llmgateway',
 ];
 
-function normaliseTheme(theme: string | null | undefined): AppTheme {
+function normaliseTheme(
+  theme: string | null | undefined,
+  customThemes: readonly CustomTheme[] = [],
+  preserveMissingCustom = false,
+): AppTheme {
+  if (typeof theme === 'string' && theme.startsWith('custom:')) {
+    const id = theme.slice('custom:'.length);
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(id)) return 'dark';
+    if (customThemes.some((customTheme) => customTheme.id === id) || preserveMissingCustom) {
+      return theme as AppTheme;
+    }
+    return 'dark';
+  }
   return APP_THEMES.includes(theme as AppTheme) ? (theme as AppTheme) : 'system';
+}
+
+function parseStoredCustomThemes(value: string | null | undefined): CustomTheme[] {
+  if (!value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) throw new Error('Saved custom themes are not a list.');
+    const themes: CustomTheme[] = [];
+    const ids = new Set<string>();
+    for (const [index, item] of parsed.entries()) {
+      try {
+        const theme = normalizeCustomTheme(item);
+        if (ids.has(theme.id)) {
+          console.warn(`[Settings] Ignoring duplicate saved custom theme id “${theme.id}”.`);
+          continue;
+        }
+        if (themes.length >= 32) {
+          console.warn('[Settings] Ignoring saved custom themes after the 32-theme limit.');
+          break;
+        }
+        themes.push(theme);
+        ids.add(theme.id);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        console.warn(`[Settings] Ignoring invalid saved custom theme ${index + 1}: ${detail}`);
+      }
+    }
+    return themes;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.warn(`[Settings] Ignoring invalid saved custom themes: ${detail}`);
+    return [];
+  }
 }
 
 function normaliseCodexMode(mode: string | null | undefined): CodexMode {
@@ -356,6 +408,7 @@ export function getSettings(): AppSettings {
   const activeWorkItemConnectionId =
     workspaceWorkItemConnectionId ?? configuredActiveWorkItemConnectionId;
   const llmProvider = normaliseAgentProvider(row.llm_provider);
+  const customThemes = parseStoredCustomThemes(row.custom_themes);
   const settings: AppSettings = {
     llmProvider,
     enabledLlmProviders: normaliseEnabledLlmProviders(row.enabled_llm_providers, llmProvider),
@@ -434,7 +487,8 @@ export function getSettings(): AppSettings {
     telemetryEnabled: row.telemetry_enabled === 1,
     usageStatisticsEnabled: row.usage_statistics_enabled === 1,
     defaultRepoPath: row.default_repo_path ?? undefined,
-    theme: normaliseTheme(row.theme),
+    theme: normaliseTheme(row.theme, customThemes, true),
+    customThemes,
   };
   return applyWorkItemConnection(
     settings,
@@ -456,6 +510,22 @@ export function updateSettings(partial: Partial<AppSettings>): void {
       );
   }
   const current = getSettings();
+  const customThemes =
+    partial.customThemes === undefined
+      ? (current.customThemes ?? [])
+      : normalizeCustomThemes(partial.customThemes);
+  const serializedCustomThemes =
+    partial.customThemes === undefined ? undefined : JSON.stringify(customThemes);
+  if (
+    serializedCustomThemes &&
+    new TextEncoder().encode(serializedCustomThemes).byteLength > 128 * 1024
+  ) {
+    throw new Error('Saved custom themes must total 128 KiB or less.');
+  }
+  const normalizedTheme = normaliseTheme(partial.theme ?? current.theme, customThemes);
+  const shouldPersistTheme =
+    partial.theme !== undefined ||
+    (partial.customThemes !== undefined && normalizedTheme !== current.theme);
   const setClauses: string[] = [];
   const values: unknown[] = [];
 
@@ -702,9 +772,13 @@ export function updateSettings(partial: Partial<AppSettings>): void {
     setClauses.push('usage_statistics_enabled = ?');
     values.push(partial.usageStatisticsEnabled ? 1 : 0);
   }
-  if (partial.theme !== undefined) {
+  if (shouldPersistTheme) {
     setClauses.push('theme = ?');
-    values.push(normaliseTheme(partial.theme));
+    values.push(normalizedTheme);
+  }
+  if (serializedCustomThemes !== undefined) {
+    setClauses.push('custom_themes = ?');
+    values.push(serializedCustomThemes);
   }
 
   if (setClauses.length === 0) return;
@@ -826,6 +900,7 @@ function defaultSettings(): AppSettings {
     telemetryEnabled: false,
     usageStatisticsEnabled: false,
     theme: 'system',
+    customThemes: [],
   };
 }
 

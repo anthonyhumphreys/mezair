@@ -13,6 +13,7 @@ import { ErrorBoundary } from './components/layout/ErrorBoundary';
 import { SplashScreen } from './components/brand/SplashScreen';
 import { ChatProvider, useChatNavigation } from './contexts/ChatContext';
 import { BrandProvider } from './contexts/BrandContext';
+import { applyAppTheme } from './utils/app-theme';
 import { getBrand, getBuildBrandId } from '../shared/branding';
 import { WorkspaceProvider, useWorkspace } from './contexts/WorkspaceContext';
 import { RepoIndexProvider } from './contexts/RepoIndexContext';
@@ -20,6 +21,7 @@ import { WorkspaceCreator } from './components/workspace/WorkspaceCreator';
 import { WelcomeOverlay } from './components/onboard/WelcomeOverlay';
 import { RoleHiddenNotice } from './components/shared/RoleHiddenNotice';
 import type { UserRole, Feature, AppTheme } from '../shared/types';
+import { normalizeCustomThemes, type CustomTheme } from '../shared/themes';
 import { ROLE_FEATURES } from '../shared/types';
 import { resolveLegacyRoute } from './utils/sidebar-navigation';
 
@@ -302,6 +304,7 @@ function AppContent() {
 
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [appTheme, setAppTheme] = useState<AppTheme>(fallbackBrand.defaultTheme);
+  const [customThemes, setCustomThemes] = useState<CustomTheme[]>([]);
   const [cloudFeaturesEnabled, setCloudFeaturesEnabled] = useState(false);
   const [roleLoaded, setRoleLoaded] = useState(false);
   // ST8: "Show all tools" — bypasses role hiding for this install.
@@ -321,6 +324,7 @@ function AppContent() {
       ]);
 
       setAppTheme(settings.theme ?? brand.defaultTheme);
+      setCustomThemes(settings.customThemes ?? []);
       setCloudFeaturesEnabled(settings.cloudFeaturesEnabled);
       if (settings.userRole) {
         setUserRole(settings.userRole);
@@ -408,9 +412,34 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
+    const handleThemesChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ theme?: AppTheme; customThemes?: CustomTheme[] }>)
+        .detail;
+      if (detail?.theme !== undefined) setAppTheme(detail.theme);
+      if (detail?.customThemes !== undefined) {
+        try {
+          setCustomThemes(normalizeCustomThemes(detail.customThemes));
+        } catch (error) {
+          console.error('[Theme] Ignoring invalid theme update:', error);
+        }
+      }
+    };
+
+    window.addEventListener('mezair:themes-changed', handleThemesChanged);
+    return () => window.removeEventListener('mezair:themes-changed', handleThemesChanged);
+  }, []);
+
+  useEffect(() => {
     const applyTheme = () => {
-      document.documentElement.dataset.theme =
-        appTheme === 'system' ? resolveSystemTheme() : appTheme;
+      const effectiveTheme = appTheme === 'system' ? resolveSystemTheme() : appTheme;
+      const result = applyAppTheme(effectiveTheme, customThemes);
+      if (result.missingCustomTheme) {
+        window.dispatchEvent(
+          new CustomEvent('mezair:theme-fallback', {
+            detail: { requestedTheme: appTheme, missingCustomTheme: result.missingCustomTheme },
+          }),
+        );
+      }
     };
     applyTheme();
 
@@ -419,7 +448,7 @@ function AppContent() {
     const mediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
     mediaQuery?.addEventListener('change', applyTheme);
     return () => mediaQuery?.removeEventListener('change', applyTheme);
-  }, [appTheme, resolveSystemTheme]);
+  }, [appTheme, customThemes, resolveSystemTheme]);
 
   // ST8: role-hidden deep links explain themselves instead of silently
   // redirecting. "Show anyway" flips the persisted showAllTools setting.

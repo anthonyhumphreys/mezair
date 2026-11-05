@@ -51,6 +51,7 @@
   --color-text-muted: var(--mezair-chat-text-muted);
   --color-accent: var(--mezair-chat-accent);
   --color-accent-glow: var(--mezair-chat-accent-glow);
+  --color-accent-gradient-end: #ffd43b;
   /* Text and icons rendered on top of --color-accent (primary buttons,
      selected states). Always mirrors the theme's canvas colour; every
      theme's accent/accent-foreground pair is asserted >= 4.5:1 (WCAG AA
@@ -67,6 +68,17 @@
   --color-persona-security: var(--mezair-chat-persona-security);
   --color-persona-reviewer: var(--mezair-chat-persona-reviewer);
   --color-persona-docs: var(--mezair-chat-persona-docs);
+  --color-syntax-text: #f5f2ec;
+  --color-syntax-background: #232528;
+  --color-syntax-constant: #ffd43b;
+  --color-syntax-string: #9ad0a8;
+  --color-syntax-comment: #8b847b;
+  --color-syntax-keyword: #dd8a8e;
+  --color-syntax-parameter: #fd7e14;
+  --color-syntax-function: #99c4de;
+  --color-syntax-string-expression: #9ad0a8;
+  --color-syntax-punctuation: #b1aaa2;
+  --color-syntax-link: #99c4de;
   --overlay-ring: rgba(0, 0, 0, 0.18);
   --font-sans: var(--mezair-chat-font-sans);
   --font-mono: var(--mezair-chat-font-mono);
@@ -101,8 +113,8 @@ html[data-theme='light'] {
   --color-border-subtle: #ecedf1;
   --color-text-primary: #181b21;
   --color-text-secondary: #3d4450;
-  --color-text-tertiary: #6b7280;
-  --color-text-muted: #9aa1ad;
+  --color-text-tertiary: #5f6672;
+  --color-text-muted: #5b626d;
   --color-accent: #4f46e5;
   --color-accent-glow: rgba(79, 70, 229, 0.14);
   --color-accent-foreground: #fbfbfc;
@@ -116,7 +128,25 @@ html[data-theme='light'] {
   --color-persona-security: #dc2626;
   --color-persona-reviewer: #b45309;
   --color-persona-docs: #7c3aed;
+  --color-syntax-text: #24292f;
+  --color-syntax-background: #f3f4f6;
+  --color-syntax-constant: #6639ba;
+  --color-syntax-string: #116329;
+  --color-syntax-comment: #57606a;
+  --color-syntax-keyword: #cf222e;
+  --color-syntax-parameter: #953800;
+  --color-syntax-function: #0550ae;
+  --color-syntax-string-expression: #116329;
+  --color-syntax-punctuation: #57606a;
+  --color-syntax-link: #0550ae;
   --overlay-ring: rgba(15, 23, 42, 0.12);
+}
+
+html[data-theme='dark'] {
+  --color-accent: #fd7e14;
+  --color-accent-glow: #fd7e142e;
+  --color-accent-foreground: #0b1020;
+  --color-accent-gradient-end: #ffd43b;
 }
 
 html[data-theme='prompt-whisperer'] {
@@ -129,8 +159,8 @@ html[data-theme='prompt-whisperer'] {
   --color-border-subtle: #1c4b53;
   --color-text-primary: #f2fffd;
   --color-text-secondary: #b7e6e1;
-  --color-text-tertiary: #80b9b4;
-  --color-text-muted: #76aaa5;
+  --color-text-tertiary: #b4d9d5;
+  --color-text-muted: #a8d1cc;
   --color-accent: #3ddbd9;
   --color-accent-glow: rgba(61, 219, 217, 0.22);
   --color-accent-foreground: #071b1f;
@@ -152,7 +182,7 @@ html[data-theme='merge-conflict'] {
   --color-text-primary: #fff7fb;
   --color-text-secondary: #ead0df;
   --color-text-tertiary: #c498b4;
-  --color-text-muted: #a67e99;
+  --color-text-muted: #c8a2ba;
   --color-accent: #ff5c8a;
   --color-accent-glow: rgba(255, 92, 138, 0.24);
   --color-accent-foreground: #120d18;
@@ -175,7 +205,7 @@ html[data-theme='token-bender'] {
   --color-text-primary: #fbfaff;
   --color-text-secondary: #d8d2ff;
   --color-text-tertiary: #aaa1da;
-  --color-text-muted: #968ec4;
+  --color-text-muted: #a89fda;
   --color-accent: #9f7aea;
   --color-accent-glow: rgba(159, 122, 234, 0.24);
   --color-accent-foreground: #100f2a;
@@ -487,31 +517,31 @@ html[data-theme='light'] {
 
 /* Shiki syntax highlighting token colours (css-variables theme) */
 :root {
-  --shiki-color-text: #f5f2ec;
-  --shiki-color-background: #232528;
-  --shiki-token-constant: #ffd43b;
-  --shiki-token-string: #9ad0a8;
-  --shiki-token-comment: #8b847b;
-  --shiki-token-keyword: #dd8a8e;
-  --shiki-token-parameter: #fd7e14;
-  --shiki-token-function: #99c4de;
-  --shiki-token-string-expression: #9ad0a8;
-  --shiki-token-punctuation: #b1aaa2;
-  --shiki-token-link: #99c4de;
+  --shiki-color-text: var(--color-syntax-text);
+  --shiki-color-background: var(--color-syntax-background);
+  --shiki-token-constant: var(--color-syntax-constant);
+  --shiki-token-string: var(--color-syntax-string);
+  --shiki-token-comment: var(--color-syntax-comment);
+  --shiki-token-keyword: var(--color-syntax-keyword);
+  --shiki-token-parameter: var(--color-syntax-parameter);
+  --shiki-token-function: var(--color-syntax-function);
+  --shiki-token-string-expression: var(--color-syntax-string-expression);
+  --shiki-token-punctuation: var(--color-syntax-punctuation);
+  --shiki-token-link: var(--color-syntax-link);
 }
 
 html[data-theme='light'] {
-  --shiki-color-text: #24292f;
-  --shiki-color-background: #f3f4f6;
-  --shiki-token-constant: #6639ba;
-  --shiki-token-string: #116329;
-  --shiki-token-comment: #57606a;
-  --shiki-token-keyword: #cf222e;
-  --shiki-token-parameter: #953800;
-  --shiki-token-function: #0550ae;
-  --shiki-token-string-expression: #116329;
-  --shiki-token-punctuation: #57606a;
-  --shiki-token-link: #0550ae;
+  --shiki-color-text: var(--color-syntax-text);
+  --shiki-color-background: var(--color-syntax-background);
+  --shiki-token-constant: var(--color-syntax-constant);
+  --shiki-token-string: var(--color-syntax-string);
+  --shiki-token-comment: var(--color-syntax-comment);
+  --shiki-token-keyword: var(--color-syntax-keyword);
+  --shiki-token-parameter: var(--color-syntax-parameter);
+  --shiki-token-function: var(--color-syntax-function);
+  --shiki-token-string-expression: var(--color-syntax-string-expression);
+  --shiki-token-punctuation: var(--color-syntax-punctuation);
+  --shiki-token-link: var(--color-syntax-link);
 }
 
 /* Diff viewer overrides */

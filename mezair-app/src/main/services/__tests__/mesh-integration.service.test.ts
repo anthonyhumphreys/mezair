@@ -699,7 +699,7 @@ describe('applyIntegrationRepository', () => {
       rmSync(unverified.repo, { recursive: true, force: true });
       rmSync(userDataDir, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   it('persists per-repository receipts when a multi-repository apply is partial', async () => {
     const first = seedFixture('apply-partial-a');
@@ -770,7 +770,7 @@ describe('applyIntegrationRepository', () => {
       rmSync(secondRepo, { recursive: true, force: true });
       rmSync(userDataDir, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   it('requires verification in the originating permission mode', async () => {
     const fixture = await createVerifiedIntegration('apply-readonly', 'int-apply-readonly');

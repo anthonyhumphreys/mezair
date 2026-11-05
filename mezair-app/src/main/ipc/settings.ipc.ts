@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron';
+import { designTheme } from '../services/theme-design.service.js';
 import { clearOverviewCaches } from '../services/overview.service.js';
 import type { SecretStorageProvider, SecretVaultSetup } from '../../shared/secret-storage.js';
 import {
@@ -52,6 +53,9 @@ import {
 import { resumeSyncAfterCredentialStorageReady } from '../services/sync-runtime.service.js';
 
 export function registerSettingsHandlers(): void {
+  ipcMain.handle('settings:design-theme', (event, input: unknown) =>
+    designTheme(input, event.sender.id),
+  );
   const storageChanged = (): ReturnType<typeof getCredentialStorageStatus> => {
     resetLlmClient();
     emitCompanionEvent('settings');

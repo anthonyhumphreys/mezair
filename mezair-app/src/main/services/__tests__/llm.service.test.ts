@@ -209,6 +209,29 @@ describe('Cursor CLI routing', () => {
 });
 
 describe('Codex CLI routing', () => {
+  it('does not load tools, hooks or global integrations for isolated text generation', () => {
+    const args = buildCodexExecArgs('/tmp/output.txt', 'chosen-model', true);
+    expect(args).toEqual(
+      expect.arrayContaining([
+        '--ignore-user-config',
+        '--ignore-rules',
+        '--ephemeral',
+        'features.shell_tool=false',
+        'features.apps=false',
+        'features.browser_use=false',
+        'features.hooks=false',
+        'web_search="disabled"',
+        'project_doc_max_bytes=0',
+        'features.skip_host_skill_discovery=true',
+        'skills.include_instructions=false',
+        'skills.bundled.enabled=false',
+        'cloud.skills.enabled=false',
+        '--model',
+        'chosen-model',
+      ]),
+    );
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+  });
   it('uses the supported read-only sandbox for non-interactive prompts', () => {
     expect(buildCodexExecArgs('/tmp/last-message.txt')).toEqual([
       'exec',

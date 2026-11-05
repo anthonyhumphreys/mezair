@@ -846,6 +846,7 @@ const api: MezairAPI = {
   },
 
   settings: {
+    designTheme: (request) => ipcRenderer.invoke('settings:design-theme', request),
     getSecretStorageStatus: () => ipcRenderer.invoke('settings:secret-storage-status'),
     setupSecretVault: (input) => ipcRenderer.invoke('settings:secret-vault-setup', input),
     unlockSecretVault: (passphrase) =>

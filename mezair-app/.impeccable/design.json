@@ -18,6 +18,21 @@
         "role": "primary",
         "displayName": "Action Orange",
         "canonical": "#ff8a3d"
+      },
+      "codeDarkCanvas": {
+        "role": "neutral",
+        "displayName": "Code Dark canvas",
+        "canonical": "#121314"
+      },
+      "codeDarkSurface": {
+        "role": "neutral",
+        "displayName": "Code Dark surface",
+        "canonical": "#191a1b"
+      },
+      "codeDarkAccent": {
+        "role": "primary",
+        "displayName": "Code Dark action accent",
+        "canonical": "#48a0c7"
       }
     },
     "typographyMeta": {
@@ -71,15 +86,20 @@
     "overview": "A restrained dark desktop system for sustained technical work. Conversation and current task stay dominant while operational detail is progressively disclosed.",
     "keyCharacteristics": [
       "A monochrome horse-M identity, with may-ZAIR on introductory lockups.",
-      "Cool navy tonal layers",
-      "Restrained orange action accent",
+      "Cool navy tonal layers in the default palette",
+      "Theme-owned action accents, including a graphite and cool-blue Code Dark variant",
       "Flat by default",
       "Compact and keyboard-friendly"
     ],
     "rules": [
       {
+        "name": "Theme Palette Rule",
+        "body": "Theme-owned palettes resolve only the fixed surface, text, semantic, syntax, persona, and terminal color tokens; imported colors remain hex-only and must pass contrast checks.",
+        "section": "colors"
+      },
+      {
         "name": "The One Accent Rule",
-        "body": "Orange marks selection or action, never decoration.",
+        "body": "The active theme's accent marks selection or action, never decoration.",
         "section": "colors"
       },
       {

@@ -1,6 +1,6 @@
 {
   "name": "mezair",
-  "version": "0.7.9",
+  "version": "0.7.10",
   "description": "Mezair developer mission control",
   "main": "out/main/index.js",
   "type": "module",

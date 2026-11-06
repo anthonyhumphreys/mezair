@@ -905,7 +905,9 @@ Reject a cross-provider strict workspace-only request that cannot be enforced,
 and fence pending proposals if the coordinator's approval settings change.
 
 Carry thread access explicitly on session start, prepared launches and each
-normal send. Browser clients reconnect idle sessions when access changes. Plan
+normal send. Browser clients compare requested credential access separately
+from persona-clamped effective access and reconnect when that request changes.
+Normalize inactive startup approval profiles before issuing credentials. Plan
 feedback preserves the selected profile while retaining the read-only clamp.
 Re-check live workflow settings after asynchronous setup and before turn start.
 Changing one thread must not overwrite global defaults or another thread's access.
@@ -913,6 +915,8 @@ Use a shared in-memory selection for the chip, ordinary/prepared launches and
 sends; localStorage is persistence only. Preserve the source provider when
 translating a selection, and require an explicit replacement for an unsupported
 profile. Never turn allowlist-only access into default approvals silently.
+Invalid display selections stay read-only; remote sends reject invalid or
+unsupported profiles and recheck access after asynchronous chat preparation.
 Before committing an access change, main retires the thread's provider sessions
 and invalidates in-flight starts. Revoke their bearer tokens immediately and
 resume the conversation with fresh credentials on the next turn. Bound issued

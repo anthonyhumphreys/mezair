@@ -80,8 +80,8 @@ vi.mock('../chat-continuation.service.js', () => ({
 }));
 vi.mock('../settings.service.js', () => ({ getSettings: () => mocks.settings }));
 vi.mock('../persona.service.js', () => ({
-  getPersonaById: () => ({
-    capabilities: { canWriteFiles: true, canRunCommands: true, canReadFiles: true },
+  getPersonaById: (id: string) => ({
+    capabilities: { canWriteFiles: id !== 'reader', canRunCommands: true, canReadFiles: true },
   }),
   buildSystemPrompt: () => 'system prompt',
   buildDesignSystemPrompt: () => 'design prompt',
@@ -153,11 +153,12 @@ function lastSpawn(): { command: string; args: string[]; env: Record<string, str
 async function startCodex(
   options: Parameters<typeof startSession>[3] = {},
   repoIds = ['r1', 'r2'],
+  personaId = 'coder',
 ) {
   const proc = createFakeProcess();
   mocks.spawnResults.push(proc);
   const before = vi.mocked(spawn).mock.calls.length;
-  const started = startSession(['/repo'], repoIds, 'coder', { provider: 'codex', ...options });
+  const started = startSession(['/repo'], repoIds, personaId, { provider: 'codex', ...options });
   await vi.waitFor(() => expect(vi.mocked(spawn).mock.calls.length).toBeGreaterThan(before));
   emit(proc, { jsonrpc: '2.0', method: 'thread/started', params: { thread: { id: 'th-1' } } });
   return { proc, session: await started };
@@ -312,6 +313,31 @@ describe('codex-session agent MCP wiring', () => {
     expect(getAgentMcpTokenForSession(session.id)).toBeUndefined();
   });
 
+  it.each(['read-only', 'workspace-auto', 'full-access'] as const)(
+    'normalizes inactive startup approval profiles for %s',
+    async (mode) => {
+      const { proc, session } = await startCodex({
+        codexMode: mode,
+        permissionProfile: 'auto-review',
+      });
+      expect(requests(proc, 'thread/start').at(-1)?.params).toMatchObject({
+        approvalsReviewer: 'user',
+      });
+      await expect(
+        sendMessage(session.id, 'Continue', [], { permissionMode: mode }),
+      ).resolves.toBeUndefined();
+    },
+  );
+  it('exposes issued access separately from a persona read-only clamp', async () => {
+    const { session } = await startCodex({ codexMode: 'on-request' }, ['r1'], 'reader');
+    expect(session).toMatchObject({ mode: 'read-only', requestedMode: 'on-request' });
+    await expect(
+      sendMessage(session.id, 'Continue', [], { permissionMode: 'on-request' }),
+    ).resolves.toBeUndefined();
+    await expect(
+      sendMessage(session.id, 'Change requested access', [], { permissionMode: 'read-only' }),
+    ).rejects.toThrow('fresh permissions');
+  });
   it('pins read-only sessions to read-only tool context', async () => {
     const { session } = await startCodex({ codexMode: 'read-only' });
     expect(getAgentToolSessionContext(session.id)?.mode).toBe('read-only');

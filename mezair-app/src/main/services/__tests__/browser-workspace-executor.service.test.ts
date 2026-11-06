@@ -593,6 +593,55 @@ describe('browser workspace chat lifecycle', () => {
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
+  it('keeps a persona-clamped session when the issued request is unchanged', async () => {
+    const clamped = {
+      ...session,
+      mode: 'read-only' as const,
+      requestedMode: 'on-request' as const,
+    };
+    mocks.getCodexSession.mockReturnValue(clamped);
+    const result = await executeBrowserWorkspaceCommand(
+      command({
+        operation: 'chat.send',
+        threadId: thread.id,
+        sessionId: clamped.id,
+        message: 'Inspect',
+        permissionMode: 'on-request',
+      }),
+      context(['submit-task']),
+    );
+    expect(result).toMatchObject({ ok: true });
+    expect(mocks.stopSessionAndWait).not.toHaveBeenCalled();
+    expect(mocks.startSession).not.toHaveBeenCalled();
+  });
+  it('reissues credentials for a changed request even when effective access stays read-only', async () => {
+    const clamped = {
+      ...session,
+      mode: 'read-only' as const,
+      requestedMode: 'on-request' as const,
+    };
+    const next = { ...clamped, id: 'fresh-clamped', requestedMode: 'read-only' as const };
+    mocks.getCodexSession.mockImplementation((id: string) => (id === next.id ? next : clamped));
+    mocks.startSession.mockResolvedValue(next);
+    const result = await executeBrowserWorkspaceCommand(
+      command({
+        operation: 'chat.send',
+        threadId: thread.id,
+        sessionId: clamped.id,
+        message: 'Inspect only',
+        permissionMode: 'read-only',
+      }),
+      context(['submit-task']),
+    );
+    expect(result).toMatchObject({ ok: true, data: { sessionId: next.id } });
+    expect(mocks.stopSessionAndWait).toHaveBeenCalledWith(clamped.id);
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      next.id,
+      'Inspect only',
+      [],
+      expect.objectContaining({ permissionMode: 'read-only' }),
+    );
+  });
   it('reconnects an idle browser session with fresh authority when its access changes', async () => {
     const oldSession = { ...session, mode: 'on-request' as const };
     const replacement = { ...session, id: 'fresh-session', mode: 'read-only' as const };

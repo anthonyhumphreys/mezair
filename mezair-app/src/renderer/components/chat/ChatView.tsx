@@ -66,6 +66,7 @@ import {
   chatAccessOptionsForProvider,
   beginThreadAccessChange,
   expectedAcpAppliedMode,
+  remoteThreadAccessError,
   type ChatAccessOption,
 } from './thread-access';
 import { isAcpAgentProvider } from '../../../shared/agent-providers';
@@ -472,6 +473,10 @@ export function ChatView({ userRole }: ChatViewProps) {
           ? 'read-only'
           : threadAccess.level,
       reasoningEffort: reasoningLevel,
+      workspaceDefault: workspaceAccessDefault,
+      accessError: threadAccess.selectionError,
+      accessChanging: threadAccess.changing,
+      permissionProfile: threadAccess.permissionProfile,
       ensureThread: ensureChatThread,
     }),
     [
@@ -485,6 +490,10 @@ export function ChatView({ userRole }: ChatViewProps) {
       isItsmPersona,
       activeThread?.purpose,
       threadAccess.level,
+      workspaceAccessDefault,
+      threadAccess.selectionError,
+      threadAccess.changing,
+      threadAccess.permissionProfile,
       reasoningLevel,
       ensureChatThread,
     ],
@@ -1392,7 +1401,12 @@ export function ChatView({ userRole }: ChatViewProps) {
             accessOptions={accessOptions}
             accessAppliedMode={runTarget.remote ? undefined : session?.appliedMode}
             accessRequestedMode={requestedAccessMode}
-            accessSelectionError={threadAccess.selectionError}
+            accessSelectionError={
+              threadAccess.selectionError ??
+              (runTarget.remote
+                ? remoteThreadAccessError({ permissionProfile: threadAccess.permissionProfile })
+                : undefined)
+            }
             onAccessOptionSelect={scaffoldModeActive ? undefined : handleAccessOptionSelect}
             collaborationMode={runTarget.remote ? 'default' : collaborationMode}
             onCollaborationModeChange={

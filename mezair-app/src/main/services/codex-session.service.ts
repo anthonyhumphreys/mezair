@@ -449,11 +449,11 @@ export async function startSession(
         )
       : undefined;
   const model = gatewayConfig?.model ?? configuredModel;
-  const selectedProfile = options?.permissionProfile ?? 'default';
-  if (
-    !isPermissionProfile(selectedProfile) ||
-    !supportsPermissionProfile(agentProvider, selectedProfile)
-  )
+  const requestedProfile = options?.permissionProfile ?? 'default';
+  if (!isPermissionProfile(requestedProfile))
+    throw new Error('Choose a supported permission profile for this provider.');
+  const selectedProfile = mode === 'on-request' ? requestedProfile : 'default';
+  if (!supportsPermissionProfile(agentProvider, selectedProfile))
     throw new Error('Choose a supported permission profile for this provider.');
   const codexPolicy = resolvePersonaCodexPolicy(mode, personaId);
   if (isAcpAgentProvider(agentProvider) && codexPolicy.sandbox === 'read-only')
@@ -2743,6 +2743,7 @@ function sessionToPublic(session: ManagedSession): CodexSession {
     status: session.status,
     startedAt: session.startedAt,
     mode: session.mode,
+    requestedMode: session.modeOverride ?? session.mode,
     appliedMode: session.appliedMode,
     providerThreadId: session.threadId ?? undefined,
     currentTurnId: session.turnId ?? undefined,

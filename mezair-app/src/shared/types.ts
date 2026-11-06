@@ -1426,6 +1426,8 @@ export interface CodexSession {
   status: 'starting' | 'ready' | 'busy' | 'error';
   startedAt: string;
   mode?: CodexMode;
+  /** Access requested when this provider session and its credentials were issued. */
+  requestedMode?: CodexMode;
   /**
    * Provider-side mode actually applied for the current turn — ACP
    * session/set_mode id ('ask' | 'agent' | 'plan' | 'accept-edits' | 'smart' |

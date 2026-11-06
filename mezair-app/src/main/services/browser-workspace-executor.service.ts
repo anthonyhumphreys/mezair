@@ -1548,17 +1548,18 @@ async function executeBrowserWorkspaceCommandInternal(
         const permissionMode = browserPermissionMode(
           command.permissionMode,
           providerOption,
-          session.mode ?? providerOption.defaultPermissionMode,
+          session.requestedMode ?? session.mode ?? providerOption.defaultPermissionMode,
           maximumPermissionMode,
         );
-        if (session.status === 'busy' && session.mode && permissionMode !== session.mode) {
+        const issuedMode = session.requestedMode ?? session.mode;
+        if (session.status === 'busy' && issuedMode && permissionMode !== issuedMode) {
           interruptTurn(session.id);
           throw new BrowserWorkspaceCommandError(
             'conflict',
             `The requested access differs from the active ${session.mode} turn. An interrupt was sent; retry after that turn settles to continue with ${permissionMode} access.`,
           );
         }
-        if (session.mode && permissionMode !== session.mode) {
+        if (issuedMode && permissionMode !== issuedMode) {
           await stopSessionAndWait(session.id);
           endChatSession(session.id);
           session = await startBrowserSession(context, thread.id, undefined, {
@@ -1602,7 +1603,7 @@ async function executeBrowserWorkspaceCommandInternal(
           data: {
             sessionId: session.id,
             session: getCodexSession(session.id) ?? session,
-            requestedPermissionMode: command.permissionMode ?? session.mode ?? permissionMode,
+            requestedPermissionMode: command.permissionMode ?? issuedMode ?? permissionMode,
             effectivePermissionMode,
             maximumPermissionMode,
           },

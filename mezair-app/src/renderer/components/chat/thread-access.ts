@@ -586,3 +586,35 @@ export function bindThreadAccessProvider(
   } else if (!store.defaultProvider)
     writeThreadAccessStore(workspaceId, { ...store, defaultProvider: provider });
 }
+
+/** Presentation consumers never receive a broader stand-in for an invalid selection. */
+export function resolveThreadAccessForDisplay(
+  store: ThreadAccessStore,
+  threadId: string | null,
+  workspaceDefault: CodexMode | null | undefined,
+  provider: AgentProvider,
+): { mode: CodexMode; permissionProfile: PermissionProfile; selectionError?: string } {
+  try {
+    return resolveThreadAccessSelection(store, threadId, workspaceDefault, provider);
+  } catch (error) {
+    return {
+      mode: 'read-only',
+      permissionProfile: 'default',
+      selectionError:
+        error instanceof Error ? error.message : 'Choose a replacement access setting.',
+    };
+  }
+}
+
+export function remoteThreadAccessError(input: {
+  accessError?: string;
+  accessChanging?: boolean;
+  permissionProfile?: PermissionProfile;
+}): string | undefined {
+  if (input.accessError) return input.accessError;
+  if (input.accessChanging)
+    return 'Thread access is changing. Wait for it to finish before sending.';
+  if (input.permissionProfile && input.permissionProfile !== 'default')
+    return 'Remote chats cannot preserve this approval profile. Choose a replacement access setting.';
+  return undefined;
+}

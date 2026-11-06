@@ -5,12 +5,10 @@ import {
   isChatAccessLevel,
   subscribeThreadAccess,
   beginThreadAccessChange,
-  resolveThreadAccessSelection,
+  resolveThreadAccessForDisplay,
   markAccessLevelApplied,
   readThreadAccessStore,
   reconcileThreadAccessStore,
-  resolveThreadAccessLevel,
-  resolveThreadPermissionProfile,
   setThreadAccessLevel,
   writeThreadAccessStore,
 } from './thread-access';
@@ -81,7 +79,6 @@ export function useThreadAccess(
         });
     }
   }, [workspaceDefault, storeKey, changing]);
-  const level = resolveThreadAccessLevel(store, activeThreadId, workspaceDefault);
 
   const onBeforeChange = options?.onBeforeChange;
   const provider = options?.provider ?? 'codex';
@@ -114,23 +111,18 @@ export function useThreadAccess(
     },
     [storeKey, activeThreadId, provider, onBeforeChange, onWorkspaceDefaultChange],
   );
-  let selection = {
-    mode: level,
-    permissionProfile: resolveThreadPermissionProfile(store, activeThreadId),
-  };
-  let selectionError: string | undefined;
-  try {
-    selection = resolveThreadAccessSelection(store, activeThreadId, workspaceDefault, provider);
-  } catch (error) {
-    selectionError =
-      error instanceof Error ? error.message : 'Choose a replacement access setting.';
-  }
+  const selection = resolveThreadAccessForDisplay(
+    store,
+    activeThreadId,
+    workspaceDefault,
+    provider,
+  );
 
   return {
     /** Effective access level for the active thread. */
     level: selection.mode,
     permissionProfile: selection.permissionProfile,
-    selectionError,
+    selectionError: selection.selectionError,
     changing,
     setLevel,
     /** Per-thread overrides for rail badges. */

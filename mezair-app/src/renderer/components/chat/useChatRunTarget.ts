@@ -14,6 +14,14 @@ import type {
   SyncDevice,
   SyncRuntimeStatus,
 } from '../../../shared/sync-runtime';
+import type { PermissionProfile } from '../../../shared/agent-access';
+import {
+  remoteThreadAccessError,
+  readThreadAccessStore,
+  resolveThreadAccessSelection,
+  awaitThreadAccessChange,
+  assertThreadAccessReady,
+} from './thread-access';
 import { sharedPollingCache } from '../../utils/shared-polling-cache';
 
 export const HOSTED_CHAT_TARGET = 'mezair-hosted-cloud';
@@ -89,9 +97,15 @@ export function useChatRunTarget(input: {
   provider: AgentProvider;
   model: string;
   permissionMode: CodexMode;
+  workspaceDefault?: CodexMode | null;
+  permissionProfile?: PermissionProfile;
+  accessError?: string;
+  accessChanging?: boolean;
   reasoningEffort: ReasoningEffort;
   ensureThread: (firstPrompt?: string) => Promise<string>;
 }) {
+  const latestInput = useRef(input);
+  latestInput.current = input;
   const [target, updateTarget] = useState('local');
   const [devices, setDevices] = useState<SyncDevice[]>([]);
   const [meshHosts, setMeshHosts] = useState<SyncRuntimeStatus['meshHosts']>([]);
@@ -399,11 +413,43 @@ export function useChatRunTarget(input: {
       setSending(true);
       setError(null);
       try {
+        const accessError = remoteThreadAccessError(input);
+        if (accessError) throw new Error(accessError);
+        const checkCurrentSelection = (threadId: string | null) => {
+          const current = latestInput.current;
+          const live = resolveThreadAccessSelection(
+            readThreadAccessStore(workspaceId),
+            threadId,
+            current.workspaceDefault,
+            current.provider,
+          );
+          const profileError = remoteThreadAccessError({
+            permissionProfile: live.permissionProfile,
+          });
+          if (profileError) throw new Error(profileError);
+          if (input.permissionMode !== 'read-only' && live.mode !== input.permissionMode)
+            throw new Error('Thread access changed. Send again with the current access.');
+        };
+        checkCurrentSelection(input.threadId);
         const threadId = record
           ? (input.threadId ?? record.sourceThreadId ?? record.id)
           : await input.ensureThread(prompt);
         if (workspaceScope.current !== workspaceId || activeCacheScopeKey.current !== cacheScopeKey)
           return false;
+        await awaitThreadAccessChange(workspaceId, threadId);
+        assertThreadAccessReady(workspaceId, threadId);
+        checkCurrentSelection(threadId);
+        const current = latestInput.current;
+        const currentAccessError = remoteThreadAccessError(current);
+        if (currentAccessError) throw new Error(currentAccessError);
+        if (
+          current.permissionMode !== input.permissionMode ||
+          current.permissionProfile !== input.permissionProfile ||
+          current.provider !== input.provider
+        )
+          throw new Error(
+            'Thread access changed while preparing this remote chat. Send again with the current access.',
+          );
         const key = JSON.stringify([
           threadId,
           record?.id,

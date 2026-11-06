@@ -4,6 +4,8 @@ import {
   readThreadAccessStore,
   writeThreadAccessStore,
   resolveThreadAccessSelection,
+  resolveThreadAccessForDisplay,
+  remoteThreadAccessError,
   beginThreadAccessChange,
   awaitThreadAccessChange,
   assertThreadAccessReady,
@@ -318,6 +320,34 @@ describe('chatAccessOptionSelected / resolveChatAccessChipLabel', () => {
 });
 
 describe('current access authority', () => {
+  it('displays read-only and blocks remote sends when a saved restriction cannot translate', () => {
+    const store: ThreadAccessStore = {
+      defaultLevel: 'on-request',
+      defaultSelected: true,
+      defaultProfile: 'dont-ask',
+      defaultProvider: 'claude',
+      appliedLevel: null,
+      threads: {},
+    };
+    const display = resolveThreadAccessForDisplay(store, 'thread', 'full-access', 'codex');
+    expect(display).toMatchObject({
+      mode: 'read-only',
+      permissionProfile: 'default',
+      selectionError: expect.any(String),
+    });
+    expect(remoteThreadAccessError({ accessError: display.selectionError })).toContain(
+      'allowlist-only',
+    );
+    expect(remoteThreadAccessError({ permissionProfile: 'default' })).toBeUndefined();
+  });
+  it('blocks remote sends during access changes and for profiles the remote contract cannot carry', () => {
+    expect(remoteThreadAccessError({ accessChanging: true })).toContain('changing');
+    expect(remoteThreadAccessError({ permissionProfile: 'dont-ask' })).toContain('cannot preserve');
+    expect(remoteThreadAccessError({ permissionProfile: 'auto-review' })).toContain(
+      'cannot preserve',
+    );
+  });
+
   it('retains an explicit empty-thread reduction while a workspace default prop is stale', () => {
     const store: ThreadAccessStore = {
       defaultLevel: 'read-only',

@@ -28,9 +28,47 @@ import {
 } from '../services/factory.service.js';
 
 export function registerFactoryHandlers(): void {
-  ipcMain.handle('factories:draft', (_event, request: string, workspaceId: string) =>
-    draftFactory(request, workspaceId),
+  const drafts = new Map<number, { requestId: string; controller: AbortController }>();
+  ipcMain.handle(
+    'factories:draft',
+    async (event, request: string, workspaceId: string, requestId = 'legacy') => {
+      if (typeof requestId !== 'string' || requestId.length > 100)
+        throw new Error('Invalid draft request.');
+      const owner = event.sender;
+      if (drafts.has(owner.id))
+        throw new Error('Cancel the current draft before starting another.');
+      const controller = new AbortController();
+      drafts.set(owner.id, { requestId, controller });
+      const started = Date.now();
+      const cancel = () => controller.abort(new Error('Draft cancelled.'));
+      owner.once('destroyed', cancel);
+      const timeout = setTimeout(
+        () => controller.abort(new Error('Draft timed out. Try a shorter description.')),
+        90_000,
+      );
+      try {
+        return await draftFactory(request, workspaceId, {
+          signal: controller.signal,
+          onProgress: (message) => {
+            if (!owner.isDestroyed() && !controller.signal.aborted)
+              owner.send('factories:draft-progress', {
+                requestId,
+                message,
+                elapsedMs: Date.now() - started,
+              });
+          },
+        });
+      } finally {
+        clearTimeout(timeout);
+        owner.removeListener('destroyed', cancel);
+        drafts.delete(owner.id);
+      }
+    },
   );
+  ipcMain.handle('factories:cancel-draft', (event, requestId: string) => {
+    const draft = drafts.get(event.sender.id);
+    if (draft?.requestId === requestId) draft.controller.abort(new Error('Draft cancelled.'));
+  });
   ipcMain.handle(
     'factories:preview',
     (

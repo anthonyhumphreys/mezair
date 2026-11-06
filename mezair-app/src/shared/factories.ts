@@ -577,3 +577,10 @@ export function factoryRunIdFromWorkerThread(threadId: string | undefined): stri
     ? threadId.slice(FACTORY_WORKER_THREAD_PREFIX.length) || null
     : null;
 }
+
+/** Transient draft progress, delivered only to the requesting window. */
+export interface FactoryDraftProgress {
+  requestId: string;
+  message: string;
+  elapsedMs: number;
+}

@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Factory drafting and repository indexing performance</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+        line-height: 1.6;
+        background: #f7f8fa;
+        color: #18212f;
+      }
+      body {
+        max-width: 76ch;
+        margin: 3rem auto;
+        padding: 0 1.25rem 3rem;
+      }
+      h1,
+      h2 {
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+      }
+      h1 {
+        font-size: 2.2rem;
+      }
+      h2 {
+        margin-top: 2.5rem;
+      }
+      a {
+        color: #2459ad;
+      }
+      code {
+        font-size: 0.9em;
+      }
+      pre {
+        overflow: auto;
+        padding: 1rem;
+        background: #e9edf2;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-variant-numeric: tabular-nums;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.65rem;
+        border-bottom: 1px solid #b8c1ce;
+      }
+      caption {
+        text-align: left;
+        margin-bottom: 0.5rem;
+      }
+      small {
+        color: #4e5b6d;
+      }
+      .table {
+        overflow: auto;
+      }
+      li {
+        margin: 0.5rem 0;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          background: #101722;
+          color: #e5eaf2;
+        }
+        pre {
+          background: #1b2636;
+        }
+        a {
+          color: #9fc1ff;
+        }
+        small {
+          color: #b7c4d8;
+        }
+        th,
+        td {
+          border-color: #435169;
+        }
+      }
+      :focus-visible {
+        outline: 2px solid #5388d9;
+        outline-offset: 3px;
+      }
+      ::selection {
+        background: #305da8;
+        color: white;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Faster drafts, smaller indexing requests</h1>
+    <p><small>Desktop performance changes · 6 November 2026</small></p>
+    <p>
+      Factory drafts now use the app’s configured provider and model, with a bounded foreground
+      slot, progress and cancellation. Repository enrichment uses one background inference at a time
+      and summarises up to four modules per request.
+    </p>
+    <h2>Measured input reductions</h2>
+    <div class="table">
+      <table>
+        <caption>
+          Read-only comparison on the same local repository snapshots. Counts exclude retries.
+        </caption>
+        <thead>
+          <tr>
+            <th>Repository</th>
+            <th>Module context characters</th>
+            <th>Key-file bytes read</th>
+            <th>Initial AI calls, including overview</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>Mezair · 19 modules</th>
+            <td>751,338 → 81,872<br />89.1% less</td>
+            <td>1,857,043 → 66,287<br />96.4% less</td>
+            <td>20 → 6<br />70% fewer</td>
+          </tr>
+          <tr>
+            <th>ReadingBridge · 13 modules</th>
+            <td>392,309 → 55,110<br />86.0% less</td>
+            <td>366,144 → 43,943<br />88.0% less</td>
+            <td>14 → 5<br />64.3% fewer</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Context counts cover module trees and selected file contents, before prompt instructions and
+      JSON framing. Byte counts cover selected file reads for prompt construction; they exclude the
+      structural scan and metadata hashing. The benchmark reads the previous full-file baseline
+      deliberately and never calls a provider or writes application data.
+    </p>
+    <h2>What changed</h2>
+    <ul>
+      <li>
+        Missing repositories or compatible saved workflows fail before inference. Draft requests
+        contain workflow identifiers and descriptions, rather than full workflow graphs.
+      </li>
+      <li>
+        Organisation discovery no longer blocks a draft. Recent account-scoped editor choices are
+        optional context; save and activation still check current permissions.
+      </li>
+      <li>
+        Codex receives the selected model explicitly, with medium reasoning for drafts and low
+        reasoning for enrichment. Azure retains its configured deployment. Codex and Claude data
+        generation use isolated temporary directories without repository tools or project context.
+      </li>
+      <li>
+        One foreground utility call can run alongside one background call. Each lane has a bounded
+        queue. Draft deadlines include queue wait and retries; cancellation reaches API requests and
+        CLI process trees.
+      </li>
+      <li>
+        CLI output and diagnostic tails are bounded. Cancelled calls retain their scheduler slot
+        until provider cleanup settles.
+      </li>
+      <li>
+        Enrichment reads at most three 1,500-byte file prefixes per module and caps directory
+        context. Completed batches persist progressively; failed batches retain retryable hashes.
+      </li>
+      <li>
+        Successful unchanged module summaries and overviews are reused. Cache identity includes the
+        provider, configured model and prompt version. Summary metadata records that identity
+        instead of a hardcoded older model.
+      </li>
+    </ul>
+    <h2>Validation and limits</h2>
+    <p>
+      Local validation: <strong>3,645 tests passed</strong> (12 existing skips), lint and both
+      Desktop TypeScript checks passed. Production main/preload/renderer and headless daemon builds
+      also passed.
+    </p>
+    <p>
+      Regression coverage includes queue isolation and resource limits, queued and active
+      cancellation, cross-window IPC ownership, model selection, invalid or incomplete batch output,
+      stale draft responses, UTF-8 file prefixes, model-change invalidation and failed-batch
+      retries.
+    </p>
+    <p>
+      A live synthetic Codex request returned valid summaries for two modules in
+      <strong>7.256 seconds</strong> using GPT-6.1 Sol with low reasoning. Safari checks exercised
+      successful draft completion, visible progress and cancellation with the prompt retained.
+    </p>
+    <p>
+      <strong>This is not an end-to-end production latency or memory benchmark.</strong> Input and
+      call-count reductions are measured; elapsed improvements on real repositories still depend on
+      provider load, model and response length. Reduced context trades exhaustive file detail for
+      concise module responsibilities. The structural repository map still finishes first,
+      independently of AI enrichment.
+    </p>
+    <h2>Reproduce the input comparison</h2>
+    <pre><code># From mezair-app/
+pnpm exec esbuild scripts/benchmark-enrichment-inputs.ts \
+  --bundle --platform=node --format=cjs \
+  --outfile=/tmp/mezair-index-inputs.cjs
+node /tmp/mezair-index-inputs.cjs /path/to/repository</code></pre>
+  </body>
+</html>

@@ -6,6 +6,18 @@ const mocks = vi.hoisted(() => ({
   callPreferredLocalModel: vi.fn(),
   classifyPromptForLocalModel: vi.fn(),
   completionCreate: vi.fn(),
+  runUtilityCli: vi.fn(),
+  readFileSync: vi.fn(),
+}));
+
+vi.mock('node:fs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:fs')>()),
+  readFileSync: mocks.readFileSync,
+}));
+
+vi.mock('../utility-cli.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../utility-cli.js')>()),
+  runUtilityCli: mocks.runUtilityCli,
 }));
 
 vi.mock('../settings.service.js', () => ({
@@ -181,6 +193,7 @@ describe('callLlm local model routing', () => {
       expect.objectContaining({
         model: 'deepseek-v4-flash',
       }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 
@@ -214,6 +227,7 @@ describe('callLlm local model routing', () => {
     ).resolves.toBe('fallback response');
     expect(mocks.completionCreate).toHaveBeenCalledWith(
       expect.objectContaining({ model: 'deepseek-v4-flash' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 
@@ -246,6 +260,7 @@ describe('callLlm local model routing', () => {
     });
     expect(mocks.completionCreate).toHaveBeenCalledWith(
       expect.objectContaining({ model: 'theme-deployment' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     const completionCalls = mocks.completionCreate.mock.calls.length;
     await expect(
@@ -323,5 +338,104 @@ describe('Codex CLI routing', () => {
       '/tmp/last-message.txt',
       '-',
     ]);
+  });
+});
+
+describe('utility request budgets', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetLlmClient();
+  });
+  it('uses an explicit background reasoning budget rather than the chat budget', async () => {
+    mocks.getSettings.mockReturnValue({
+      llmProvider: 'openai',
+      openaiApiKey: 'test',
+      openaiModel: 'gpt-6.1-sol',
+      reasoningLevel: 'ultra',
+    });
+    mocks.completionCreate.mockResolvedValue({ choices: [{ message: { content: 'summary' } }] });
+    await callLlm('Summarise', 1000, 0.2, 0, {
+      provider: 'openai',
+      reasoningEffort: 'low',
+      priority: 'background',
+    });
+    expect(mocks.completionCreate.mock.calls.at(-1)?.[0]).toMatchObject({
+      model: 'gpt-6.1-sol',
+      reasoning_effort: 'low',
+    });
+    expect(mocks.completionCreate.mock.calls.at(-1)?.[0]).not.toHaveProperty('temperature');
+  });
+  it('aborts a stalled API request at the overall deadline', async () => {
+    mocks.getSettings.mockReturnValue({
+      llmProvider: 'openai',
+      openaiApiKey: 'test',
+      openaiModel: 'gpt-6.1-sol',
+    });
+    mocks.completionCreate.mockImplementationOnce(
+      (_body, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener('abort', () => reject(options.signal.reason), {
+            once: true,
+          });
+        }),
+    );
+    await expect(callLlm('Summarise', 1000, 0.2, 0, { timeoutMs: 20 })).rejects.toThrow(
+      'timed out',
+    );
+  });
+  it('passes the chosen reasoning budget to Codex instead of inheriting CLI settings', () => {
+    expect(buildCodexExecArgs('/tmp/result', 'gpt-6.1-sol', true, 'medium')).toContain(
+      'model_reasoning_effort="medium"',
+    );
+  });
+});
+
+describe('CLI utility routing', () => {
+  it.each(['codex', 'cursor', 'devin'] as const)(
+    'uses the configured %s model with cancellation',
+    async (provider) => {
+      mocks.getSettings.mockReturnValue({
+        llmProvider: provider,
+        openaiModel: 'chosen-model',
+        reasoningLevel: 'ultra',
+      });
+      mocks.runUtilityCli.mockResolvedValue('generated text');
+      await expect(
+        callLlm('draft', 3000, 0.2, 0, {
+          provider,
+          reasoningEffort: 'medium',
+          textOnly: provider === 'codex',
+        }),
+      ).resolves.toBe('generated text');
+      const [, args, options] = mocks.runUtilityCli.mock.calls.at(-1)!;
+      expect(args).toContain('chosen-model');
+      expect(options.signal).toBeInstanceOf(AbortSignal);
+      if (provider === 'codex') {
+        expect(args).toContain('--ignore-user-config');
+        expect(args).toContain('model_reasoning_effort="medium"');
+        expect(options.cwd).toContain('codex');
+      }
+    },
+  );
+});
+
+describe('Azure utility model routing', () => {
+  it('uses the configured Azure deployment instead of an unrelated chat model', async () => {
+    resetLlmClient();
+    mocks.getSettings.mockReturnValue({
+      llmProvider: 'azure',
+      openaiModel: 'unrelated-chat-model',
+    });
+    mocks.readFileSync.mockReturnValue(
+      'model = "azure-deployment"\n[model_providers.azure]\nbase_url = "https://example.openai.azure.com/openai"\nenv_key = "MEZAIR_TEST_AZURE_KEY"',
+    );
+    vi.stubEnv('MEZAIR_TEST_AZURE_KEY', 'test-key');
+    mocks.completionCreate.mockResolvedValue({ choices: [{ message: { content: 'summary' } }] });
+    try {
+      await callLlm('Summarise', 1000, 0.2, 0, { provider: 'azure', textOnly: true });
+      expect(mocks.completionCreate.mock.calls.at(-1)?.[0].model).toBe('azure-deployment');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

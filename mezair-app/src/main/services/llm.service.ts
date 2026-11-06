@@ -1,8 +1,10 @@
 import { AzureOpenAI, OpenAI } from 'openai';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
-import { spawn } from 'node:child_process';
+import { setTimeout as wait } from 'node:timers/promises';
+import { runUtilityCli, EmptyLlmResponseError } from './utility-cli.js';
+import { UtilityScheduler } from './utility-scheduler.js';
 import { callClaudeUtility } from './claude-utility.js';
 import { getSettings } from './settings.service.js';
 import { providerSpawnEnv } from './agent-spawn-env.js';
@@ -18,8 +20,7 @@ import { LLM_GATEWAY_API_URL, LLM_GATEWAY_SOURCE } from '../../shared/llm-gatewa
 
 let cachedClient: AzureOpenAI | OpenAI | null = null;
 let cachedProvider: string | null = null;
-let codexExecQueue: Promise<void> = Promise.resolve();
-let codexQueueDepth = 0;
+const utilityScheduler = new UtilityScheduler();
 
 export interface LlmCallOptions {
   cwd?: string;
@@ -45,26 +46,13 @@ export interface LlmCallOptions {
   };
   /** Isolated data generation: supported providers only, in a temporary cwd. */
   textOnly?: boolean;
+  priority?: 'foreground' | 'background';
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  reasoningEffort?: 'low' | 'medium' | 'high';
 }
-
-class EmptyLlmResponseError extends Error {}
 
 const LOCAL_LLM_MAX_PROMPT_CHARS = 12_000;
-
-function killProcessTree(pid: number | undefined, signal: NodeJS.Signals): void {
-  if (!pid) return;
-
-  try {
-    if (process.platform === 'win32') {
-      process.kill(pid, signal);
-      return;
-    }
-
-    process.kill(-pid, signal);
-  } catch {
-    // Process is already gone or cannot be signalled.
-  }
-}
 
 function isLikelyJsonResponse(value: string): boolean {
   const trimmed = value.trim();
@@ -168,6 +156,20 @@ function readCodexConfig(): { baseUrl: string; model: string; envKey: string } |
   }
 }
 
+/** Resolve the utility model without inheriting a coding CLI's unrelated model/effort. */
+export function getConfiguredUtilityModel(
+  provider: AgentProvider = getSettings().llmProvider,
+): string | undefined {
+  const settings = getSettings();
+  if (provider === 'azure') return readCodexConfig()?.model;
+  if (provider !== settings.llmProvider)
+    return provider === 'codex' ? DEFAULT_CODEX_MODEL : undefined;
+  return (
+    settings.openaiModel?.trim() ||
+    (provider === 'codex' || provider === 'openai' ? DEFAULT_CODEX_MODEL : undefined)
+  );
+}
+
 /**
  * Get or create the LLM client based on the configured provider.
  * Only used for API-backed providers. Codex and Cursor route through their CLIs.
@@ -266,47 +268,6 @@ function getClient(
   return { client: cachedClient, model: settings.openaiModel || DEFAULT_CODEX_MODEL };
 }
 
-/**
- * Route a prompt through the Codex CLI using `codex exec`.
- * Streams progress to stderr; final response goes to stdout.
- */
-function enqueueCodexExec<T>(
-  task: () => Promise<T>,
-  onProgress?: (message: string) => void,
-): Promise<T> {
-  const queuePosition = codexQueueDepth;
-  codexQueueDepth += 1;
-
-  if (queuePosition > 0) {
-    onProgress?.(
-      `Waiting for ${queuePosition} earlier Codex request${queuePosition === 1 ? '' : 's'}...`,
-    );
-  }
-
-  const run = codexExecQueue.catch(() => undefined).then(task);
-  codexExecQueue = run.then(
-    () => undefined,
-    () => undefined,
-  );
-
-  return run.finally(() => {
-    codexQueueDepth = Math.max(0, codexQueueDepth - 1);
-  });
-}
-
-function summariseCliStderr(stderr: string): string | null {
-  const lines = stderr
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => !line.startsWith('WARNING: proceeding'));
-
-  if (lines.length === 0) return null;
-
-  const summary = lines.slice(-3).join(' | ');
-  return summary.length > 280 ? `${summary.slice(0, 277)}...` : summary;
-}
-
 export function buildCursorPrintArgs(prompt: string, model = 'auto'): string[] {
   return ['-p', '--model', model, prompt];
 }
@@ -324,7 +285,12 @@ export function buildDevinPrintArgs(prompt: string, model?: string): string[] {
   return args;
 }
 
-export function buildCodexExecArgs(outputPath: string, model?: string, textOnly = false): string[] {
+export function buildCodexExecArgs(
+  outputPath: string,
+  model?: string,
+  textOnly = false,
+  reasoningEffort?: LlmCallOptions['reasoningEffort'],
+): string[] {
   const args = [
     'exec',
     '--skip-git-repo-check',
@@ -374,6 +340,7 @@ export function buildCodexExecArgs(outputPath: string, model?: string, textOnly 
   }
   const trimmed = model?.trim();
   if (trimmed) args.push('--model', trimmed);
+  if (reasoningEffort) args.push('-c', `model_reasoning_effort="${reasoningEffort}"`);
   args.push('-');
   return args;
 }
@@ -383,60 +350,12 @@ async function callCursor(
   options?: LlmCallOptions,
   model = 'auto',
 ): Promise<string> {
-  const cleanPrompt = prompt.replace(/\0/g, '');
-  const cwd = options?.cwd;
-  console.log(
-    `[LLM] Cursor CLI: sending prompt (${cleanPrompt.length} chars)${cwd ? ` cwd=${cwd}` : ''}`,
-  );
-
-  return enqueueCodexExec(
-    async () =>
-      new Promise((resolve, reject) => {
-        options?.onProgress?.('Sending request to Cursor CLI...');
-        const child = spawn('cursor-agent', buildCursorPrintArgs(cleanPrompt, model), {
-          ...(cwd && { cwd }),
-          env: providerSpawnEnv(),
-          detached: process.platform !== 'win32',
-        });
-        let stdout = '';
-        let stderr = '';
-        const timeout = setTimeout(() => {
-          stderr += '\nCursor CLI timed out after 300 seconds.\n';
-          killProcessTree(child.pid, 'SIGTERM');
-        }, 300_000);
-        child.stdout.on('data', (chunk: Buffer) => {
-          stdout += chunk.toString();
-        });
-        child.stderr.on('data', (chunk: Buffer) => {
-          stderr += chunk.toString();
-        });
-        child.on('error', (err) => {
-          clearTimeout(timeout);
-          reject(new Error(`Cursor CLI error: ${err.message}`));
-        });
-        child.on('close', (code, signal) => {
-          clearTimeout(timeout);
-          const result = stdout.trim();
-          if (code !== 0) {
-            const msg =
-              stderr.trim() || (signal ? `terminated by ${signal}` : `exited with code ${code}`);
-            reject(new Error(`Cursor CLI error: ${msg}`));
-            return;
-          }
-          if (!result) {
-            const detail = summariseCliStderr(stderr);
-            reject(
-              new EmptyLlmResponseError(
-                `Cursor CLI returned an empty response${detail ? `: ${detail}` : ''}`,
-              ),
-            );
-            return;
-          }
-          resolve(result);
-        });
-      }),
-    options?.onProgress,
-  );
+  options?.onProgress?.('Generating with Cursor…');
+  return runUtilityCli('cursor-agent', buildCursorPrintArgs(prompt.replace(/\0/g, ''), model), {
+    cwd: options?.cwd,
+    env: providerSpawnEnv(),
+    signal: options?.signal,
+  });
 }
 
 async function callDevin(
@@ -444,60 +363,12 @@ async function callDevin(
   options?: LlmCallOptions,
   model?: string,
 ): Promise<string> {
-  const cleanPrompt = prompt.replace(/\0/g, '');
-  const cwd = options?.cwd;
-  console.log(
-    `[LLM] Devin CLI: sending prompt (${cleanPrompt.length} chars)${cwd ? ` cwd=${cwd}` : ''}`,
-  );
-
-  return enqueueCodexExec(
-    async () =>
-      new Promise((resolve, reject) => {
-        options?.onProgress?.('Sending request to Devin CLI...');
-        const child = spawn('devin', buildDevinPrintArgs(cleanPrompt, model), {
-          ...(cwd && { cwd }),
-          env: { ...process.env },
-          detached: process.platform !== 'win32',
-        });
-        let stdout = '';
-        let stderr = '';
-        const timeout = setTimeout(() => {
-          stderr += '\nDevin CLI timed out after 300 seconds.\n';
-          killProcessTree(child.pid, 'SIGTERM');
-        }, 300_000);
-        child.stdout.on('data', (chunk: Buffer) => {
-          stdout += chunk.toString();
-        });
-        child.stderr.on('data', (chunk: Buffer) => {
-          stderr += chunk.toString();
-        });
-        child.on('error', (err) => {
-          clearTimeout(timeout);
-          reject(new Error(`Devin CLI error: ${err.message}`));
-        });
-        child.on('close', (code, signal) => {
-          clearTimeout(timeout);
-          const result = stdout.trim();
-          if (code !== 0) {
-            const msg =
-              stderr.trim() || (signal ? `terminated by ${signal}` : `exited with code ${code}`);
-            reject(new Error(`Devin CLI error: ${msg}`));
-            return;
-          }
-          if (!result) {
-            const detail = summariseCliStderr(stderr);
-            reject(
-              new EmptyLlmResponseError(
-                `Devin CLI returned an empty response${detail ? `: ${detail}` : ''}`,
-              ),
-            );
-            return;
-          }
-          resolve(result);
-        });
-      }),
-    options?.onProgress,
-  );
+  options?.onProgress?.('Generating with Devin…');
+  return runUtilityCli('devin', buildDevinPrintArgs(prompt.replace(/\0/g, ''), model), {
+    cwd: options?.cwd,
+    env: providerSpawnEnv(),
+    signal: options?.signal,
+  });
 }
 
 async function callCodex(
@@ -505,144 +376,25 @@ async function callCodex(
   options?: LlmCallOptions,
   model?: string,
 ): Promise<string> {
-  // Strip null bytes that can appear in file content
-  const cleanPrompt = prompt.replace(/\0/g, '');
-  const cwd = options?.cwd;
-  console.log(
-    `[LLM] Codex exec: sending prompt via stdin (${cleanPrompt.length} chars)${cwd ? ` cwd=${cwd}` : ''}`,
-  );
-
-  return enqueueCodexExec(async () => {
-    options?.onProgress?.('Sending request to Codex...');
-
-    const tempDir = mkdtempSync(join(tmpdir(), PRIMARY_CODEX_TEMP_PREFIX));
+  options?.onProgress?.('Generating with Codex…');
+  const tempDir = mkdtempSync(join(tmpdir(), PRIMARY_CODEX_TEMP_PREFIX));
+  try {
     const outputPath = join(tempDir, 'last-message.txt');
-
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      let timedOut = false;
-      let sigkillTimer: NodeJS.Timeout | undefined;
-      let forceRejectTimer: NodeJS.Timeout | undefined;
-      const cleanup = () => {
-        try {
-          rmSync(tempDir, { recursive: true, force: true });
-        } catch {
-          // Best effort cleanup.
-        }
-      };
-
-      const child = spawn('codex', buildCodexExecArgs(outputPath, model, options?.textOnly), {
-        ...(cwd && { cwd }),
+    return await runUtilityCli(
+      'codex',
+      buildCodexExecArgs(outputPath, model, options?.textOnly, options?.reasoningEffort),
+      {
+        cwd: options?.textOnly ? tempDir : options?.cwd,
         env: providerSpawnEnv({ OTEL_SDK_DISABLED: 'true' }),
-        detached: process.platform !== 'win32',
-      });
-
-      let stdout = '';
-      let stderr = '';
-      const timeout = setTimeout(() => {
-        timedOut = true;
-        stderr += '\nCodex CLI timed out after 300 seconds.\n';
-        killProcessTree(child.pid, 'SIGTERM');
-        sigkillTimer = setTimeout(() => killProcessTree(child.pid, 'SIGKILL'), 2_000);
-        sigkillTimer.unref();
-        forceRejectTimer = setTimeout(() => {
-          if (settled) return;
-          settled = true;
-          cleanup();
-          reject(new Error('Codex CLI timed out after 300 seconds'));
-        }, 7_000);
-        forceRejectTimer.unref();
-      }, 300_000);
-
-      const clearTimers = () => {
-        clearTimeout(timeout);
-        if (sigkillTimer) clearTimeout(sigkillTimer);
-        if (forceRejectTimer) clearTimeout(forceRejectTimer);
-      };
-
-      child.stdout.on('data', (chunk: Buffer) => {
-        if (options?.textOnly && stdout.length + chunk.length > 65_536) {
-          if (settled) return;
-          settled = true;
-          clearTimers();
-          killProcessTree(child.pid, 'SIGKILL');
-          cleanup();
-          reject(
-            new Error('Theme generation output exceeded its limit. Try a simpler description.'),
-          );
-          return;
-        }
-        stdout += chunk.toString();
-      });
-      child.stderr.on('data', (chunk: Buffer) => {
-        stderr = options?.textOnly
-          ? (stderr + chunk.toString()).slice(-8192)
-          : stderr + chunk.toString();
-      });
-
-      child.on('error', (err) => {
-        clearTimers();
-        if (settled) return;
-        settled = true;
-        cleanup();
-        console.error('[LLM] Codex exec spawn error:', err.message);
-        reject(new Error(`Codex CLI error: ${err.message}`));
-      });
-
-      child.on('close', (code, signal) => {
-        clearTimers();
-        if (settled) return;
-        settled = true;
-        let fallback = '';
-        try {
-          if (existsSync(outputPath)) {
-            if (options?.textOnly && statSync(outputPath).size > 65_536) {
-              cleanup();
-              reject(
-                new Error('Theme generation output exceeded its limit. Try a simpler description.'),
-              );
-              return;
-            }
-            fallback = readFileSync(outputPath, 'utf-8').trim();
-          }
-        } catch {
-          cleanup();
-          reject(new Error('Could not read the provider response. Try again.'));
-          return;
-        }
-        const result = options?.textOnly ? fallback || stdout.trim() : stdout.trim() || fallback;
-        const stderrSummary = summariseCliStderr(stderr);
-        cleanup();
-
-        if (code !== 0) {
-          const msg =
-            stderr.trim() ||
-            (timedOut
-              ? 'timed out after 300 seconds'
-              : signal
-                ? `terminated by ${signal}`
-                : `exited with code ${code}`);
-          console.error('[LLM] Codex exec failed:', msg);
-          reject(new Error(`Codex CLI error: ${msg}`));
-          return;
-        }
-
-        if (result.length === 0) {
-          const detail = stderrSummary ? `: ${stderrSummary}` : '';
-          reject(new EmptyLlmResponseError(`Codex CLI returned an empty response${detail}`));
-          return;
-        }
-
-        console.log(
-          `[LLM] Codex exec: got response (${result.length} chars)${stdout.trim() ? '' : ' via output file'}`,
-        );
-        resolve(result);
-      });
-
-      child.stdin.write(cleanPrompt);
-      child.stdin.end();
-    });
-  }, options?.onProgress);
+        prompt: prompt.replace(/\0/g, ''),
+        signal: options?.signal,
+        outputPath,
+        outputLimit: options?.textOnly ? 65_536 : 2_000_000,
+      },
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 /** Reset cached client — call when settings change. */
@@ -654,20 +406,21 @@ export function resetLlmClient(): void {
 /**
  * Make an LLM call. Routes through Codex CLI or OpenAI SDK depending on provider.
  */
-export async function callLlm(
+async function callLlmUnqueued(
   userMessage: string,
   maxTokens: number,
   temperature: number,
   maxRetries = 3,
   options?: LlmCallOptions,
 ): Promise<string> {
+  options?.signal?.throwIfAborted();
   const settings = getSettings();
   const provider = options?.provider ?? settings.llmProvider;
   if (options?.textOnly && (provider === 'cursor' || provider === 'devin'))
     throw new Error(
       'Theme design needs Codex, Claude Code, OpenAI, Azure or LLMGateway. Choose one in Providers to generate a theme.',
     );
-  const modelOverride = options?.model?.trim() || undefined;
+  const modelOverride = options?.model?.trim() || getConfiguredUtilityModel(provider);
   let lastEmptyResponseMessage: string | null = null;
 
   // An explicit provider override is a deliberate routing choice — bypass the
@@ -678,6 +431,7 @@ export async function callLlm(
   }
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    options?.signal?.throwIfAborted();
     let result: string;
 
     if (
@@ -694,15 +448,12 @@ export async function callLlm(
                 modelOverride ||
                   (settings.llmProvider === 'claude' ? settings.openaiModel : 'auto'),
                 options?.cwd,
+                options,
               )
             : provider === 'cursor'
-              ? await callCursor(
-                  userMessage,
-                  options,
-                  modelOverride || settings.openaiModel || 'auto',
-                )
+              ? await callCursor(userMessage, options, modelOverride || 'auto')
               : provider === 'devin'
-                ? await callDevin(userMessage, options, modelOverride || settings.openaiModel)
+                ? await callDevin(userMessage, options, modelOverride)
                 : await callCodex(userMessage, options, modelOverride);
       } catch (err) {
         if (err instanceof EmptyLlmResponseError) {
@@ -713,7 +464,7 @@ export async function callLlm(
             const retryMessage = `CLI provider returned no content, retrying (${attempt + 2}/${maxRetries + 1})...`;
             console.warn(`[LLM] ${retryMessage}`);
             options?.onProgress?.(retryMessage);
-            await new Promise((resolve) => setTimeout(resolve, delay));
+            await wait(delay, undefined, { signal: options?.signal });
             continue;
           }
         }
@@ -741,8 +492,13 @@ export async function callLlm(
         ) {
           body.reasoning_effort = settings.reasoningLevel;
         }
+        if (options?.reasoningEffort && /^gpt-[56]/.test(effectiveModel)) {
+          body.reasoning_effort = options.reasoningEffort;
+          delete body.temperature;
+        }
         const response = await client.chat.completions.create(
           body as unknown as Parameters<typeof client.chat.completions.create>[0],
+          { signal: options?.signal },
         );
         result = 'choices' in response ? (response.choices[0]?.message?.content ?? '') : '';
       } catch (err: unknown) {
@@ -753,7 +509,7 @@ export async function callLlm(
           options?.onProgress?.(
             `Rate limited by the LLM provider, retrying (${attempt + 2}/${maxRetries + 1})...`,
           );
-          await new Promise((resolve) => setTimeout(resolve, delay));
+          await wait(delay, undefined, { signal: options?.signal });
           continue;
         }
         throw err;
@@ -772,12 +528,46 @@ export async function callLlm(
       options?.onProgress?.(
         `Received an empty response, retrying (${attempt + 2}/${maxRetries + 1})...`,
       );
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      await wait(delay, undefined, { signal: options?.signal });
       continue;
     }
   }
 
   throw new Error(lastEmptyResponseMessage ?? 'LLM returned empty response after all retries');
+}
+
+/** Utility deadlines include queue wait and retries; background indexing has its own slot. */
+export async function callLlm(
+  userMessage: string,
+  maxTokens: number,
+  temperature: number,
+  maxRetries = 3,
+  options?: LlmCallOptions,
+): Promise<string> {
+  const controller = new AbortController();
+  const abort = () => controller.abort(options?.signal?.reason ?? new Error('Request cancelled.'));
+  if (options?.signal?.aborted) abort();
+  else options?.signal?.addEventListener('abort', abort, { once: true });
+  const timeout = setTimeout(
+    () => controller.abort(new Error('AI request timed out. Try again.')),
+    options?.timeoutMs ?? 300_000,
+  );
+  try {
+    return await utilityScheduler.run(
+      () =>
+        callLlmUnqueued(userMessage, maxTokens, temperature, maxRetries, {
+          ...options,
+          signal: controller.signal,
+        }),
+      {
+        ...options,
+        signal: controller.signal,
+      },
+    );
+  } finally {
+    clearTimeout(timeout);
+    options?.signal?.removeEventListener('abort', abort);
+  }
 }
 
 /**

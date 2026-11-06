@@ -147,6 +147,26 @@ export function FactoriesView() {
   const [repinWorkflow, setRepinWorkflow] = useState(false);
   const [request, setRequest] = useState('');
   const [draftBusy, setDraftBusy] = useState(false);
+  const [draftProgress, setDraftProgress] = useState('');
+  const draftRequestRef = useRef<string | null>(null);
+  const cancelDraft = () => {
+    const id = draftRequestRef.current;
+    draftRequestRef.current = null;
+    if (id) void window.mezair.factories.cancelDraft?.(id).catch(() => undefined);
+    setDraftBusy(false);
+    setDraftProgress('');
+  };
+  useEffect(() => {
+    const unsubscribe = window.mezair.factories.onDraftProgress?.((progress) => {
+      if (draftRequestRef.current === progress.requestId) setDraftProgress(progress.message);
+    });
+    return () => {
+      unsubscribe?.();
+      const id = draftRequestRef.current;
+      draftRequestRef.current = null;
+      if (id) void window.mezair.factories.cancelDraft?.(id).catch(() => undefined);
+    };
+  }, []);
   const [draftedFromRequest, setDraftedFromRequest] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savingCopy, setSavingCopy] = useState(false);
@@ -383,6 +403,7 @@ export function FactoriesView() {
   };
 
   const closeEditor = () => {
+    cancelDraft();
     draftOpenRef.current = false;
     setEditingFactoryId(null);
     setDraft(null);
@@ -504,15 +525,19 @@ export function FactoriesView() {
 
   const startConversationalDraft = async () => {
     if (!activeWorkspace?.id || !request.trim()) return;
+    if (draftRequestRef.current) return;
     const workspaceId = activeWorkspace.id;
+    const requestId = crypto.randomUUID();
+    draftRequestRef.current = requestId;
+    setDraftProgress('Preparing draft…');
     setDraftBusy(true);
     draftOpenRef.current = true;
     setEditingFactoryId(null);
     selectedFactoryRef.current = null;
     setBanner(null);
     try {
-      const proposed = await window.mezair.factories.draft(request.trim(), workspaceId);
-      if (workspaceIdRef.current !== workspaceId) return;
+      const proposed = await window.mezair.factories.draft(request.trim(), workspaceId, requestId);
+      if (workspaceIdRef.current !== workspaceId || draftRequestRef.current !== requestId) return;
       if (
         proposed.workspaceId !== workspaceId ||
         !repos.some((repo) => repo.id === proposed.repoId)
@@ -530,10 +555,14 @@ export function FactoriesView() {
       setRuns([]);
       setSearchParams({}, { replace: true });
     } catch (cause) {
-      if (workspaceIdRef.current !== workspaceId) return;
+      if (workspaceIdRef.current !== workspaceId || draftRequestRef.current !== requestId) return;
       setError(cause instanceof Error ? cause.message : 'Could not draft a factory.');
     } finally {
-      setDraftBusy(false);
+      if (draftRequestRef.current === requestId) {
+        draftRequestRef.current = null;
+        setDraftBusy(false);
+        setDraftProgress('');
+      }
     }
   };
 
@@ -841,6 +870,8 @@ export function FactoriesView() {
               repinWorkflow={repinWorkflow}
               request={request}
               drafting={draftBusy}
+              draftProgress={draftProgress}
+              onCancelDraft={cancelDraft}
               draftedFromRequest={draftedFromRequest}
               onRequest={setRequest}
               onDraftFromRequest={() => void startConversationalDraft()}

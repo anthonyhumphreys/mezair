@@ -78,16 +78,22 @@ vi.mock('../automation-daemon.service.js', () => ({
     loaded: state.daemon,
   })),
 }));
-vi.mock('../llm.service.js', () => ({ callLlm: vi.fn() }));
+vi.mock('../llm.service.js', () => ({
+  callLlm: vi.fn(),
+  getConfiguredUtilityModel: () => 'gpt-6.1-sol',
+}));
 vi.mock('../chat-persistence.service.js', () => ({
   createChatThread: vi.fn(),
   getChatThread: vi.fn(),
   saveChatEntry: vi.fn(),
 }));
-import { getWorkflowTemplate } from '../workflow.service.js';
+import * as access from '../factory-access.service.js';
+import { callLlm } from '../llm.service.js';
+import { getWorkflowTemplate, listWorkflowTemplates } from '../workflow.service.js';
 import { createChatThread } from '../chat-persistence.service.js';
 import {
   activateFactory,
+  draftFactory,
   controlFactoryRun,
   getFactoryRun,
   listFactories,
@@ -480,4 +486,54 @@ it('bounds factory hydration, pages active runs before terminal history and comp
       cursor: { factoryId: 'other', terminal: 0, id: 'x', updatedAt: '' },
     }),
   ).rejects.toThrow('cursor');
+});
+
+describe('factory drafting latency and scope', () => {
+  it('fails before inference or backend discovery when no compatible workflow is saved', async () => {
+    vi.mocked(listWorkflowTemplates).mockReturnValue([]);
+    await expect(draftFactory('Build a factory', 'ws')).rejects.toThrow('Save a compatible');
+    expect(callLlm).not.toHaveBeenCalled();
+    expect(access.listRemoteOrganizations).not.toHaveBeenCalled();
+  });
+  it('uses a compact workflow catalogue and validates the generated draft', async () => {
+    vi.mocked(listWorkflowTemplates).mockReturnValue([structuredClone(workflow)]);
+    vi.mocked(callLlm).mockResolvedValue(JSON.stringify(definition));
+    const result = await draftFactory('Build a factory', 'ws');
+    expect(result.workflowTemplateId).toBe('workflow');
+    const [prompt, , , , options] = vi.mocked(callLlm).mock.calls.at(-1)!;
+    expect(prompt).not.toContain('"prompt":"Implement"');
+    expect(options).toMatchObject({
+      provider: 'codex',
+      priority: 'foreground',
+      textOnly: true,
+      reasoningEffort: 'medium',
+      timeoutMs: 90000,
+    });
+    expect(access.listRemoteOrganizations).not.toHaveBeenCalled();
+    expect(new FactoryStore(state.db).listFactories()).toHaveLength(0);
+  });
+  it('reports the provider error and rejects invented identifiers or sources', async () => {
+    vi.mocked(listWorkflowTemplates).mockReturnValue([structuredClone(workflow)]);
+    vi.mocked(callLlm).mockResolvedValue(JSON.stringify({ error: 'Choose a repository' }));
+    await expect(draftFactory('Build a factory', 'ws')).rejects.toThrow('Choose a repository');
+    vi.mocked(callLlm).mockResolvedValue(
+      JSON.stringify({ ...definition, workflowTemplateId: 'invented' }),
+    );
+    await expect(draftFactory('Build a factory', 'ws')).rejects.toThrow('unavailable');
+    vi.mocked(callLlm).mockResolvedValue(
+      JSON.stringify({ ...definition, github: { ...definition.github, owner: 'other' } }),
+    );
+    await expect(draftFactory('Build a factory', 'ws')).rejects.toThrow('exact delivery source');
+  });
+  it('does not accept a late response after cancellation', async () => {
+    vi.mocked(listWorkflowTemplates).mockReturnValue([structuredClone(workflow)]);
+    const controller = new AbortController();
+    vi.mocked(callLlm).mockImplementationOnce(async () => {
+      controller.abort(new Error('Cancelled'));
+      return JSON.stringify(definition);
+    });
+    await expect(
+      draftFactory('Build a factory', 'ws', { signal: controller.signal }),
+    ).rejects.toThrow('Cancelled');
+  });
 });

@@ -464,6 +464,17 @@ policy-based merging remain planned in `mezair-app/docs/plans/software-factories
 Status: implemented; current verification and baseline test failure documented below
 Owner project: `mezair-app`
 
+Factory drafting is a bounded foreground utility request: use the selected
+provider/model with a medium reasoning budget where supported, and isolate
+Codex/Claude data generation from repository tools and ambient project context.
+Check for an in-scope delivery repository and compatible saved workflow before
+inference; send only a compact workflow catalogue. Organisation choices may use
+at most sixty seconds of account-scoped discovery context already loaded by the
+editor; never cache authorisation. Validate returned source/workspace/template
+and connection identities, and retain fresh save/activation permission checks.
+Draft progress and cancellation belong only to the requesting window. A cancelled
+or expired request must not replace an editor's newer draft.
+
 A factory is a reviewed typed definition and immutable workflow revision. Saving
 or drafting does not activate it. Activation grants standing authority for its
 specified source, optional ready label, backlog policy, verification commands,

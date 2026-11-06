@@ -1,5 +1,6 @@
 import type {
   FactoryDefinition,
+  FactoryDraftProgress,
   FactoryDefinitionInput,
   FactoryDirectoryItem,
   FactoryEvidence,
@@ -23,6 +24,7 @@ import type {
 } from '../../../../shared/types';
 import { WorkspaceProvider } from '../../../contexts/WorkspaceContext';
 import { FactoriesView } from '../../factories/FactoriesView';
+import { summarizeRuns } from '../../factories/factory-line';
 import { WorkflowsView } from '../../workflows/WorkflowsView';
 
 /*
@@ -895,9 +897,32 @@ export function installFactoriesPreviewBridge(): void {
       summary: summarize(definition, workflow),
     };
   };
+  const draftListeners = new Set<(progress: FactoryDraftProgress) => void>();
+  const cancelledDrafts = new Set<string>();
   bridge.factories = {
-    draft: async (request: string) => {
-      await delay(900);
+    onDraftProgress: (callback: (progress: FactoryDraftProgress) => void) => {
+      draftListeners.add(callback);
+      return () => {
+        draftListeners.delete(callback);
+      };
+    },
+    cancelDraft: async (requestId: string) => {
+      cancelledDrafts.add(requestId);
+    },
+    draft: async (request: string, _workspaceId: string, requestId = 'preview') => {
+      const started = Date.now();
+      for (const message of [
+        'Checking saved workflows…',
+        'Generating with the selected provider…',
+        'Validating the draft…',
+      ]) {
+        if (cancelledDrafts.delete(requestId)) throw new Error('Draft cancelled.');
+        draftListeners.forEach((listener) =>
+          listener({ requestId, message, elapsedMs: Date.now() - started }),
+        );
+        await delay(params.has('draft-slow') ? 10000 : 1500);
+      }
+      if (cancelledDrafts.delete(requestId)) throw new Error('Draft cancelled.');
       const auto = /auto-?merge|automatically/i.test(request);
       return baseDefinition({
         name: auto ? 'Ready issues to merged PR' : 'Ready issues to reviewed PR',
@@ -966,6 +991,11 @@ export function installFactoriesPreviewBridge(): void {
     },
     list: async () => structuredClone(factories),
     get: async (id: string) => structuredClone(factories.find((item) => item.id === id) ?? null),
+    getRunSummary: async (factoryId: string) => {
+      const items =
+        factoryId === 'factory-ready' ? runs : factoryId === 'factory-docs' ? docsRuns : [];
+      return { ...summarizeRuns(items), total: items.length, complete: true };
+    },
     listRuns: async (factoryId: string) =>
       structuredClone(
         factoryId === 'factory-ready' ? runs : factoryId === 'factory-docs' ? docsRuns : [],

@@ -2,12 +2,12 @@ import { createHash } from 'node:crypto';
 import type { RepoIndexProgress, RepoSummary, ModuleSummary } from '../../shared/types.js';
 import { getDb } from '../db/database.js';
 import { analyseRepo, type IndexResult, type ModuleInfo } from './indexer.service.js';
-import { summariseModule, summariseRepo } from './foundry.service.js';
+import { summariseModules, summariseRepo } from './foundry.service.js';
 import { readFileContent, buildDirectoryTree } from '../utils/file-walker.js';
 import { onRepoIndexed } from './repobase.service.js';
 import { notifyIfUnfocused } from './notification.service.js';
 import { getSettings } from './settings.service.js';
-import { mapWithConcurrency } from '../utils/concurrency.js';
+import { getConfiguredUtilityModel, type LlmCallOptions } from './llm.service.js';
 import { getCurrentCommitSha } from './code-review-git.service.js';
 import { buildRepositoryMapInWorker } from './repository-map-worker.service.js';
 
@@ -81,8 +81,7 @@ function deriveStatusForTier(tier: string | null | undefined): 'connected' | 'in
 
 function currentIndexTier(db: ReturnType<typeof getDb>, repoId: string): string {
   const row = db.prepare('SELECT index_tier FROM repos WHERE id = ?').get(repoId) as
-    | { index_tier: string | null }
-    | undefined;
+    { index_tier: string | null } | undefined;
   return row?.index_tier ?? 'connected';
 }
 
@@ -135,8 +134,7 @@ export async function mapRepo(
 ): Promise<void> {
   const db = getDb();
   const repoRow = db.prepare('SELECT * FROM repos WHERE id = ?').get(repoId) as
-    | DbRepoRow
-    | undefined;
+    DbRepoRow | undefined;
   if (!repoRow) throw new Error(`Repo not found: ${repoId}`);
   const existingSummary = db
     .prepare('SELECT * FROM repo_summaries WHERE repo_id = ?')
@@ -288,15 +286,19 @@ export async function mapRepo(
  * plus the contents of its key files. A matching hash means the module is
  * unchanged and its LLM summary can be reused (§4.3).
  */
-export function computeModuleContentHash(module: ModuleInfo, repoPath: string): string {
-  const hash = createHash('sha256');
+export function computeModuleContentHash(
+  module: ModuleInfo,
+  repoPath: string,
+  identity = '',
+): string {
+  const hash = createHash('sha256').update('bounded-module-summary-v1:').update(identity);
   const manifest = module.files
     .map((file) => `${file.relativePath}:${file.sizeBytes}:${Math.round(file.mtimeMs ?? 0)}`)
     .sort();
   for (const line of manifest) hash.update(line).update('\n');
-  for (const keyFile of module.keyFiles.slice(0, 5)) {
+  for (const keyFile of module.keyFiles.slice(0, 3)) {
     hash.update('key:').update(keyFile).update('\n');
-    hash.update(readFileContent(repoPath, keyFile, 30_000));
+    hash.update(readFileContent(repoPath, keyFile, 1500));
     hash.update('\n');
   }
   return hash.digest('hex');
@@ -314,8 +316,7 @@ export async function enrichRepo(
 ): Promise<EnrichRepoResult> {
   const db = getDb();
   const repoRow = db.prepare('SELECT * FROM repos WHERE id = ?').get(repoId) as
-    | DbRepoRow
-    | undefined;
+    DbRepoRow | undefined;
   if (!repoRow) throw new Error(`Repo not found: ${repoId}`);
 
   const sendProgress: RepoIndexProgressFn = (message, percent, stage, detail) => {
@@ -323,6 +324,17 @@ export async function enrichRepo(
   };
   const acquireLlmSlot = options?.acquireLlmSlot ?? defaultAcquireLlmSlot;
   const result: EnrichRepoResult = { summarised: 0, skipped: 0, failed: 0 };
+  const settings = getSettings();
+  const model = getConfiguredUtilityModel(settings.llmProvider);
+  const modelIdentity = `${settings.llmProvider}:${model ?? 'provider-default'}:summary-v1`;
+  const summaryOptions: LlmCallOptions = {
+    provider: settings.llmProvider,
+    model,
+    priority: 'background',
+    reasoningEffort: 'low',
+    textOnly: !['cursor', 'devin'].includes(settings.llmProvider),
+    timeoutMs: 90_000,
+  };
 
   try {
     markIndexing(db, repoId);
@@ -337,6 +349,11 @@ export async function enrichRepo(
       repoId,
     );
 
+    const previousModuleCount = (
+      db
+        .prepare('SELECT count(*) AS count FROM module_summaries WHERE repo_id = ?')
+        .get(repoId) as { count: number }
+    ).count;
     // Drop module rows whose path no longer exists in the current split.
     const liveModulePaths = new Set(analysis.modules.map((mod) => mod.path));
     db.prepare(
@@ -367,15 +384,18 @@ export async function enrichRepo(
       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `);
 
-    await mapWithConcurrency(sortedModules, Math.min(sortedModules.length, 8), async (mod) => {
+    const changed: Array<{ mod: ModuleInfo; contentHash: string }> = [];
+    const progressPercent = () => Math.round(15 + modulePercentSpan * completedModules);
+    const reportCompleted = () =>
+      sendProgress(
+        `Analysed ${completedModules} of ${total} module${total === 1 ? '' : 's'}…`,
+        progressPercent(),
+        'analysing-module',
+      );
+    for (const mod of sortedModules) {
       throwIfCancelled(repoId, options);
-      const contentHash = computeModuleContentHash(mod, repoRow.path);
+      const contentHash = computeModuleContentHash(mod, repoRow.path, modelIdentity);
       const existing = existingModules.get(mod.path);
-
-      const progressPercent = () => Math.round(15 + modulePercentSpan * completedModules);
-      const message = `Analysing module: ${mod.path}`;
-
-      // Content-hash skip: unchanged modules keep their existing summary.
       if (existing?.content_hash === contentHash && existing.purpose) {
         summarisedByPath.set(mod.path, {
           path: mod.path,
@@ -384,89 +404,111 @@ export async function enrichRepo(
           keyFiles: safeParseJson(existing.key_files, mod.keyFiles),
           dependencies: safeParseJson(existing.dependencies, []),
         });
-        result.skipped += 1;
-        completedModules += 1;
-        sendProgress(
-          `Analysed ${completedModules} of ${total} module${total === 1 ? '' : 's'}...`,
-          progressPercent(),
-          'analysing-module',
-        );
-        return;
-      }
-
+        result.skipped++;
+        completedModules++;
+        reportCompleted();
+      } else changed.push({ mod, contentHash });
+    }
+    // At most four modules and ~24K input characters per inference. Keep one
+    // background inference active, rather than queuing eight full agent runs.
+    for (let offset = 0; offset < changed.length; offset += 4) {
+      throwIfCancelled(repoId, options);
+      const batch = changed.slice(offset, offset + 4);
+      const message = `Analysing ${batch.map(({ mod }) => mod.path).join(', ')}…`;
       sendProgress(message, progressPercent(), 'analysing-module');
-      const keyFileContents = mod.keyFiles
-        .slice(0, 5)
-        .map((filePath) => {
-          const content = readFileContent(repoRow.path, filePath, 30_000);
-          return `### ${filePath}\n\`\`\`\n${content}\n\`\`\``;
-        })
-        .join('\n\n');
-
       try {
-        const summary = await acquireLlmSlot(() =>
-          summariseModule(
+        const summaries = await acquireLlmSlot(() => {
+          throwIfCancelled(repoId, options);
+          return summariseModules(
             repoRow.name,
-            mod.path,
-            mod.directoryTree,
-            keyFileContents,
-            repoRow.path,
+            batch.map(({ mod }) => ({
+              path: mod.path,
+              directoryTree: mod.directoryTree.slice(0, 1500),
+              keyFileContents: mod.keyFiles
+                .slice(0, 3)
+                .map((file) => `### ${file}\n${readFileContent(repoRow.path, file, 1500)}`)
+                .join('\n')
+                .slice(0, 5000),
+            })),
             {
+              ...summaryOptions,
               onProgress: (detail) =>
                 sendProgress(message, progressPercent(), 'analysing-module', detail),
             },
-          ),
-        );
-        summary.fileCount = mod.files.length;
-        // Write each module summary as it completes so RepoDetail and persona
-        // context improve progressively.
-        upsertModule.run(
-          repoId,
-          mod.path,
-          summary.purpose,
-          summary.fileCount,
-          JSON.stringify(summary.keyFiles),
-          JSON.stringify(summary.dependencies),
-          contentHash,
-        );
-        summarisedByPath.set(mod.path, summary);
-        result.summarised += 1;
+          );
+        });
+        throwIfCancelled(repoId, options);
+        for (const { mod, contentHash } of batch) {
+          const summary = summaries.find((summary) => summary.path === mod.path);
+          if (!summary) throw new Error('Missing module summary.');
+          summary.fileCount = mod.files.length;
+          upsertModule.run(
+            repoId,
+            mod.path,
+            summary.purpose,
+            summary.fileCount,
+            JSON.stringify(summary.keyFiles),
+            JSON.stringify(summary.dependencies),
+            contentHash,
+          );
+          summarisedByPath.set(mod.path, summary);
+          result.summarised++;
+        }
       } catch (err) {
+        throwIfCancelled(repoId, options);
         if (err instanceof RepoIndexCancelledError) throw err;
-        console.error(`[Indexer] Failed to summarise module ${mod.path}:`, err);
         sendProgress(
-          `Using fallback for module ${mod.path}`,
+          'Using fallback module summaries',
           progressPercent(),
           'analysing-module',
           shortErrorMessage(err),
         );
-        // Fallback row without a content_hash so the next run retries it.
-        upsertModule.run(
-          repoId,
-          mod.path,
-          existing?.purpose ?? 'Analysis failed',
-          mod.files.length,
-          JSON.stringify(mod.keyFiles),
-          JSON.stringify(existing ? safeParseJson(existing.dependencies, []) : []),
-          null,
-        );
-        summarisedByPath.set(mod.path, {
-          path: mod.path,
-          purpose: existing?.purpose ?? 'Analysis failed',
-          fileCount: mod.files.length,
-          keyFiles: mod.keyFiles,
-          dependencies: existing ? safeParseJson(existing.dependencies, []) : [],
-        });
-        result.failed += 1;
-      } finally {
-        completedModules += 1;
-        sendProgress(
-          `Analysed ${completedModules} of ${total} module${total === 1 ? '' : 's'}...`,
-          progressPercent(),
-          'analysing-module',
-        );
+        for (const { mod } of batch) {
+          const existing = existingModules.get(mod.path);
+          const summary = {
+            path: mod.path,
+            purpose: existing?.purpose ?? 'Analysis failed',
+            fileCount: mod.files.length,
+            keyFiles: mod.keyFiles,
+            dependencies: existing ? safeParseJson<string[]>(existing.dependencies, []) : [],
+          };
+          // No hash: failed batches are retried on the next enrichment.
+          upsertModule.run(
+            repoId,
+            mod.path,
+            summary.purpose,
+            summary.fileCount,
+            JSON.stringify(summary.keyFiles),
+            JSON.stringify(summary.dependencies),
+            null,
+          );
+          summarisedByPath.set(mod.path, summary);
+          result.failed++;
+        }
       }
-    });
+      completedModules += batch.length;
+      reportCompleted();
+    }
+
+    // Reuse a successful overview only when module membership and all inputs match.
+    const previousOverview = db
+      .prepare(
+        'SELECT overview, index_provider, model_version FROM repo_summaries WHERE repo_id = ?',
+      )
+      .get(repoId) as
+      { overview: string; index_provider: string; model_version: string } | undefined;
+    if (
+      result.skipped === total &&
+      previousModuleCount === total &&
+      previousOverview?.overview &&
+      previousOverview.index_provider === 'local-llm' &&
+      previousOverview.model_version === modelIdentity
+    ) {
+      throwIfCancelled(repoId, options);
+      markTierReached(db, repoId, 'enriched');
+      sendProgress('Indexing complete', 100, 'complete');
+      return result;
+    }
 
     throwIfCancelled(repoId, options);
 
@@ -482,9 +524,9 @@ export async function enrichRepo(
     );
 
     const configContents = analysis.configFiles
-      .slice(0, 5)
+      .slice(0, 3)
       .map((filePath) => {
-        const content = readFileContent(repoRow.path, filePath, 10_000);
+        const content = readFileContent(repoRow.path, filePath, 2000);
         return `### ${filePath}\n\`\`\`\n${content}\n\`\`\``;
       })
       .join('\n\n');
@@ -501,6 +543,7 @@ export async function enrichRepo(
           configContents,
           repoRow.path,
           {
+            ...summaryOptions,
             onProgress: (detail) =>
               sendProgress('Generating repository overview...', 92, 'generating-summary', detail),
           },
@@ -527,6 +570,7 @@ export async function enrichRepo(
       };
     }
 
+    throwIfCancelled(repoId, options);
     sendProgress('Saving results...', 97, 'saving');
 
     db.prepare(
@@ -560,7 +604,7 @@ export async function enrichRepo(
       JSON.stringify(repoSummary.entryPoints),
       JSON.stringify(repoSummary.configFiles),
       JSON.stringify(analysis.languages),
-      repoSummary.indexProvider === 'local-llm' ? 'gpt-5.3-codex' : 'local-structural',
+      repoSummary.indexProvider === 'local-llm' ? modelIdentity : 'local-structural',
       repoSummary.indexMode ?? 'light',
       repoSummary.indexProvider ?? 'local-fallback',
       JSON.stringify(repoSummary.indexWarnings ?? []),

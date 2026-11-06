@@ -630,7 +630,15 @@ export interface MezairAPI {
   };
 
   factories: {
-    draft: (request: string, workspaceId: string) => Promise<FactoryDefinitionInput>;
+    draft: (
+      request: string,
+      workspaceId: string,
+      requestId?: string,
+    ) => Promise<FactoryDefinitionInput>;
+    cancelDraft: (requestId: string) => Promise<void>;
+    onDraftProgress: (
+      callback: (progress: import('./factories.js').FactoryDraftProgress) => void,
+    ) => () => void;
     preview: (
       definition: FactoryDefinitionInput,
       factoryId?: string,

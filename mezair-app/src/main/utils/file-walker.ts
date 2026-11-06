@@ -1,6 +1,7 @@
 import { globby } from 'globby';
 import fs from 'node:fs';
 import path from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 
 export interface FileEntry {
   relativePath: string;
@@ -101,14 +102,20 @@ export async function walkRepo(repoPath: string): Promise<FileEntry[]> {
 
 export function readFileContent(repoPath: string, relativePath: string, maxBytes = 50_000): string {
   const fullPath = path.join(repoPath, relativePath);
+  let fd: number | undefined;
   try {
-    const content = fs.readFileSync(fullPath, 'utf-8');
-    if (content.length > maxBytes) {
-      return content.slice(0, maxBytes) + '\n... [truncated]';
-    }
-    return content;
+    fd = fs.openSync(fullPath, 'r');
+    const buffer = Buffer.alloc(Math.max(0, maxBytes) + 1);
+    const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, 0);
+    // write() deliberately omits an incomplete trailing UTF-8 sequence.
+    const content = new StringDecoder('utf8').write(
+      buffer.subarray(0, Math.min(bytesRead, maxBytes)),
+    );
+    return bytesRead > maxBytes ? content + '\n... [truncated]' : content;
   } catch {
     return '';
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
   }
 }
 

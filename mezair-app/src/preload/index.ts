@@ -504,12 +504,22 @@ const api: MezairAPI = {
   },
 
   factories: {
-    draft: (request: string, workspaceId: string) =>
+    draft: (request: string, workspaceId: string, requestId?: string) =>
       ipcRenderer.invoke(
         'factories:draft',
         request,
         workspaceId,
+        requestId,
       ) as Promise<FactoryDefinitionInput>,
+    cancelDraft: (requestId) => ipcRenderer.invoke('factories:cancel-draft', requestId),
+    onDraftProgress: (callback) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        progress: import('../shared/factories.js').FactoryDraftProgress,
+      ) => callback(progress);
+      ipcRenderer.on('factories:draft-progress', listener);
+      return () => ipcRenderer.removeListener('factories:draft-progress', listener);
+    },
     preview: (
       definition: FactoryDefinitionInput,
       factoryId?: string,

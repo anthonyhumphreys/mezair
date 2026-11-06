@@ -45,7 +45,7 @@ import {
   startChatWorkflowRun,
   validateWorkflowGraph,
 } from './workflow.service.js';
-import { callLlm } from './llm.service.js';
+import { callLlm, getConfiguredUtilityModel } from './llm.service.js';
 import { installAutomationDaemon, isAutomationDaemonMode } from './automation-daemon.service.js';
 import { previewBuild } from '../../shared/preview-build.js';
 import type {
@@ -180,6 +180,7 @@ export async function previewFactory(
 export async function draftFactory(
   request: string,
   workspaceId: string,
+  options?: { signal?: AbortSignal; onProgress?: (message: string) => void },
 ): Promise<FactoryDefinitionInput> {
   if (!request.trim() || request.length > 24000) throw new Error('Describe a bounded factory.');
   const repos = getDb()
@@ -187,8 +188,34 @@ export async function draftFactory(
       'SELECT r.id,r.name,r.remote_url FROM repos r JOIN workspace_repos w ON w.repo_id=r.id WHERE w.workspace_id=?',
     )
     .all(workspaceId);
-  const templates = listWorkflowTemplates();
-  const organizations = await access.listRemoteOrganizations().catch(() => []);
+  options?.signal?.throwIfAborted();
+  options?.onProgress?.('Checking repositories and saved workflows…');
+  const templates = listWorkflowTemplates().filter((template) => {
+    try {
+      validateFactoryWorkflow(template);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  if (
+    !(repos as { remote_url: string | null }[]).some((repo) =>
+      parseFactoryDeliveryRemote(repo.remote_url ?? ''),
+    )
+  )
+    throw new Error('Add a repository to this workspace before drafting a factory.');
+  if (!templates.length)
+    throw new Error(
+      'Save a compatible local Codex workflow in Workflows before drafting a factory.',
+    );
+  // Organisation discovery is optional context, never an authorisation decision.
+  // The settings UI already loads this list; do not put a backend round trip on drafting.
+  const organizations =
+    draftOrganizationScope === actor().accountScope &&
+    Date.now() - draftOrganizationsLoadedAt < 60_000
+      ? draftOrganizations
+      : [];
+  const settings = getSettings();
   const response = await callLlm(
     [
       'Return only strict JSON for a Mezair software factory with GitHub or Azure DevOps PR delivery. Never activate or execute it. Use these fields: name,workspaceId,repoId,delivery:{provider:github,host,owner,repo,baseBranch} or {provider:ado,organizationUrl,project,repo,baseBranch},readyLabel:string,workItems?:{provider:github|ado|jira|linear,connectionId,scope},includeExisting:boolean,workflowTemplateId,criteria:string[],checks:string[],postMergeChecks:string[],limits:{repairRounds,maxRunMinutes,maxCommands,maxConcurrentRuns},publication:{enabled,draft},merge:{mode:human-approved|auto-merge,method:squash|merge|rebase,requiredChecks:string[],requireApproval:boolean},access:{kind:private} or {kind:organization,authorization:mezair,organizationId,visibility:organization|team|restricted,teamId?,members:[{userId,role:viewer|operator|owner}]}. Copy workItems exactly from one supplied workItemSources entry, or omit only for GitHub delivery to read its issues using gh. Azure DevOps delivery requires a work item source connection. Use canonical https://dev.azure.com/organisation URLs for Azure DevOps. readyLabel is the optional ready label for ANY intake provider: empty string admits all labels. Default label empty and includeExisting false; enable existing backlog only when requested. For new organisation factories use authorization mezair: viewing follows Mezair roles and only the executor needs provider credentials. Use only supplied organisation IDs; never invent administrators. Each criterion has one exact reviewed command at same index. At least one postMergeChecks command. Defaults: repairRounds2,maxRunMinutes90,maxCommands40,maxConcurrentRuns1,publication enabled drafttrue,human-approved squash requireApprovaltrue. Only local Codex app-server workflow templates supported. Do not invent repo/template/connection IDs; if missing, explain error in JSON {error:string}.',
@@ -200,7 +227,11 @@ export async function draftFactory(
           name: repo.name,
           delivery: parseFactoryDeliveryRemote(repo.remote_url ?? ''),
         })),
-        workflows: templates,
+        workflows: templates.map(({ id, name, description }) => ({
+          id,
+          name,
+          description: description.slice(0, 1000),
+        })),
         organizations,
         workItemSources: (getSettings().workItemConnections ?? []).flatMap((connection) => {
           try {
@@ -213,10 +244,40 @@ export async function draftFactory(
     ].join('\n\n'),
     6000,
     0.2,
+    1,
+    {
+      provider: settings.llmProvider,
+      model: getConfiguredUtilityModel(settings.llmProvider),
+      taskClass: 'simple-json',
+      textOnly: !['cursor', 'devin'].includes(settings.llmProvider),
+      reasoningEffort: 'medium',
+      priority: 'foreground',
+      timeoutMs: 90_000,
+      signal: options?.signal,
+      onProgress: options?.onProgress,
+    },
   );
+  options?.signal?.throwIfAborted();
+  options?.onProgress?.('Validating the draft…');
   const text = response.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
   const value = JSON.parse(text) as unknown;
-  return validateFactoryDefinition(value);
+  if (value && typeof value === 'object' && 'error' in value && typeof value.error === 'string')
+    throw new Error(value.error.slice(0, 1000));
+  const definition = validateFactoryDefinition(value);
+  if (
+    definition.workspaceId !== workspaceId ||
+    !templates.some((template) => template.id === definition.workflowTemplateId)
+  )
+    throw new Error('The draft selected an unavailable workspace or workflow. Please retry.');
+  const draftAccess = definition.access;
+  if (
+    draftAccess.kind === 'organization' &&
+    !organizations.some((organization) => organization.id === draftAccess.organizationId)
+  )
+    throw new Error('Choose an available organisation in factory settings and retry.');
+  validateLocalSource(definition);
+  validateFactoryWorkItemConnection(definition);
+  return definition;
 }
 async function findFactory(id: string): Promise<FactoryDefinition | null> {
   const local = store().getFactory(id);
@@ -358,7 +419,17 @@ export async function listFactories(workspaceId?: string): Promise<FactoryDefini
     }
   return visible;
 }
-export const listFactoryOrganizations = access.listRemoteOrganizations;
+let draftOrganizationScope: string | undefined;
+let draftOrganizationsLoadedAt = 0;
+let draftOrganizations: Awaited<ReturnType<typeof access.listRemoteOrganizations>> = [];
+export async function listFactoryOrganizations() {
+  const scope = actor().accountScope;
+  const organizations = await access.listRemoteOrganizations();
+  draftOrganizationsLoadedAt = Date.now();
+  draftOrganizationScope = scope;
+  draftOrganizations = organizations;
+  return organizations;
+}
 export const listFactoryOrganizationMembers = access.listRemoteFactoryMembers;
 export const validateFactoryOrganizationTeam = access.validateRemoteFactoryTeam;
 export const registerFactoryOrganizationKey = access.registerRemoteFactoryKey;

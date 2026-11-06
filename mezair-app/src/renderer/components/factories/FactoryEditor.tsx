@@ -464,6 +464,8 @@ export function FactoryEditor({
   repinWorkflow,
   request,
   drafting,
+  draftProgress,
+  onCancelDraft,
   draftedFromRequest,
   onRequest,
   onDraftFromRequest,
@@ -485,6 +487,8 @@ export function FactoryEditor({
   repinWorkflow: boolean;
   request: string;
   drafting: boolean;
+  draftProgress?: string;
+  onCancelDraft?: () => void;
   draftedFromRequest: boolean;
   onRequest: (value: string) => void;
   onDraftFromRequest: () => void;
@@ -591,8 +595,18 @@ export function FactoryEditor({
                 <Sparkles size={13} aria-hidden="true" />
                 {drafting ? 'Drafting…' : 'Draft definition'}
               </Button>
+              {drafting && (
+                <Button size="sm" variant="secondary" onClick={onCancelDraft}>
+                  Cancel draft
+                </Button>
+              )}
             </div>
           </div>
+          {drafting && (
+            <p role="status" className="mt-2 text-xs text-text-secondary">
+              {draftProgress || 'Preparing draft…'}
+            </p>
+          )}
           <p className="mt-2 text-xs text-text-tertiary">
             {draftedFromRequest
               ? 'Drafted from your description. Every station below is editable; check them before review.'

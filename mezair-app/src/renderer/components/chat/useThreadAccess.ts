@@ -61,7 +61,7 @@ export function useThreadAccess(
     return () => {
       cancelled = true;
     };
-  }, [workspaceId]);
+  }, [workspaceId, workspaceDefault]);
 
   const priorWorkspaceDefault = useRef<{ key: string; level: CodexMode | null } | null>(null);
   useEffect(() => {
@@ -127,9 +127,6 @@ export function useThreadAccess(
     setLevel,
     /** Per-thread overrides for rail badges. */
     threadLevels: store?.threads,
-    defaultLevel:
-      !store.defaultSelected && workspaceDefault && isChatAccessLevel(workspaceDefault)
-        ? workspaceDefault
-        : store?.defaultLevel,
+    defaultLevel: resolveThreadAccessForDisplay(store, null, workspaceDefault, provider).mode,
   };
 }

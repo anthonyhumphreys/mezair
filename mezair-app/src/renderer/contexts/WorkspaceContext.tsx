@@ -22,6 +22,7 @@ import type {
 } from '../../shared/types';
 import { useOptionalRepoIndex } from './RepoIndexContext';
 import { pollWhileVisible } from '../utils/visible-polling';
+import { applyWorkspaceAccessDefault } from '../components/chat/thread-access';
 
 interface WorkspaceContextValue {
   workspaces: WorkspaceSummary[];
@@ -399,9 +400,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // until `workspace_preferences.access` exists — the Settings → Workspace
   // panel (later wave) reads/writes through this context pair so only the
   // storage adapter changes.
-  const accessDefaultKey = activeWorkspace
-    ? `mezair:workspace-access-default:${activeWorkspace.id}`
+  const accessWorkspaceId = activeWorkspace?.id;
+  const accessDefaultKey = accessWorkspaceId
+    ? `mezair:workspace-access-default:${accessWorkspaceId}`
     : null;
+  const currentAccessDefaultKey = useRef(accessDefaultKey);
+  currentAccessDefaultKey.current = accessDefaultKey;
   useEffect(() => {
     if (!accessDefaultKey) {
       setWorkspaceAccessDefaultState(null);
@@ -417,7 +421,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const setWorkspaceAccessDefault = useCallback(
     (level: CodexMode | null) => {
-      setWorkspaceAccessDefaultState(level);
+      if (currentAccessDefaultKey.current === accessDefaultKey)
+        setWorkspaceAccessDefaultState(level);
+      if (accessWorkspaceId) applyWorkspaceAccessDefault(accessWorkspaceId, level);
       if (!accessDefaultKey) return;
       try {
         if (level === null) window.localStorage.removeItem(accessDefaultKey);
@@ -426,7 +432,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         /* localStorage unavailable — keep the in-memory value */
       }
     },
-    [accessDefaultKey],
+    [accessDefaultKey, accessWorkspaceId],
   );
 
   const switchWorkspace = useCallback(

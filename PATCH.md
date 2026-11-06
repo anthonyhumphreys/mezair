@@ -912,7 +912,9 @@ feedback preserves the selected profile while retaining the read-only clamp.
 Re-check live workflow settings after asynchronous setup and before turn start.
 Changing one thread must not overwrite global defaults or another thread's access.
 Use a shared in-memory selection for the chip, ordinary/prepared launches and
-sends; localStorage is persistence only. Preserve the source provider when
+sends; localStorage is persistence only. Workspace settings update the same live
+default even while chat is unmounted; an older cached default cannot override a
+more restrictive workspace default. Explicit thread overrides remain independent. Preserve the source provider when
 translating a selection, and require an explicit replacement for an unsupported
 profile. Never turn allowlist-only access into default approvals silently.
 Invalid display selections stay read-only; remote sends reject invalid or

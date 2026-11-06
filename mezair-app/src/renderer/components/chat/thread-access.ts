@@ -1,4 +1,5 @@
 import type { AgentProvider, CodexMode } from '../../../shared/types';
+import { constrainPermissionMode } from '../../../../cloud/contract/permissions';
 import {
   isAgentProvider,
   isAcpAgentProvider,
@@ -488,6 +489,21 @@ export function writeThreadAccessStore(workspaceId: string, store: ThreadAccessS
   }
 }
 
+/** Workspace settings also update the live selection when chat is unmounted. */
+export function applyWorkspaceAccessDefault(workspaceId: string, level: CodexMode | null): void {
+  const current = readThreadAccessStore(workspaceId);
+  if (level !== null && current.defaultSelected && current.defaultLevel === level) return;
+  writeThreadAccessStore(workspaceId, {
+    ...current,
+    // A reset remains read-only until the app default has been refreshed.
+    defaultLevel: level ?? 'read-only',
+    defaultSelected: level !== null,
+    ...(level === null ? { appliedLevel: null } : {}),
+    defaultProfile: 'default',
+    defaultProvider: undefined,
+  });
+}
+
 /**
  * The level a thread should run with: explicit per-thread override, then the
  * per-workspace default from Settings → Workspace (ST9/J10), then the store's
@@ -562,7 +578,11 @@ export function resolveThreadAccessSelection(
   const mode = resolveThreadAccessLevel(
     store,
     threadId,
-    store.defaultSelected ? store.defaultLevel : workspaceDefault,
+    store.defaultSelected
+      ? workspaceDefault && isChatAccessLevel(workspaceDefault)
+        ? constrainPermissionMode(store.defaultLevel, workspaceDefault)
+        : store.defaultLevel
+      : workspaceDefault,
   );
   const profile =
     mode === 'on-request' ? resolveThreadPermissionProfile(store, threadId) : 'default';

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   CHAT_ACCESS_LEVELS,
   readThreadAccessStore,
+  applyWorkspaceAccessDefault,
   writeThreadAccessStore,
   resolveThreadAccessSelection,
   resolveThreadAccessForDisplay,
@@ -320,6 +321,97 @@ describe('chatAccessOptionSelected / resolveChatAccessChipLabel', () => {
 });
 
 describe('current access authority', () => {
+  it('resets to a safe default until the app setting is known, preserving explicit threads', () => {
+    writeThreadAccessStore('reset-default', {
+      defaultLevel: 'full-access',
+      defaultSelected: true,
+      appliedLevel: 'full-access',
+      threads: { explicit: 'full-access' },
+    });
+    applyWorkspaceAccessDefault('reset-default', null);
+    const pending = readThreadAccessStore('reset-default');
+    expect(resolveThreadAccessSelection(pending, 'new-thread', null, 'codex').mode).toBe(
+      'read-only',
+    );
+    const refreshed = reconcileThreadAccessStore(pending, 'on-request');
+    expect(resolveThreadAccessSelection(refreshed, 'new-thread', null, 'codex').mode).toBe(
+      'on-request',
+    );
+    expect(resolveThreadAccessSelection(refreshed, 'explicit', null, 'codex').mode).toBe(
+      'full-access',
+    );
+    applyWorkspaceAccessDefault('reset-default', 'read-only');
+    expect(
+      reconcileThreadAccessStore(readThreadAccessStore('reset-default'), 'full-access')
+        .defaultLevel,
+    ).toBe('read-only');
+  });
+
+  it('caps an older cached default when workspace settings have been lowered outside chat', () => {
+    const old: ThreadAccessStore = {
+      defaultLevel: 'full-access',
+      defaultSelected: true,
+      appliedLevel: null,
+      threads: {},
+    };
+    expect(resolveThreadAccessSelection(old, 'new-thread', 'read-only', 'codex').mode).toBe(
+      'read-only',
+    );
+    expect(
+      resolveThreadAccessSelection(
+        setThreadAccessLevel(old, 'explicit-thread', 'full-access'),
+        'explicit-thread',
+        'read-only',
+        'codex',
+      ).mode,
+    ).toBe('full-access');
+  });
+  it('updates the live default for settings changes without a mounted chat', () => {
+    writeThreadAccessStore('external-default', {
+      defaultLevel: 'full-access',
+      defaultSelected: true,
+      appliedLevel: null,
+      threads: {},
+    });
+    applyWorkspaceAccessDefault('external-default', 'read-only');
+    expect(
+      resolveThreadAccessSelection(
+        readThreadAccessStore('external-default'),
+        'new-thread',
+        'full-access',
+        'codex',
+      ).mode,
+    ).toBe('read-only');
+    applyWorkspaceAccessDefault('external-default', 'full-access');
+    expect(
+      resolveThreadAccessSelection(
+        readThreadAccessStore('external-default'),
+        'new-thread',
+        'full-access',
+        'codex',
+      ).mode,
+    ).toBe('full-access');
+  });
+  it('preserves an approval refinement when the chip publishes its matching workspace default', () => {
+    writeThreadAccessStore('profile-default', {
+      defaultLevel: 'on-request',
+      defaultProfile: 'auto-review',
+      defaultProvider: 'codex',
+      defaultSelected: true,
+      appliedLevel: null,
+      threads: {},
+    });
+    applyWorkspaceAccessDefault('profile-default', 'on-request');
+    expect(
+      resolveThreadAccessSelection(
+        readThreadAccessStore('profile-default'),
+        null,
+        'on-request',
+        'codex',
+      ).permissionProfile,
+    ).toBe('auto-review');
+  });
+
   it('displays read-only and blocks remote sends when a saved restriction cannot translate', () => {
     const store: ThreadAccessStore = {
       defaultLevel: 'on-request',

@@ -294,7 +294,10 @@ const api: MezairAPI = {
       workspaceId: string,
       rootPath: string,
       personaId: string,
-      options?: Pick<import('../shared/types.js').ChatStartOptions, 'provider' | 'model'>,
+      options?: Pick<
+        import('../shared/types.js').ChatStartOptions,
+        'provider' | 'model' | 'codexMode' | 'permissionProfile' | 'threadId'
+      >,
     ) =>
       ipcRenderer.invoke('chat:start-scaffold-session', workspaceId, rootPath, personaId, options),
     send: (
@@ -309,6 +312,8 @@ const api: MezairAPI = {
       ipcRenderer.on('chat:event', handler);
       return () => ipcRenderer.removeListener('chat:event', handler);
     },
+    invalidateThreadAccess: (threadId: string) =>
+      ipcRenderer.invoke('chat:invalidate-thread-access', threadId),
     stopSession: (sessionId: string) => ipcRenderer.invoke('chat:stop-session', sessionId),
     interrupt: (sessionId: string) => ipcRenderer.invoke('chat:interrupt', sessionId),
     steer: (sessionId: string, message: string, attachments?: ChatAttachment[]) =>

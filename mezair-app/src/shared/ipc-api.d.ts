@@ -429,6 +429,7 @@ export interface MezairAPI {
       pullRequestId: string,
     ): Promise<ChatThreadPullRequestLink[]>;
     refreshPullRequestLink(threadId: string, linkId: string): Promise<ChatThreadPullRequestLink>;
+    invalidateThreadAccess(threadId: string): Promise<string[]>;
     startSession: (
       repoIds: string[],
       personaId: string,
@@ -438,7 +439,10 @@ export interface MezairAPI {
       workspaceId: string,
       rootPath: string,
       personaId: string,
-      options?: Pick<ChatStartOptions, 'provider' | 'model'>,
+      options?: Pick<
+        ChatStartOptions,
+        'provider' | 'model' | 'codexMode' | 'permissionProfile' | 'threadId'
+      >,
     ) => Promise<CodexSession>;
     send: (
       sessionId: string,

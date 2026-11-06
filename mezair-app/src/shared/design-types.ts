@@ -31,6 +31,7 @@ export interface ChatStartOptions {
   model?: string;
   /** Per-session access override, used for provider-enforced read-only sessions. */
   codexMode?: CodexMode;
+  permissionProfile?: import('./agent-access.js').PermissionProfile;
   threadId?: string;
   providerThreadId?: string;
   forkFromProviderThreadId?: string;

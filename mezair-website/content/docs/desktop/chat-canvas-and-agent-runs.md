@@ -41,14 +41,28 @@ Optional local models only handle short helper prompts. Apple Foundation Models,
 
 ## Permissions and live control
 
-Each session starts with a permission mode:
+The thread access menu shows the selected provider's controls. Codex, OpenAI,
+Azure and LLMGateway use the Codex execution runtime:
 
-| Mode | What the agent can do |
+| Choice | What the agent can do |
 | --- | --- |
-| Read only | Look and explain, without changing files. |
-| On request | Ask before changing files or running commands that need approval. |
-| Workspace auto | Work inside the selected workspace, within what the provider allows. |
-| Full access | Use the widest local access the provider supports. Choose this carefully. |
+| Read only | Use a read-only sandbox; request approval for changes or network access. |
+| Ask for extra access | Edit and run commands inside the workspace sandbox; ask to go beyond it. |
+| Approve for me | Keep the workspace sandbox and use Codex's automatic review for requests for extra access. Requires a current Codex runtime. |
+| Auto in workspace | Work inside the workspace sandbox without approval prompts; blocked actions stay blocked. |
+| Full access | Run without the filesystem/network sandbox and skip approval prompts. Provider rules still apply. |
+
+Claude Code, Devin and Cursor use their native agent and approval modes.
+**Ask**, **Plan**, **Accept edits** and **Smart** do not promise a filesystem
+sandbox. Strict read-only choices are unavailable where they cannot be enforced.
+See [Claude Code](/docs/desktop/claude-code) for its approval controls.
+
+Changing thread access does not change another chat or the app default. Local
+Mezair-managed delegations inherit the originating chat's access unless the task
+explicitly requests read-only. Remote tasks default to read-only and obey the
+destination's limits. Mezair rejects a strict boundary that the chosen provider
+cannot preserve. Provider-native subagents and arbitrary shell-launched CLIs
+remain governed by their provider and inherited process sandbox.
 
 While a turn runs, you can add context to steer it, interrupt the current step or stop the session. Approval and input requests stay visible in the thread and in the Inbox. Read the command, path, permission or data being asked for before you approve it.
 

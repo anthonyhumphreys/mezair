@@ -6,6 +6,7 @@
 // contract other kinds code against; keep them stable.
 
 import { randomUUID } from 'node:crypto';
+import { assertAgentToolContextCurrent } from '../services/agent-mcp/registry.js';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
@@ -218,7 +219,9 @@ export async function requestUserApproval(
     signal,
     options,
   );
-  return result.status === 'answered' && result.answers.approve === true;
+  if (result.status !== 'answered' || result.answers.approve !== true) return false;
+  assertAgentToolContextCurrent(ctx);
+  return true;
 }
 
 // ---------------------------------------------------------------------------

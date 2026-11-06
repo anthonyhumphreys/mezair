@@ -52,6 +52,11 @@ describe('normaliseWorkflowNodes', () => {
     expect(normaliseWorkflowNodes([node('legacy')])[0].provider).toBe('codex');
   });
 
+  it('keeps Claude when a chat delegates to a different provider', () => {
+    expect(normaliseWorkflowNodes([{ ...node('claude'), provider: 'claude' }])[0].provider).toBe(
+      'claude',
+    );
+  });
   it('preserves an explicit enabled provider identity', () => {
     expect(normaliseWorkflowNodes([{ ...node('review'), provider: 'cursor' }])[0].provider).toBe(
       'cursor',

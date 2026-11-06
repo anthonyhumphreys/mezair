@@ -115,6 +115,14 @@ describe('Claude Code provider', () => {
     expect(resolveClaudeModel('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
   });
 
+  it.each([
+    ['auto', 'auto'],
+    ['dont-ask', 'dontAsk'],
+  ] as const)('applies native %s approvals before prompting', async (modeId, expected) => {
+    await start();
+    send('session/set_mode', { modeId });
+    await vi.waitFor(() => expect(setPermissionMode).toHaveBeenCalledWith(expected));
+  });
   it('uses the installed CLI, user settings, persona prompt and stdin MCP config', async () => {
     await start();
     expect(options.pathToClaudeCodeExecutable).toBe('/local/bin/claude');

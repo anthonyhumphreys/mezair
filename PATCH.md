@@ -359,7 +359,9 @@ Owner modules: `validation.service.ts`, the validation surface triple and its
 registry entries, work-item launch/history, legacy review route handling,
 workflow validation tools and the shared question lifecycle. Local workflow
 tool sessions allow only validation, surface reads and conversational questions,
-with current role/access checks and revocation when the worker exits. Saved
+with current role/access checks and revocation when the worker exits. Re-check
+the issuing authority after source refresh and approval; a stopped or replaced
+session cannot start or continue queued validation commands. Saved
 validation steps cannot complete without current per-criterion evidence.
 Verify Node/web typechecks, lint, service/real-Git tests, the Desktop suite and
 production build. Browser replay is presentation evidence, not native acceptance.
@@ -862,8 +864,11 @@ existing agent-client session controls; Claude is not an ACP subprocess.
 - Attach Mezair MCP through SDK stdin configuration with the existing
   session-scoped bearer. Never put it in process arguments or diagnostics.
 - Map permission controls to Claude's default, acceptEdits,
-  bypassPermissions and plan modes. Plan mode is not a filesystem sandbox;
-  strict read-only and temporary chats remain unavailable. Factory workers,
+  auto, dontAsk, bypassPermissions and plan modes. Auto review depends on the
+  installed CLI/account/model and must surface rejection without falling back
+  to bypass. Plan mode is not a filesystem sandbox;
+  strict read-only personas, sessions and temporary chats remain unavailable.
+  Reject these before spawning rather than substituting plan mode. Factory workers,
   browser execution and cloud credential delivery remain on their existing
   provider allowlists. Local workflows and automations use `claude --print`.
 - Audit capabilities honestly: native resume uses SDK `resume` on this device;
@@ -879,6 +884,66 @@ Verification from `mezair-app/`: run both Desktop TypeScript projects, lint,
 regression tests, then the Desktop suite and build. Live probes must use
 minimal prompts and preserve the user's model preference; the initial
 Haiku stream smoke check used a single `OK` response.
+
+### C16: Provider-aware thread access and delegated authority
+
+Status: active
+Owner project: `mezair-app`
+
+Keep provider mode mappings in `src/shared/agent-access.ts`. Prefer live ACP
+session capabilities, including an explicitly empty list, and reject modes the
+provider does not advertise. Ask, Plan, Accept edits and Smart describe native
+agent/approval behavior; they must not claim an OS filesystem sandbox. Cursor
+Full access auto-approves individual ACP tool permission requests without
+persisting an allow-always rule or bypassing provider/organisation denials.
+Codex exposes automatic approval review separately from the workspace sandbox;
+Claude exposes its native auto-review and allowlist-only controls. Persist these
+per-thread approval refinements separately from the four sandbox/access levels.
+Translate native Smart/Accept edits before another provider interprets the
+transport level; do not turn them into Codex's no-escalation workspace sandbox.
+Reject a cross-provider strict workspace-only request that cannot be enforced,
+and fence pending proposals if the coordinator's approval settings change.
+
+Carry thread access explicitly on session start, prepared launches and each
+normal send. Browser clients compare requested credential access separately
+from persona-clamped effective access and reconnect when that request changes.
+Normalize inactive startup approval profiles before issuing credentials. Plan
+feedback preserves the selected profile while retaining the read-only clamp.
+Re-check live workflow settings after asynchronous setup and before turn start.
+Changing one thread must not overwrite global defaults or another thread's access.
+Use a shared in-memory selection for the chip, ordinary/prepared launches and
+sends; localStorage is persistence only. Workspace settings update the same live
+default even while chat is unmounted; an older cached default cannot override a
+more restrictive workspace default. Explicit thread overrides remain independent. Preserve the source provider when
+translating a selection, and require an explicit replacement for an unsupported
+profile. Never turn allowlist-only access into default approvals silently.
+Invalid display selections stay read-only; remote sends reject invalid or
+unsupported profiles and recheck access after asynchronous chat preparation.
+Before committing an access change, main retires the thread's provider sessions
+and invalidates in-flight starts. Revoke their bearer tokens immediately and
+resume the conversation with fresh credentials on the next turn. Bound issued
+bearers to their original access ceiling, reauthenticate after receiving request
+bytes, and fence approvals against the current bearer, scope and access revision.
+Keep requested approval profiles separate from temporary Plan clamps and from
+provider-confirmed access. Apply effective changes only after acknowledgement;
+rejected controls retain the prior effective authority. The composer identifies
+the next-turn selection separately from confirmed provider access.
+Reviewed local delegations inherit the coordinator's access unless the task
+explicitly requests read-only. Freeze the originating ceiling, recheck it at
+approval, preserve persona restrictions, and inherit it for expanded children.
+Revalidate worker support after the live ceiling and persona clamps. Reject
+unsupported local or remote specialists before inserting any graph children.
+Preserve translated approval profiles on saved workflow workers while retaining
+their app ceiling. Replay legacy omitted-access fingerprints only for already
+saved runs; new fingerprints distinguish omitted and explicit read-only access.
+Remote tasks retain their read-only default and target ceilings; current-tracked
+review remains strictly read-only. Saved workflows, factories and automations
+retain their existing app ceilings. A provider approval mode is not a substitute
+for strict read-only execution: Cursor/Devin print workers reject that contract;
+Claude print workers retain their read-only tool allowlist with MCP disabled.
+These controls apply to Mezair-managed delegation. Provider-native subprocesses
+and arbitrary shell-launched CLIs remain subject to the provider's own controls
+and inherited process sandbox; do not claim Mezair rewrites their permission flags.
 
 ### C15: Consented anonymous website and Desktop statistics
 

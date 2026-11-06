@@ -1,3 +1,7 @@
+import {
+  inheritedPermissionProfile,
+  assertWorkerAccessSupported,
+} from '../../shared/agent-access.js';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import type {
@@ -344,7 +348,11 @@ export async function applyDelegationIntegration(
   return describeChatDelegation(run);
 }
 
-function fingerprint(input: ChatDelegationInput, ctx: AgentToolSessionContext): string {
+function fingerprint(
+  input: ChatDelegationInput,
+  ctx: AgentToolSessionContext,
+  omittedAccess = 'default',
+): string {
   return createHash('sha256')
     .update(
       JSON.stringify({
@@ -361,7 +369,7 @@ function fingerprint(input: ChatDelegationInput, ctx: AgentToolSessionContext): 
           provider: t.provider,
           model: t.model,
           reasoningEffort: t.reasoningEffort,
-          access: t.access ?? 'read-only',
+          access: t.access ?? omittedAccess,
           dependsOn: t.dependsOn ?? [],
         })),
       }),
@@ -397,7 +405,11 @@ export async function proposeChatDelegation(
   const digest = fingerprint(input, ctx);
   const existing = getChatWorkflowRunByRequest(ctx.appThreadId, input.requestId);
   if (existing) {
-    if (existing.chatOrigin?.fingerprint !== digest)
+    if (
+      existing.chatOrigin?.fingerprint !== digest &&
+      (existing.chatOrigin?.fingerprintVersion === 2 ||
+        existing.chatOrigin?.fingerprint !== fingerprint(input, ctx, 'read-only'))
+    )
       throw new AgentToolError(
         'This request ID already belongs to different delegated work.',
         'conflict',
@@ -481,6 +493,25 @@ async function prepareProposal(
         `The destination cannot run ${provider} for ${task.name}. Discover capabilities again or choose another destination.`,
         'unavailable',
       );
+    if (
+      task.access !== 'read-only' &&
+      destination.target.kind === 'local' &&
+      ctx.mode === 'workspace-auto' &&
+      ['claude', 'cursor', 'devin'].includes(provider)
+    )
+      throw new AgentToolError(
+        `${provider} cannot inherit a strict workspace-only sandbox. Choose a Codex provider or change the chat access.`,
+        'unavailable',
+      );
+    if (
+      destination.target.kind === 'local' &&
+      (task.access === 'read-only' || ctx.mode === 'read-only') &&
+      ['cursor', 'devin'].includes(provider)
+    )
+      throw new AgentToolError(
+        `${provider} cannot enforce a strict read-only task. Choose a Codex provider or Claude for this review.`,
+        'unavailable',
+      );
     const model = task.model ?? config.defaultModel;
     if (!model || !config.models.some((m) => m.id === model))
       throw new AgentToolError(`Choose a discovered model for ${task.name}.`, 'invalid-params');
@@ -497,7 +528,17 @@ async function prepareProposal(
       teamStrategy: 'manual',
       position: { x: index * 300, y: 0 },
       target: structuredClone(destination.target),
-      permissionMode: task.access === 'inherit' ? ctx.mode : 'read-only',
+      permissionProfile:
+        task.access !== 'read-only' &&
+        destination.target.kind === 'local' &&
+        ctx.mode === 'on-request'
+          ? inheritedPermissionProfile(provider, ctx.permissionProfile)
+          : undefined,
+      permissionMode:
+        task.access === 'read-only' ||
+        (task.access === undefined && destination.target.kind !== 'local')
+          ? 'read-only'
+          : ctx.mode,
     };
   });
   const edges = input.tasks.flatMap((task) =>
@@ -542,7 +583,7 @@ async function prepareProposal(
     `Repositories: ${repositoryNames.join(', ')}`,
     ...nodes.map(
       (node) =>
-        `${node.name}\n${names[node.id]} · ${node.provider} · ${node.model} · ${node.permissionMode === 'read-only' ? 'Read only' : 'Within this chat’s access'}\n${node.prompt}`,
+        `${node.name}\n${names[node.id]} · ${node.provider} · ${node.model} · ${node.permissionMode === 'read-only' ? 'Read only' : 'Within this chat’s access'}${node.permissionProfile && node.permissionProfile !== 'default' ? ` · ${node.permissionProfile}` : ''}\n${node.prompt}`,
     ),
     ...(nodes.some((node) => node.target?.kind !== 'local')
       ? [
@@ -768,10 +809,36 @@ async function approveAndStart(
       'This chat already has four active delegations. Wait for one to finish.',
       'unavailable',
     );
+  if ((ctx.permissionProfile ?? 'default') !== (liveScope.permissionProfile ?? 'default'))
+    throw new AgentToolError(
+      'The chat’s approval settings changed. Propose the work again with the current access.',
+      'conflict',
+    );
+  if ((ctx.accessRevision ?? 0) !== (liveScope.accessRevision ?? 0))
+    throw new AgentToolError(
+      'The chat access changed while approval was pending. Propose the work again.',
+      'conflict',
+    );
+  const permissionCeiling = constrainPermissionMode(ctx.mode, liveScope.mode);
+  const approvedNodes = nodes.map((node) => {
+    const permissionMode = constrainPermissionMode(
+      node.permissionMode ?? 'read-only',
+      permissionCeiling,
+    );
+    const permissionProfile = permissionMode === 'on-request' ? node.permissionProfile : undefined;
+    assertWorkerAccessSupported(
+      node.provider ?? 'codex',
+      permissionMode,
+      permissionProfile,
+      node.target?.kind !== 'local',
+      true,
+    );
+    return { ...node, permissionMode, permissionProfile };
+  });
   const run = startChatWorkflowRun({
     workspaceId: ctx.workspaceId!,
     repoIds: [...ctx.repoIds],
-    permissionCeiling: constrainPermissionMode(ctx.mode, liveScope.mode),
+    permissionCeiling,
     kickoff: prependThreadContinuation(
       captureThreadContinuation(ctx.appThreadId!).context,
       input.reason,
@@ -780,6 +847,7 @@ async function approveAndStart(
       threadId: ctx.appThreadId!,
       requestId: input.requestId,
       fingerprint: digest,
+      fingerprintVersion: 2,
       reason: input.reason,
       destinations: names,
       source: input.source ?? 'committed',
@@ -794,12 +862,12 @@ async function approveAndStart(
     ...(prepared.remoteReviewBackend ? { remoteReviewBackend: prepared.remoteReviewBackend } : {}),
     definition: {
       name: input.title,
-      nodes,
+      nodes: approvedNodes,
       edges,
       orchestration: {
         ...DEFAULT_ORCHESTRATION,
         profiles: [],
-        maxConcurrency: nodes.every((node) => node.permissionMode === 'read-only') ? 2 : 1,
+        maxConcurrency: approvedNodes.every((node) => node.permissionMode === 'read-only') ? 2 : 1,
         maxNodes: 8,
         maxDepth: 0,
         maxAttempts: 2,

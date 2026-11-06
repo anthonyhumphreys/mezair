@@ -64,7 +64,9 @@ import { useChatWorkflowAction } from './useChatWorkflowAction';
 import { useThreadAccess } from './useThreadAccess';
 import {
   chatAccessOptionsForProvider,
+  beginThreadAccessChange,
   expectedAcpAppliedMode,
+  remoteThreadAccessError,
   type ChatAccessOption,
 } from './thread-access';
 import { isAcpAgentProvider } from '../../../shared/agent-providers';
@@ -194,6 +196,7 @@ export function ChatView({ userRole }: ChatViewProps) {
     switchPersona,
     interrupt,
     stopSession,
+    invalidateThreadAccess,
     startNewSession,
     ensureChatThread,
   } = useChatCommands();
@@ -304,10 +307,15 @@ export function ChatView({ userRole }: ChatViewProps) {
     startNewSession,
   });
 
+  const retireThreadAccess = useCallback(async () => {
+    if (activeThreadId) await invalidateThreadAccess(activeThreadId);
+  }, [activeThreadId, invalidateThreadAccess]);
   // CH1 — per-thread access level, persisted per workspace. ST9: the
   // Settings → Workspace default applies to threads without an override.
   const threadAccess = useThreadAccess(activeWorkspace?.id, activeThreadId, {
     workspaceDefault: workspaceAccessDefault,
+    provider: modelProvider,
+    onBeforeChange: retireThreadAccess,
     onWorkspaceDefaultChange: setWorkspaceAccessDefault,
   });
 
@@ -461,10 +469,15 @@ export function ChatView({ userRole }: ChatViewProps) {
       provider: modelProvider,
       model,
       permissionMode:
-        isItsmPersona || activeThread?.purpose === 'side-question'
+        activePersona?.capabilities.canWriteFiles === false ||
+        activeThread?.purpose === 'side-question'
           ? 'read-only'
           : threadAccess.level,
       reasoningEffort: reasoningLevel,
+      workspaceDefault: workspaceAccessDefault,
+      accessError: threadAccess.selectionError,
+      accessChanging: threadAccess.changing,
+      permissionProfile: threadAccess.permissionProfile,
       ensureThread: ensureChatThread,
     }),
     [
@@ -475,9 +488,13 @@ export function ChatView({ userRole }: ChatViewProps) {
       session?.id,
       modelProvider,
       model,
-      isItsmPersona,
+      activePersona?.capabilities.canWriteFiles,
       activeThread?.purpose,
       threadAccess.level,
+      workspaceAccessDefault,
+      threadAccess.selectionError,
+      threadAccess.changing,
+      threadAccess.permissionProfile,
       reasoningLevel,
       ensureChatThread,
     ],
@@ -574,17 +591,28 @@ export function ChatView({ userRole }: ChatViewProps) {
   const accessOptions = useMemo(
     () =>
       chatAccessOptionsForProvider(agentProvider, capabilities?.accessModes).filter(
-        (option) => !runTarget.remote || option.collaborationMode !== 'plan',
+        (option) =>
+          !runTarget.remote || (option.collaborationMode !== 'plan' && !option.permissionProfile),
       ),
     [agentProvider, capabilities?.accessModes, runTarget.remote],
   );
-  const appliedAccessMode =
-    (!runTarget.remote ? session?.appliedMode : undefined) ??
-    expectedAcpAppliedMode(
-      agentProvider,
-      threadAccess.level,
-      runTarget.remote ? 'default' : collaborationMode,
-    );
+  const personaReadOnly = activePersona?.capabilities.canWriteFiles === false;
+  const requestedAccessMode = runTarget.remote
+    ? undefined
+    : isAcpAgentProvider(agentProvider)
+      ? expectedAcpAppliedMode(
+          agentProvider,
+          threadAccess.level,
+          collaborationMode,
+          !personaReadOnly,
+          threadAccess.permissionProfile,
+        )
+      : personaReadOnly || collaborationMode === 'plan'
+        ? 'read-only'
+        : threadAccess.level === 'on-request' && threadAccess.permissionProfile === 'auto-review'
+          ? 'auto-review'
+          : undefined;
+
   const slashCommands = useMemo(() => buildSlashCommands(agentLabel), [agentLabel]);
   const combinedThreadStatuses = useMemo(
     () => ({ ...liveThreadStatuses, ...runTarget.threadStatuses }),
@@ -614,18 +642,34 @@ export function ChatView({ userRole }: ChatViewProps) {
     [busy, handleComposerSend, runTarget.remote, runTarget.send],
   );
 
+  const handleCollaborationChange = useCallback(
+    (mode: 'default' | 'plan') => {
+      void beginThreadAccessChange(activeWorkspace?.id ?? '', activeThreadId, async () => {
+        await retireThreadAccess();
+        setCollaborationMode(mode);
+      }).catch((error) =>
+        setSendNotice(error instanceof Error ? error.message : 'Could not change access.'),
+      );
+    },
+    [activeWorkspace?.id, activeThreadId, retireThreadAccess, setCollaborationMode],
+  );
   const handleAccessOptionSelect = useCallback(
     (option: ChatAccessOption) => {
       if (option.collaborationMode === 'plan') {
-        if (collaborationMode !== 'plan') setCollaborationMode('plan');
+        handleCollaborationChange('plan');
         return;
       }
-      // Leaving plan via the access chip must reset the collaboration mode —
-      // otherwise the provider keeps applying 'plan' regardless of level.
-      if (collaborationMode === 'plan') setCollaborationMode('default');
-      if (option.level) threadAccess.setLevel(option.level);
+      if (!option.level) return;
+      void threadAccess
+        .setLevel(option.level, option.permissionProfile ?? 'default')
+        .then(() => {
+          if (collaborationMode === 'plan') setCollaborationMode('default');
+        })
+        .catch((error) =>
+          setSendNotice(error instanceof Error ? error.message : 'Could not change access.'),
+        );
     },
-    [collaborationMode, setCollaborationMode, threadAccess.setLevel],
+    [collaborationMode, setCollaborationMode, threadAccess.setLevel, handleCollaborationChange],
   );
 
   const handleModelChange = useCallback(
@@ -1337,19 +1381,42 @@ export function ChatView({ userRole }: ChatViewProps) {
                 : threadAccess.level
             }
             onCodexModeChange={
-              scaffoldModeActive || isTemporaryChat ? undefined : threadAccess.setLevel
+              scaffoldModeActive || isTemporaryChat
+                ? undefined
+                : (mode) =>
+                    handleAccessOptionSelect({
+                      level: mode,
+                      label: '',
+                      description: '',
+                      elevated: false,
+                    })
             }
             codexModeDisabled={
-              isTemporaryChat || isItsmPersona || activeThread?.purpose === 'side-question'
+              threadAccess.changing ||
+              (runTarget.remote ? runTarget.busy : busy) ||
+              isTemporaryChat ||
+              personaReadOnly ||
+              isItsmPersona ||
+              activeThread?.purpose === 'side-question'
             }
             accessOptions={accessOptions}
-            accessAppliedMode={appliedAccessMode}
+            accessAppliedMode={runTarget.remote ? undefined : session?.appliedMode}
+            accessRequestedMode={requestedAccessMode}
+            accessSelectionError={
+              threadAccess.selectionError ??
+              (runTarget.remote
+                ? remoteThreadAccessError({
+                    permissionProfile: threadAccess.permissionProfile,
+                    permissionMode: runTargetInput.permissionMode,
+                  })
+                : undefined)
+            }
             onAccessOptionSelect={scaffoldModeActive ? undefined : handleAccessOptionSelect}
             collaborationMode={runTarget.remote ? 'default' : collaborationMode}
             onCollaborationModeChange={
               scaffoldModeActive || isTemporaryChat || runTarget.remote
                 ? undefined
-                : setCollaborationMode
+                : handleCollaborationChange
             }
             fastMode={fastMode}
             fastModeAvailable={!runTarget.remote && fastModeTarget.available}

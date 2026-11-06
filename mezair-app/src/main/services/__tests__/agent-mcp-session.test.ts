@@ -80,8 +80,8 @@ vi.mock('../chat-continuation.service.js', () => ({
 }));
 vi.mock('../settings.service.js', () => ({ getSettings: () => mocks.settings }));
 vi.mock('../persona.service.js', () => ({
-  getPersonaById: () => ({
-    capabilities: { canWriteFiles: true, canRunCommands: true, canReadFiles: true },
+  getPersonaById: (id: string) => ({
+    capabilities: { canWriteFiles: id !== 'reader', canRunCommands: true, canReadFiles: true },
   }),
   buildSystemPrompt: () => 'system prompt',
   buildDesignSystemPrompt: () => 'design prompt',
@@ -105,6 +105,7 @@ vi.mock('../chat-evidence.service.js', () => ({ saveChatEvent: vi.fn() }));
 vi.mock('../agent-ui-intent.service.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../agent-ui-intent.service.js')>()),
   expireAgentUIIntentsForSession: () => [],
+  getAgentUIIntent: () => null,
 }));
 vi.mock('../thread-assist.service.js', () => ({ scheduleThreadMetadataRefresh: () => undefined }));
 vi.mock('../notification.service.js', () => ({ notifyChatActivity: () => undefined }));
@@ -121,8 +122,11 @@ vi.mock('../codex-runtime.service.js', () => ({ resolveCodexRuntime: async () =>
 import { spawn } from 'node:child_process';
 import {
   getAgentToolSessionContext,
+  invalidateThreadAccess,
+  captureThreadAccessFence,
   sendMessage,
   emitLocalAssistantTurnEnd,
+  deliverStructuredAgentFeedback,
   startSession,
   stopAllSessions,
   stopSession,
@@ -149,11 +153,13 @@ function lastSpawn(): { command: string; args: string[]; env: Record<string, str
 async function startCodex(
   options: Parameters<typeof startSession>[3] = {},
   repoIds = ['r1', 'r2'],
+  personaId = 'coder',
 ) {
   const proc = createFakeProcess();
   mocks.spawnResults.push(proc);
-  const started = startSession(['/repo'], repoIds, 'coder', { provider: 'codex', ...options });
-  await vi.waitFor(() => expect(vi.mocked(spawn)).toHaveBeenCalled());
+  const before = vi.mocked(spawn).mock.calls.length;
+  const started = startSession(['/repo'], repoIds, personaId, { provider: 'codex', ...options });
+  await vi.waitFor(() => expect(vi.mocked(spawn).mock.calls.length).toBeGreaterThan(before));
   emit(proc, { jsonrpc: '2.0', method: 'thread/started', params: { thread: { id: 'th-1' } } });
   return { proc, session: await started };
 }
@@ -217,6 +223,9 @@ describe('codex-session agent MCP wiring', () => {
       repoIds: ['r1', 'r2'],
       provider: 'codex',
       mode: 'on-request',
+      permissionProfile: 'default',
+      accessRevision: 0,
+      authorityId: expect.any(Number),
       features: ROLE_FEATURES['ba-brm'],
     });
     mocks.settings.userRole = undefined;
@@ -228,6 +237,75 @@ describe('codex-session agent MCP wiring', () => {
     expect(getAgentToolSessionContext(session.id)).toBeUndefined();
   });
 
+  it('retires old credentials before accepting an access reduction and issues a fresh bearer on restart', async () => {
+    const { session } = await startCodex({
+      threadId: 'thread-1',
+      workspace: { workspaceId: 'ws-1' },
+      codexMode: 'full-access',
+    });
+    const oldToken = getAgentMcpTokenForSession(session.id)!;
+    expect(resolveAgentMcpToken(oldToken)?.context.mode).toBe('full-access');
+    const invalidating = invalidateThreadAccess('thread-1');
+    expect(resolveAgentMcpToken(oldToken)).toBeUndefined();
+    await invalidating;
+    const next = await startCodex({
+      threadId: 'thread-1',
+      workspace: { workspaceId: 'ws-1' },
+      codexMode: 'read-only',
+    });
+    const newToken = getAgentMcpTokenForSession(next.session.id)!;
+    expect(newToken).not.toBe(oldToken);
+    expect(resolveAgentMcpToken(newToken)?.context.mode).toBe('read-only');
+    await expect(
+      sendMessage(next.session.id, 'escalate', [], { permissionMode: 'full-access' }),
+    ).rejects.toThrow('fresh permissions');
+    expect(resolveAgentMcpToken(oldToken)).toBeUndefined();
+    expect(resolveAgentMcpToken(newToken)?.context.mode).toBe('read-only');
+  });
+  it('fences discovery that began before the session startup call', async () => {
+    const assertStartAccess = captureThreadAccessFence('discovering-thread');
+    await invalidateThreadAccess('discovering-thread');
+    expect(assertStartAccess).toThrow('access changed');
+    expect(captureThreadAccessFence('discovering-thread')).not.toThrow();
+  });
+  it('fences an access change during startup before a process or usable token can escape', async () => {
+    const starting = startSession(['/repo'], ['r1'], 'coder', {
+      provider: 'codex',
+      threadId: 'starting-thread',
+    });
+    const rejected = expect(starting).rejects.toThrow('access changed');
+    await invalidateThreadAccess('starting-thread');
+    await rejected;
+    expect(spawn).not.toHaveBeenCalled();
+  });
+  it('continues Plan feedback with the selected profile while retaining the read-only clamp', async () => {
+    const { proc, session } = await startCodex({
+      threadId: 'plan-feedback',
+      permissionProfile: 'auto-review',
+    });
+    await sendMessage(session.id, 'Plan it', [], {
+      permissionMode: 'on-request',
+      permissionProfile: 'auto-review',
+      collaborationMode: 'plan',
+    });
+    const first = requests(proc, 'turn/start').at(-1)!;
+    emit(proc, { jsonrpc: '2.0', id: first.id, result: { turn: { id: 'plan-turn' } } });
+    emit(proc, {
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: { turn: { id: 'plan-turn', status: 'completed' } },
+    });
+    await expect(deliverStructuredAgentFeedback(session.id, 'Refine this step')).resolves.toBe(
+      true,
+    );
+    const followup = requests(proc, 'turn/start').at(-1)!;
+    expect(followup).not.toBe(first);
+    expect(followup.params).toMatchObject({
+      sandboxPolicy: { type: 'readOnly' },
+      approvalsReviewer: 'auto_review',
+    });
+    expect(getAgentToolSessionContext(session.id)?.mode).toBe('read-only');
+  });
   it('revokes the token when the provider process exits', async () => {
     const { proc, session } = await startCodex();
     expect(getAgentMcpTokenForSession(session.id)).toBeDefined();
@@ -235,6 +313,31 @@ describe('codex-session agent MCP wiring', () => {
     expect(getAgentMcpTokenForSession(session.id)).toBeUndefined();
   });
 
+  it.each(['read-only', 'workspace-auto', 'full-access'] as const)(
+    'normalizes inactive startup approval profiles for %s',
+    async (mode) => {
+      const { proc, session } = await startCodex({
+        codexMode: mode,
+        permissionProfile: 'auto-review',
+      });
+      expect(requests(proc, 'thread/start').at(-1)?.params).toMatchObject({
+        approvalsReviewer: 'user',
+      });
+      await expect(
+        sendMessage(session.id, 'Continue', [], { permissionMode: mode }),
+      ).resolves.toBeUndefined();
+    },
+  );
+  it('exposes issued access separately from a persona read-only clamp', async () => {
+    const { session } = await startCodex({ codexMode: 'on-request' }, ['r1'], 'reader');
+    expect(session).toMatchObject({ mode: 'read-only', requestedMode: 'on-request' });
+    await expect(
+      sendMessage(session.id, 'Continue', [], { permissionMode: 'on-request' }),
+    ).resolves.toBeUndefined();
+    await expect(
+      sendMessage(session.id, 'Change requested access', [], { permissionMode: 'read-only' }),
+    ).rejects.toThrow('fresh permissions');
+  });
   it('pins read-only sessions to read-only tool context', async () => {
     const { session } = await startCodex({ codexMode: 'read-only' });
     expect(getAgentToolSessionContext(session.id)?.mode).toBe('read-only');

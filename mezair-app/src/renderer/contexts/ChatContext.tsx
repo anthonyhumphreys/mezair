@@ -1,3 +1,10 @@
+import {
+  readThreadAccessStore,
+  resolveThreadAccessSelection,
+  awaitThreadAccessChange,
+  assertThreadAccessReady,
+  bindThreadAccessProvider,
+} from '../components/chat/thread-access';
 import { ChatStateChannels } from './ChatChannels';
 import { isPendingChatUserEntry } from '../utils/chat-entry-order';
 import { createChatNavigationRequests } from '../utils/chat-navigation-request';
@@ -166,6 +173,7 @@ export interface ChatContextValue {
   switchPersona: (persona: Persona) => Promise<void>;
   interrupt: () => Promise<void>;
   stopSession: (sessionId: string) => Promise<void>;
+  invalidateThreadAccess: (threadId: string) => Promise<void>;
   startNewSession: () => Promise<void>;
   ensureChatThread: (firstPrompt?: string) => Promise<string>;
   loadHistory: () => Promise<void>;
@@ -263,7 +271,13 @@ export function useChatNavigation(): ChatNavigationValue {
 }
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const { repos, activeWorkspace, activeScaffoldSession, refreshWorkspaces } = useWorkspace();
+  const {
+    repos,
+    activeWorkspace,
+    activeScaffoldSession,
+    refreshWorkspaces,
+    workspaceAccessDefault,
+  } = useWorkspace();
   const navigationRequests = useRef(createChatNavigationRequests());
   const navigationWorkspaceIdRef = useRef(activeWorkspace?.id ?? null);
   if (navigationWorkspaceIdRef.current !== (activeWorkspace?.id ?? null))
@@ -762,6 +776,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           delete liveSessionsByThreadIdRef.current[thread.id];
           delete liveOutputBySessionIdRef.current[liveSession.id];
           setLiveThreadStatus(thread.id, null);
+          sessionRef.current = null;
           setSession(null);
           setBusy(false);
         } else {
@@ -1057,18 +1072,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const existing = threadSessionStops.current.get(threadId);
       if (existing) return existing;
       const liveSession = liveSessionsByThreadIdRef.current[threadId];
-      if (!liveSession) return;
+      // Revoke main authority immediately, including starts which have not returned a session ID.
+      const stopRequest = window.mezair.chat.invalidateThreadAccess(threadId);
+      void stopRequest.catch(() => undefined);
       const stopping = (async () => {
-        flushPendingStreamEntry();
-        persistAssistantForSession(liveSession.id);
-        await livePersistQueueBySessionIdRef.current[liveSession.id];
-        forgetLiveSession(liveSession.id);
-        await window.mezair.chat.stopSession(liveSession.id);
-        if (sessionRef.current?.id === liveSession.id) {
+        if (liveSession) {
+          flushPendingStreamEntry();
+          persistAssistantForSession(liveSession.id);
+          await livePersistQueueBySessionIdRef.current[liveSession.id];
+          forgetLiveSession(liveSession.id);
+        }
+        const retired = await stopRequest;
+        for (const id of retired) forgetLiveSession(id);
+        if (
+          sessionRef.current &&
+          (sessionRef.current.appThreadId === threadId || retired.includes(sessionRef.current.id))
+        ) {
+          sessionRef.current = null;
           setSession(null);
           setBusy(false);
-          setEntries((prev) =>
-            prev.map((entry) =>
+          setEntries((previous) =>
+            previous.map((entry) =>
               entry.kind === 'user' && entry.delivery === 'queued'
                 ? { ...entry, delivery: 'failed' as const }
                 : entry,
@@ -1218,6 +1242,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         : option?.supportedReasoningEfforts.includes(candidateReasoning)
           ? candidateReasoning
           : (option?.defaultReasoningEffort ?? 'medium');
+      if (activeWorkspace)
+        bindThreadAccessProvider(activeWorkspace.id, activeThreadId, modelProvider);
       if (nextProvider !== modelProvider && activeThreadId) {
         void stopThreadLiveSession(activeThreadId).catch((error) =>
           setError(
@@ -1241,7 +1267,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         })
         .catch(console.error);
     },
-    [activeThreadId, modelOptions, modelProvider, stopThreadLiveSession],
+    [activeThreadId, activeWorkspace, modelOptions, modelProvider, stopThreadLiveSession],
   );
 
   const updateReasoningLevel = useCallback((level: ReasoningEffort) => {
@@ -1624,6 +1650,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         rawEvent as CodexEvent & { sessionId?: string; appThreadId?: string },
       );
       const eventSessionId = event.sessionId;
+      if (event.type === 'access_update' && event.access && eventSessionId) {
+        const threadId = findThreadIdForSession(eventSessionId);
+        const current = threadId ? liveSessionsByThreadIdRef.current[threadId] : undefined;
+        if (threadId && current)
+          rememberLiveSession(threadId, {
+            ...current,
+            mode: event.access.mode,
+            appliedMode: event.access.appliedMode,
+          });
+        if (sessionRef.current?.id === eventSessionId)
+          setSession((previous) =>
+            previous
+              ? { ...previous, mode: event.access!.mode, appliedMode: event.access!.appliedMode }
+              : previous,
+          );
+        return;
+      }
+
       const eventThreadId =
         (eventSessionId ? findThreadIdForSession(eventSessionId) : null) ??
         event.appThreadId ??
@@ -1955,6 +1999,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     findThreadIdForSession,
     flushPendingStreamEntry,
     getLiveAssistantOutput,
+    rememberLiveSession,
     persistAssistantForSession,
     persistArtifactsForAssistantMessage,
     persistThreadGoal,
@@ -2175,6 +2220,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      if (activeWorkspace) await awaitThreadAccessChange(activeWorkspace.id, thread.id);
+      let threadPermissionMode: import('../../shared/types').CodexMode = 'read-only';
+      let permissionProfile: import('../../shared/agent-access').PermissionProfile = 'default';
+      try {
+        if (activeWorkspace) assertThreadAccessReady(activeWorkspace.id, thread.id);
+        if (!isTemporaryChat && thread.purpose !== 'side-question') {
+          const selection = resolveThreadAccessSelection(
+            readThreadAccessStore(activeWorkspace?.id ?? ''),
+            thread.id,
+            workspaceAccessDefault,
+            modelProvider,
+          );
+          threadPermissionMode = selection.mode;
+          permissionProfile = selection.permissionProfile;
+        }
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Choose a replacement access setting.');
+        return false;
+      }
       const timestamp = new Date().toISOString();
       const userEntry: ChatEntry = {
         kind: 'user',
@@ -2184,11 +2248,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         id: generateId(),
       };
       const threadLiveSession = liveSessionsByThreadIdRef.current[thread.id] ?? null;
-      const renderedSessionThreadId = session ? findThreadIdForSession(session.id) : null;
+      const renderedSession = sessionRef.current;
+      const renderedSessionThreadId = renderedSession
+        ? findThreadIdForSession(renderedSession.id)
+        : null;
       const renderedSessionBelongsToThread =
-        session?.appThreadId === thread.id || renderedSessionThreadId === thread.id;
+        renderedSession?.appThreadId === thread.id || renderedSessionThreadId === thread.id;
       const liveOrRenderedSessionForThread =
-        threadLiveSession ?? (renderedSessionBelongsToThread ? session : null);
+        threadLiveSession ?? (renderedSessionBelongsToThread ? renderedSession : null);
       const currentSessionForThread =
         liveOrRenderedSessionForThread?.personaId === activePersona.id &&
         liveOrRenderedSessionForThread.provider === modelProvider
@@ -2228,12 +2295,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   threadId: thread.id,
                   provider: modelProvider,
                   model: turnModel,
+                  codexMode: threadPermissionMode,
+                  permissionProfile,
                   ...designOptions,
                 }
               : {
                   threadId: thread.id,
                   provider: modelProvider,
                   model: turnModel,
+                  codexMode: threadPermissionMode,
+                  permissionProfile,
                   ...designOptions,
                 };
           startedSession = isTemporaryChat
@@ -2243,7 +2314,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   activeWorkspace.id,
                   activeScaffoldSession.rootPath,
                   activePersona.id,
-                  { provider: modelProvider, model: turnModel },
+                  {
+                    provider: modelProvider,
+                    model: turnModel,
+                    codexMode: threadPermissionMode,
+                    permissionProfile,
+                    threadId: thread.id,
+                  },
                 )
               : activeReposState.length > 0
                 ? await window.mezair.chat.startSession(
@@ -2260,6 +2337,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                       threadId: thread.id,
                       provider: modelProvider,
                       model: turnModel,
+                      codexMode: threadPermissionMode,
+                      permissionProfile,
                       ...designOptions,
                     })
                   : null;
@@ -2283,6 +2362,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         try {
           await window.mezair.chat.send(startedSession.id, providerMessage, attachments, {
             collaborationMode,
+            permissionMode: threadPermissionMode,
+            permissionProfile,
             model: turnModel,
             reasoningEffort: reasoningLevel,
             serviceTier,
@@ -2332,6 +2413,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       try {
         await window.mezair.chat.send(currentSessionForThread.id, providerMessage, attachments, {
           collaborationMode,
+          permissionMode: threadPermissionMode,
+          permissionProfile,
           model: turnModel,
           reasoningEffort: reasoningLevel,
           serviceTier,
@@ -2374,6 +2457,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       activeReposState,
       activeScaffoldSession,
       activeWorkspace,
+      workspaceAccessDefault,
       isTemporaryChat,
       applyThreadState,
       buildEnrichedMessage,
@@ -3657,6 +3741,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       });
 
       try {
+        if (activeWorkspace) await awaitThreadAccessChange(activeWorkspace.id, createdThread.id);
+        if (activeWorkspace) assertThreadAccessReady(activeWorkspace.id, createdThread.id);
+        const preparedAccess = resolveThreadAccessSelection(
+          readThreadAccessStore(activeWorkspace?.id ?? ''),
+          createdThread.id,
+          workspaceAccessDefault,
+          modelProvider,
+        );
         const designOptions = buildDesignChatStartOptions(targetPersona.id, opts.message);
         const nextSession =
           selectedRepos.length > 0
@@ -3668,6 +3760,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   threadId: createdThread.id,
                   changeReviewId: opts.changeReviewId,
                   provider: modelProvider,
+                  codexMode: preparedAccess.mode,
+                  permissionProfile: preparedAccess.permissionProfile,
                   ...designOptions,
                 },
               )
@@ -3679,6 +3773,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   },
                   threadId: createdThread.id,
                   provider: modelProvider,
+                  codexMode: preparedAccess.mode,
+                  permissionProfile: preparedAccess.permissionProfile,
                   ...designOptions,
                 })
               : null;
@@ -3715,6 +3811,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
         await window.mezair.chat.send(nextSession.id, enrichedMessage, [], {
           collaborationMode: requestedMode,
+          permissionMode: preparedAccess.mode,
+          permissionProfile: preparedAccess.permissionProfile,
           model,
           reasoningEffort: opts.reasoningLevel ?? reasoningLevel,
         });
@@ -3728,6 +3826,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     },
     [
       activeWorkspace,
+      workspaceAccessDefault,
       buildEnrichedMessage,
       bumpThreadSummary,
       canStartWorkspaceChat,
@@ -3877,6 +3976,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     switchPersona,
     interrupt,
     stopSession: stopSessionLive,
+    invalidateThreadAccess: stopThreadLiveSession,
     startNewSession,
     ensureChatThread,
     loadHistory: loadHistoryFn,

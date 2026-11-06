@@ -49,6 +49,7 @@ type CommandsValue = Pick<
   | 'switchPersona'
   | 'interrupt'
   | 'stopSession'
+  | 'invalidateThreadAccess'
   | 'startNewSession'
   | 'ensureChatThread'
 >;
@@ -130,6 +131,7 @@ export function ChatStateChannels({
       switchPersona: value.switchPersona,
       interrupt: value.interrupt,
       stopSession: value.stopSession,
+      invalidateThreadAccess: value.invalidateThreadAccess,
       startNewSession: value.startNewSession,
       ensureChatThread: value.ensureChatThread,
     }),
@@ -142,6 +144,7 @@ export function ChatStateChannels({
       value.switchPersona,
       value.interrupt,
       value.stopSession,
+      value.invalidateThreadAccess,
       value.startNewSession,
       value.ensureChatThread,
     ],

@@ -69,7 +69,7 @@ const tools: AgentToolDefinition[] = [
                 type: 'string',
                 enum: ['read-only', 'inherit'],
                 description:
-                  'Default read-only. Inherit allows at most the coordinating chat’s current access; it never grants more.',
+                  'Local tasks inherit the coordinating chat’s access by default. Select read-only to restrict a review. Remote tasks default to read-only and always obey their destination ceiling. Inherit never grants more than the chat.',
               },
               dependsOn: {
                 type: 'array',

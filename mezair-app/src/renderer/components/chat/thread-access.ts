@@ -1,5 +1,17 @@
 import type { AgentProvider, CodexMode } from '../../../shared/types';
-import { isAcpAgentProvider, type AcpAgentProvider } from '../../../shared/agent-providers';
+import { constrainPermissionMode } from '../../../../cloud/contract/permissions';
+import {
+  isAgentProvider,
+  isAcpAgentProvider,
+  type AcpAgentProvider,
+} from '../../../shared/agent-providers';
+import {
+  ACP_ACCESS_MODES,
+  providerAccessMode,
+  isPermissionProfile,
+  type PermissionProfile,
+  translateInteractiveAccess,
+} from '../../../shared/agent-access';
 import { agentProviderLabel } from '../../utils/agent-display';
 
 /**
@@ -68,13 +80,13 @@ export function chatAccessLevelShortLabel(mode: CodexMode): string {
 export function chatAccessLevelDescription(mode: CodexMode): string {
   switch (mode) {
     case 'read-only':
-      return 'Read files and run read-only commands. Approve changes.';
+      return 'Read-only sandbox. Ask before changes or network access.';
     case 'on-request':
       return 'Edit and run commands in the workspace. Ask for more access.';
     case 'workspace-auto':
-      return 'Edit and run in the workspace. No requests for extra access.';
+      return 'Workspace sandbox. No approval prompts; blocked actions stay blocked.';
     case 'full-access':
-      return 'Act anywhere on this machine without asking.';
+      return 'No filesystem or network sandbox. Skip approval prompts; provider rules still apply.';
     default:
       return '';
   }
@@ -110,17 +122,9 @@ export interface ChatAccessOption {
   description: string;
   elevated: boolean;
   collaborationMode?: 'plan';
+  disabledReason?: string;
+  permissionProfile?: PermissionProfile;
 }
-
-/**
- * Fallback when no live session exposes `capabilities.accessModes` yet —
- * mirrors `ACP_ACCESS_MODES` in codex-session.service.ts.
- */
-const ACP_ACCESS_MODES: Record<AcpAgentProvider, readonly string[]> = {
-  claude: ['agent', 'accept-edits', 'bypass', 'plan'],
-  cursor: ['ask', 'agent', 'plan'],
-  devin: ['ask', 'accept-edits', 'smart', 'bypass', 'plan'],
-};
 
 function acpAccessOption(provider: AcpAgentProvider, modeId: string): ChatAccessOption | null {
   const name = agentProviderLabel(provider) ?? 'The agent';
@@ -129,8 +133,10 @@ function acpAccessOption(provider: AcpAgentProvider, modeId: string): ChatAccess
       return {
         level: 'read-only',
         appliedMode: 'ask',
-        label: 'Read only',
-        description: `${name} answers questions without changing files or running commands.`,
+        label: 'Ask',
+        description: `${name} explores and answers questions without edits. This is not a filesystem sandbox.`,
+        disabledReason:
+          'Strict read-only access is unavailable for this provider. Use Plan for exploration, or select a provider with a read-only sandbox.',
         elevated: false,
       };
     case 'agent':
@@ -146,17 +152,38 @@ function acpAccessOption(provider: AcpAgentProvider, modeId: string): ChatAccess
       };
     case 'accept-edits':
       return {
-        level: provider === 'claude' ? 'workspace-auto' : 'on-request',
+        level: 'on-request',
+        ...(provider === 'claude' ? { permissionProfile: 'accept-edits' as const } : {}),
         appliedMode: 'accept-edits',
         label: 'Accept edits',
         description: `${name} applies file edits without asking and still asks before other actions.`,
+        elevated: false,
+      };
+    case 'auto':
+      return {
+        level: 'on-request',
+        appliedMode: 'auto',
+        permissionProfile: 'auto-review',
+        label: 'Auto review',
+        description:
+          'Claude reviews tool actions automatically and asks when its rules require it. Requires an eligible Claude account and model.',
+        elevated: true,
+      };
+    case 'dont-ask':
+      return {
+        level: 'on-request',
+        appliedMode: 'dont-ask',
+        permissionProfile: 'dont-ask',
+        label: 'Allowed tools only',
+        description:
+          'Use Claude’s configured allow rules. Deny actions that would need an approval prompt.',
         elevated: false,
       };
     case 'smart':
       return {
         level: 'workspace-auto',
         appliedMode: 'smart',
-        label: 'Auto approve',
+        label: 'Smart',
         description: `${name} auto-approves safe operations and asks before risky ones.`,
         elevated: true,
       };
@@ -165,7 +192,7 @@ function acpAccessOption(provider: AcpAgentProvider, modeId: string): ChatAccess
         level: 'full-access',
         appliedMode: 'bypass',
         label: 'Full access',
-        description: `${name} never asks for approval. Use with care.`,
+        description: `${name} skips tool approval prompts. Provider and organisation restrictions still apply.`,
         elevated: true,
       };
     case 'plan':
@@ -174,7 +201,7 @@ function acpAccessOption(provider: AcpAgentProvider, modeId: string): ChatAccess
         appliedMode: 'plan',
         collaborationMode: 'plan',
         label: 'Plan',
-        description: `${name} plans the work without changing files or running commands.`,
+        description: `${name} explores and plans before implementation. Planning is not a filesystem sandbox.`,
         elevated: false,
       };
     default:
@@ -194,18 +221,42 @@ export function chatAccessOptionsForProvider(
 ): ChatAccessOption[] {
   const acpProvider = isAcpAgentProvider(provider) ? provider : null;
   if (!acpProvider) {
-    return CHAT_ACCESS_LEVELS.map((level) => ({
+    const sandboxOptions = CHAT_ACCESS_LEVELS.map((level) => ({
       level,
       label: chatAccessLevelLabel(level),
       description: chatAccessLevelDescription(level),
       elevated: chatAccessLevelIsElevated(level),
     }));
+    return [
+      ...sandboxOptions.slice(0, 2),
+      {
+        level: 'on-request' as const,
+        appliedMode: 'auto-review',
+        permissionProfile: 'auto-review' as const,
+        label: 'Approve for me',
+        description:
+          'Keep the workspace sandbox. Codex automatically reviews requests for extra access.',
+        elevated: true,
+      },
+      ...sandboxOptions.slice(2),
+    ];
   }
-  const modes = accessModes?.length ? accessModes : ACP_ACCESS_MODES[acpProvider];
-  return modes.flatMap((modeId) => {
+  const modes = accessModes ?? ACP_ACCESS_MODES[acpProvider];
+  const options = modes.flatMap((modeId) => {
     const option = acpAccessOption(acpProvider, modeId);
     return option ? [option] : [];
   });
+  if (acpProvider === 'cursor' && modes.includes('agent')) {
+    options.push({
+      level: 'full-access',
+      appliedMode: 'agent',
+      label: 'Full access',
+      description:
+        'Auto-approve Cursor tool requests. Provider-enforced sandbox and deny rules still apply.',
+      elevated: true,
+    });
+  }
+  return options;
 }
 
 /**
@@ -218,41 +269,30 @@ export function expectedAcpAppliedMode(
   level: CodexMode,
   collaborationMode?: 'default' | 'plan',
   canWriteFiles?: boolean,
+  permissionProfile?: PermissionProfile,
 ): string | undefined {
   if (!isAcpAgentProvider(provider)) return undefined;
   if (collaborationMode === 'plan') return 'plan';
   const effectiveLevel = canWriteFiles === false ? 'read-only' : level;
-  if (provider === 'claude') {
-    if (effectiveLevel === 'read-only') return 'plan';
-    if (effectiveLevel === 'full-access') return 'bypass';
-    return effectiveLevel === 'workspace-auto' ? 'accept-edits' : 'agent';
-  }
-  if (provider === 'devin') {
-    switch (effectiveLevel) {
-      case 'read-only':
-        return 'ask';
-      case 'workspace-auto':
-        return 'smart';
-      case 'full-access':
-        return 'bypass';
-      default:
-        return 'accept-edits';
-    }
-  }
-  return effectiveLevel === 'read-only' ? 'ask' : 'agent';
+  return providerAccessMode(provider, effectiveLevel, collaborationMode, permissionProfile);
 }
 
 /** Label for a provider-side mode id that is not a CodexMode. */
 export function chatAppliedModeLabel(modeId: string): string | null {
   switch (modeId) {
+    case 'auto':
+    case 'auto-review':
+      return 'Auto review';
+    case 'dont-ask':
+      return 'Allowed tools only';
     case 'ask':
-      return 'Read only';
+      return 'Ask';
     case 'agent':
       return 'Agent';
     case 'accept-edits':
       return 'Accept edits';
     case 'smart':
-      return 'Auto approve';
+      return 'Smart';
     case 'bypass':
     case 'danger-full-access':
       return 'Full access';
@@ -274,10 +314,15 @@ export function chatAccessOptionSelected(
   appliedMode?: string,
 ): boolean {
   if (appliedMode) {
-    if (option.appliedMode) return option.appliedMode === appliedMode;
+    if (option.appliedMode)
+      return (
+        option.appliedMode === appliedMode &&
+        (option.appliedMode !== 'agent' ||
+          (option.level === 'full-access' ? level === 'full-access' : level !== 'full-access'))
+      );
     return option.level === appliedMode;
   }
-  return option.level === level;
+  return !option.permissionProfile && option.level === level;
 }
 
 /** The label the collapsed chip should show for the applied/stored mode. */
@@ -287,7 +332,7 @@ export function resolveChatAccessChipLabel(
   appliedMode?: string,
 ): string {
   if (appliedMode) {
-    const match = options.find((option) => option.appliedMode === appliedMode);
+    const match = options.find((option) => chatAccessOptionSelected(option, level, appliedMode));
     if (match) return match.label;
     const modeLabel =
       chatAppliedModeLabel(appliedMode) ??
@@ -304,6 +349,11 @@ export function resolveChatAccessChipLabel(
 export interface ThreadAccessStore {
   /** Level applied to threads with no explicit override. Mirrors the default. */
   defaultLevel: CodexMode;
+  defaultProfile?: PermissionProfile;
+  defaultProvider?: AgentProvider;
+  defaultSelected?: boolean;
+  providers?: Record<string, AgentProvider>;
+  profiles?: Record<string, PermissionProfile>;
   /** Last level pushed into `settings.codexMode`, for external-change checks. */
   appliedLevel: CodexMode | null;
   /** Explicit per-thread overrides. */
@@ -324,7 +374,68 @@ function storage(): Storage | null {
   }
 }
 
+const accessStores = new Map<string, ThreadAccessStore>();
+const accessListeners = new Map<string, Set<() => void>>();
+const accessChanges = new Map<string, Promise<void>>();
+export function subscribeThreadAccess(workspaceId: string, listener: () => void): () => void {
+  const listeners = accessListeners.get(workspaceId) ?? new Set();
+  accessListeners.set(workspaceId, listeners);
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (!listeners.size) accessListeners.delete(workspaceId);
+  };
+}
+export function beginThreadAccessChange(
+  workspaceId: string,
+  threadId: string | null,
+  change: () => Promise<void>,
+): Promise<void> {
+  const key = JSON.stringify([workspaceId, threadId]);
+  const prior = accessChanges.get(key);
+  if (prior) return Promise.reject(new Error('An access change is already in progress.'));
+  const pending = Promise.resolve().then(change);
+  accessChanges.set(key, pending);
+  void pending.then(
+    () => {
+      if (accessChanges.get(key) === pending) accessChanges.delete(key);
+    },
+    () => {
+      if (accessChanges.get(key) === pending) accessChanges.delete(key);
+    },
+  );
+  return pending;
+}
+export async function awaitThreadAccessChange(
+  workspaceId: string,
+  threadId: string,
+): Promise<void> {
+  for (;;) {
+    const pending = [
+      accessChanges.get(JSON.stringify([workspaceId, threadId])),
+      accessChanges.get(JSON.stringify([workspaceId, null])),
+    ].filter((value): value is Promise<void> => Boolean(value));
+    if (!pending.length) return;
+    await Promise.all(pending);
+  }
+}
+export function assertThreadAccessReady(workspaceId: string, threadId: string): void {
+  if (
+    accessChanges.has(JSON.stringify([workspaceId, threadId])) ||
+    accessChanges.has(JSON.stringify([workspaceId, null]))
+  )
+    throw new Error('Thread access is changing. Wait for it to finish before sending.');
+}
+
 export function readThreadAccessStore(workspaceId: string): ThreadAccessStore {
+  const cached = accessStores.get(workspaceId);
+  if (cached) return cached;
+  const loaded = loadThreadAccessStore(workspaceId);
+  accessStores.set(workspaceId, loaded);
+  return loaded;
+}
+
+function loadThreadAccessStore(workspaceId: string): ThreadAccessStore {
   const fallback: ThreadAccessStore = {
     defaultLevel: 'on-request',
     appliedLevel: null,
@@ -349,6 +460,17 @@ export function readThreadAccessStore(workspaceId: string): ThreadAccessStore {
         : fallback.defaultLevel,
       appliedLevel: isChatAccessLevel(parsed.appliedLevel) ? parsed.appliedLevel : null,
       threads,
+      defaultProfile: isPermissionProfile(parsed.defaultProfile)
+        ? parsed.defaultProfile
+        : 'default',
+      defaultSelected: parsed.defaultSelected === true,
+      defaultProvider: isAgentProvider(parsed.defaultProvider) ? parsed.defaultProvider : undefined,
+      providers: Object.fromEntries(
+        Object.entries(parsed.providers ?? {}).filter(([, provider]) => isAgentProvider(provider)),
+      ),
+      profiles: Object.fromEntries(
+        Object.entries(parsed.profiles ?? {}).filter(([, profile]) => isPermissionProfile(profile)),
+      ),
     };
   } catch {
     return fallback;
@@ -356,6 +478,8 @@ export function readThreadAccessStore(workspaceId: string): ThreadAccessStore {
 }
 
 export function writeThreadAccessStore(workspaceId: string, store: ThreadAccessStore): void {
+  accessStores.set(workspaceId, store);
+  for (const listener of accessListeners.get(workspaceId) ?? []) listener();
   const local = storage();
   if (!workspaceId || !local) return;
   try {
@@ -363,6 +487,21 @@ export function writeThreadAccessStore(workspaceId: string, store: ThreadAccessS
   } catch {
     // Storage full/unavailable — the chip still works for the session.
   }
+}
+
+/** Workspace settings also update the live selection when chat is unmounted. */
+export function applyWorkspaceAccessDefault(workspaceId: string, level: CodexMode | null): void {
+  const current = readThreadAccessStore(workspaceId);
+  if (level !== null && current.defaultSelected && current.defaultLevel === level) return;
+  writeThreadAccessStore(workspaceId, {
+    ...current,
+    // A reset remains read-only until the app default has been refreshed.
+    defaultLevel: level ?? 'read-only',
+    defaultSelected: level !== null,
+    ...(level === null ? { appliedLevel: null } : {}),
+    defaultProfile: 'default',
+    defaultProvider: undefined,
+  });
 }
 
 /**
@@ -391,6 +530,7 @@ export function reconcileThreadAccessStore(
   store: ThreadAccessStore,
   settingsLevel: CodexMode | undefined,
 ): ThreadAccessStore {
+  if (store.defaultSelected) return store;
   const live = isChatAccessLevel(settingsLevel) ? settingsLevel : store.defaultLevel;
   if (store.appliedLevel === live) return store;
   return { ...store, defaultLevel: live };
@@ -410,6 +550,96 @@ export function setThreadAccessLevel(
   threadId: string | null | undefined,
   level: CodexMode,
 ): ThreadAccessStore {
-  if (!threadId) return { ...store, defaultLevel: level };
-  return { ...store, threads: { ...store.threads, [threadId]: level } };
+  if (!threadId) return { ...store, defaultLevel: level, defaultProfile: 'default' };
+  return {
+    ...store,
+    threads: { ...store.threads, [threadId]: level },
+    profiles: { ...store.profiles, [threadId]: 'default' },
+  };
+}
+
+export function resolveThreadPermissionProfile(
+  store: ThreadAccessStore | null,
+  threadId?: string | null,
+): PermissionProfile {
+  return (
+    (threadId && store?.threads[threadId] ? store.profiles?.[threadId] : store?.defaultProfile) ??
+    'default'
+  );
+}
+
+/** The same current selection drives the chip, every start, and every send. */
+export function resolveThreadAccessSelection(
+  store: ThreadAccessStore,
+  threadId: string | null,
+  workspaceDefault: CodexMode | null | undefined,
+  provider: AgentProvider,
+) {
+  const mode = resolveThreadAccessLevel(
+    store,
+    threadId,
+    store.defaultSelected
+      ? workspaceDefault && isChatAccessLevel(workspaceDefault)
+        ? constrainPermissionMode(store.defaultLevel, workspaceDefault)
+        : store.defaultLevel
+      : workspaceDefault,
+  );
+  const profile =
+    mode === 'on-request' ? resolveThreadPermissionProfile(store, threadId) : 'default';
+  const source =
+    (threadId && store.threads[threadId] ? store.providers?.[threadId] : store.defaultProvider) ??
+    provider;
+  return translateInteractiveAccess(source, provider, mode, profile);
+}
+export function bindThreadAccessProvider(
+  workspaceId: string,
+  threadId: string | null,
+  provider: AgentProvider,
+): void {
+  const store = readThreadAccessStore(workspaceId);
+  if (threadId && store.threads[threadId]) {
+    if (!store.providers?.[threadId])
+      writeThreadAccessStore(workspaceId, {
+        ...store,
+        providers: { ...store.providers, [threadId]: provider },
+      });
+  } else if (!store.defaultProvider)
+    writeThreadAccessStore(workspaceId, { ...store, defaultProvider: provider });
+}
+
+/** Presentation consumers never receive a broader stand-in for an invalid selection. */
+export function resolveThreadAccessForDisplay(
+  store: ThreadAccessStore,
+  threadId: string | null,
+  workspaceDefault: CodexMode | null | undefined,
+  provider: AgentProvider,
+): { mode: CodexMode; permissionProfile: PermissionProfile; selectionError?: string } {
+  try {
+    return resolveThreadAccessSelection(store, threadId, workspaceDefault, provider);
+  } catch (error) {
+    return {
+      mode: 'read-only',
+      permissionProfile: 'default',
+      selectionError:
+        error instanceof Error ? error.message : 'Choose a replacement access setting.',
+    };
+  }
+}
+
+export function remoteThreadAccessError(input: {
+  accessError?: string;
+  accessChanging?: boolean;
+  permissionMode?: CodexMode;
+  permissionProfile?: PermissionProfile;
+}): string | undefined {
+  if (input.accessError) return input.accessError;
+  if (input.accessChanging)
+    return 'Thread access is changing. Wait for it to finish before sending.';
+  if (
+    input.permissionMode !== 'read-only' &&
+    input.permissionProfile &&
+    input.permissionProfile !== 'default'
+  )
+    return 'Remote chats cannot preserve this approval profile. Choose a replacement access setting.';
+  return undefined;
 }

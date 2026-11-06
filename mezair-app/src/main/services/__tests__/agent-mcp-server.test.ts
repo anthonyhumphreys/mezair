@@ -10,6 +10,7 @@ import {
 } from '../../agent-tools/dispatch';
 import {
   getAgentMcpTokenForSession,
+  assertAgentToolContextCurrent,
   listAgentMcpSessions,
   mintAgentMcpToken,
   recordAgentMcpToolCall,
@@ -100,13 +101,17 @@ const live: { ctx: AgentToolSessionContext } = {
 
 let server: AgentMcpServer;
 let token: string;
+let resolutions = 0;
 const toolCalls: Array<{ name: string; ok: boolean }> = [];
 
 beforeAll(async () => {
   server = await startAgentMcpServer({
     serverVersion: '9.9.9',
     instructions: (ctx) => `guide for ${ctx.provider}`,
-    resolveToken: resolveAgentMcpToken,
+    resolveToken: (value) => {
+      resolutions++;
+      return resolveAgentMcpToken(value);
+    },
     onToolCall: (ctx, name, ok) => {
       toolCalls.push({ name, ok });
       recordAgentMcpToolCall(ctx.sessionId, ok);
@@ -404,6 +409,45 @@ describe('agent MCP endpoint: protocol', () => {
     ]);
   });
 
+  it('reauthenticates after receiving a slow request body', async () => {
+    const before = resolutions;
+    let finish!: () => void;
+    const response = new Promise<number>((resolve, reject) => {
+      const req = request(
+        {
+          host: '127.0.0.1',
+          port: server.port,
+          path: '/mcp',
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on('end', () => resolve(res.statusCode!));
+        },
+      );
+      req.on('error', reject);
+      finish = () =>
+        req.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: 'slow',
+            method: 'tools/call',
+            params: { name: 'review_publish', arguments: {} },
+          }),
+        );
+      req.flushHeaders();
+    });
+    await vi.waitFor(() => expect(resolutions).toBeGreaterThan(before));
+    revokeAgentMcpToken('session-1');
+    finish();
+    expect(await response).toBe(401);
+    expect(toolCalls).toEqual([]);
+  });
   it('rejects invalid JSON-RPC envelopes', async () => {
     const result = await http(server, { token, body: { id: 1, method: 'ping' } });
     expect(result.body).toMatchObject({ id: 1, error: { code: -32600 } });
@@ -426,6 +470,21 @@ describe('agent MCP token registry', () => {
     expect(resolveAgentMcpToken('')).toBeUndefined();
   });
 
+  it('never grants an old read-only bearer newly added write authority', () => {
+    let current: AgentToolSessionContext = { ...live.ctx, mode: 'read-only' };
+    const readonly = mintAgentMcpToken('bounded', () => current);
+    current = { ...current, mode: 'full-access' };
+    expect(resolveAgentMcpToken(readonly)?.context.mode).toBe('read-only');
+  });
+  it('rejects a captured approval context after token replacement or a role reduction', () => {
+    const original = resolveAgentMcpToken(token)!.context;
+    expect(() => assertAgentToolContextCurrent(original)).not.toThrow();
+    mintAgentMcpToken('session-1', () => live.ctx);
+    expect(() => assertAgentToolContextCurrent(original)).toThrow('access changed');
+    const fresh = resolveAgentMcpToken(getAgentMcpTokenForSession('session-1')!)!.context;
+    live.ctx = { ...live.ctx, features: ['chat'] };
+    expect(() => assertAgentToolContextCurrent(fresh)).toThrow('access changed');
+  });
   it('maps tool definitions without leaking internal fields', () => {
     expect(
       toMcpTool({

@@ -46,6 +46,7 @@ const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   interruptTurn: vi.fn(),
   stopSession: vi.fn(),
+  stopSessionAndWait: vi.fn(async () => undefined),
   resolveApproval: vi.fn(),
   resolveInputRequest: vi.fn(),
   subscribeToCodexEvents: vi.fn((listener) => {
@@ -111,6 +112,8 @@ vi.mock('../codex-session.service.js', () => ({
   sendMessage: mocks.sendMessage,
   startSession: mocks.startSession,
   stopSession: mocks.stopSession,
+  stopSessionAndWait: mocks.stopSessionAndWait,
+  captureThreadAccessFence: () => () => undefined,
   subscribeToCodexEvents: mocks.subscribeToCodexEvents,
 }));
 vi.mock('../git.service.js', () => ({
@@ -209,11 +212,21 @@ beforeEach(() => {
   mocks.getChatThread.mockReset();
   mocks.getCodexSession.mockReset();
   mocks.listActiveCodexSessions.mockReturnValue([]);
-  mocks.getSettings.mockReturnValue({ codexMode: 'on-request', enabledLlmProviders: undefined, llmProvider: undefined, openaiModel: undefined });
+  mocks.getSettings.mockReturnValue({
+    codexMode: 'on-request',
+    enabledLlmProviders: undefined,
+    llmProvider: undefined,
+    openaiModel: undefined,
+  });
   mocks.getMeshMaximumPermissionMode.mockReturnValue('full-access');
   vi.clearAllMocks();
   mocks.getWorkspace.mockImplementation(() => workspace());
-  mocks.getSettings.mockReturnValue({ codexMode: 'on-request', enabledLlmProviders: undefined, llmProvider: undefined, openaiModel: undefined });
+  mocks.getSettings.mockReturnValue({
+    codexMode: 'on-request',
+    enabledLlmProviders: undefined,
+    llmProvider: undefined,
+    openaiModel: undefined,
+  });
   mocks.getMeshMaximumPermissionMode.mockReturnValue('full-access');
 });
 
@@ -580,6 +593,87 @@ describe('browser workspace chat lifecycle', () => {
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
+  it('keeps a persona-clamped session when the issued request is unchanged', async () => {
+    const clamped = {
+      ...session,
+      mode: 'read-only' as const,
+      requestedMode: 'on-request' as const,
+    };
+    mocks.getCodexSession.mockReturnValue(clamped);
+    const result = await executeBrowserWorkspaceCommand(
+      command({
+        operation: 'chat.send',
+        threadId: thread.id,
+        sessionId: clamped.id,
+        message: 'Inspect',
+        permissionMode: 'on-request',
+      }),
+      context(['submit-task']),
+    );
+    expect(result).toMatchObject({ ok: true });
+    expect(mocks.stopSessionAndWait).not.toHaveBeenCalled();
+    expect(mocks.startSession).not.toHaveBeenCalled();
+  });
+  it('reissues credentials for a changed request even when effective access stays read-only', async () => {
+    const clamped = {
+      ...session,
+      mode: 'read-only' as const,
+      requestedMode: 'on-request' as const,
+    };
+    const next = { ...clamped, id: 'fresh-clamped', requestedMode: 'read-only' as const };
+    mocks.getCodexSession.mockImplementation((id: string) => (id === next.id ? next : clamped));
+    mocks.startSession.mockResolvedValue(next);
+    const result = await executeBrowserWorkspaceCommand(
+      command({
+        operation: 'chat.send',
+        threadId: thread.id,
+        sessionId: clamped.id,
+        message: 'Inspect only',
+        permissionMode: 'read-only',
+      }),
+      context(['submit-task']),
+    );
+    expect(result).toMatchObject({ ok: true, data: { sessionId: next.id } });
+    expect(mocks.stopSessionAndWait).toHaveBeenCalledWith(clamped.id);
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      next.id,
+      'Inspect only',
+      [],
+      expect.objectContaining({ permissionMode: 'read-only' }),
+    );
+  });
+  it('reconnects an idle browser session with fresh authority when its access changes', async () => {
+    const oldSession = { ...session, mode: 'on-request' as const };
+    const replacement = { ...session, id: 'fresh-session', mode: 'read-only' as const };
+    mocks.getCodexSession.mockImplementation((id: string) =>
+      id === replacement.id ? replacement : oldSession,
+    );
+    mocks.startSession.mockResolvedValue(replacement);
+    const result = await executeBrowserWorkspaceCommand(
+      command({
+        operation: 'chat.send',
+        threadId: thread.id,
+        sessionId: oldSession.id,
+        message: 'Inspect only',
+        permissionMode: 'read-only',
+      }),
+      context(['submit-task']),
+    );
+    expect(result).toMatchObject({ ok: true, data: { sessionId: replacement.id } });
+    expect(mocks.stopSessionAndWait).toHaveBeenCalledWith(oldSession.id);
+    expect(mocks.startSession).toHaveBeenCalledWith(
+      [repoPath],
+      [repoId],
+      'coder',
+      expect.objectContaining({ codexMode: 'read-only' }),
+    );
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      replacement.id,
+      'Inspect only',
+      [],
+      expect.objectContaining({ permissionMode: 'read-only' }),
+    );
+  });
   it('allows a browser session to use the explicitly selected Desktop full-access mode', async () => {
     mocks.getCodexSession.mockReturnValue(null);
     mocks.getSettings.mockReturnValue({

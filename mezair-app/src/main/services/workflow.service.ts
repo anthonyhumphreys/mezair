@@ -63,11 +63,16 @@ import { resolveCodexRuntime } from './codex-runtime.service.js';
 import { getLlmGatewayCodexConfigArgs } from '../../shared/llm-gateway.js';
 import { resolveLlmGatewayModelConfig } from './llm-gateway.service.js';
 import { triggerWatchtowerEvent } from './automation.service.js';
-import { isAcpAgentProvider, type AcpAgentProvider } from '../../shared/agent-providers.js';
+import {
+  AGENT_PROVIDERS,
+  isAcpAgentProvider,
+  type AcpAgentProvider,
+} from '../../shared/agent-providers.js';
 import { ROLE_FEATURES } from '../../shared/types.js';
 import { openWorkflowValidationTools } from './workflow-validation-tools.js';
 import { cancelAgentQuestionsForSession } from './agent-question.service.js';
 import { providerSpawnEnv } from './agent-spawn-env.js';
+import { workflowAccessMode, assertWorkerAccessSupported } from '../../shared/agent-access.js';
 import { acpProviderLabel, buildAcpPrintInvocation } from './acp-print-cli.js';
 import { computeBootstrapDigest, getWorkspaceBootstrap } from './bootstrap-policy.service.js';
 import { workspaceDefinitionRevision } from './sync-entity-domain.js';
@@ -139,14 +144,6 @@ const activeRuns = new Map<
   string,
   { run: WorkflowRun; controller: AbortController; completion: Promise<void> }
 >();
-const AGENT_PROVIDERS: AgentProvider[] = [
-  'codex',
-  'cursor',
-  'devin',
-  'openai',
-  'azure',
-  'llmgateway',
-];
 
 export function normaliseWorkflowNodes(
   nodes: WorkflowNode[],
@@ -175,6 +172,13 @@ export function validateWorkflowGraph(nodes: WorkflowNode[], edges: WorkflowEdge
       throw new Error('Unknown workflow provider.');
     if (!getPersonaById(node.personaId)) throw new Error(`Unknown persona: ${node.personaId}`);
     validateWorkflowTarget(node.target, node.provider ?? 'codex', node.name);
+    if (node.target && node.target.kind !== 'local')
+      assertWorkerAccessSupported(
+        node.provider ?? 'codex',
+        node.permissionMode,
+        node.permissionProfile,
+        true,
+      );
     if (
       node.requiresValidation &&
       (isAcpAgentProvider(node.provider) || (node.target && node.target.kind !== 'local'))
@@ -818,6 +822,9 @@ async function runCodexThread(input: {
   model: string;
   reasoningEffort: WorkflowNode['reasoningEffort'];
   permissionMode?: import('../../shared/types.js').CodexMode;
+  permissionProfile?: import('../../shared/agent-access.js').PermissionProfile;
+  /** Main-owned: a reviewed chat delegation already carries its originating ceiling. */
+  inheritChatAccess?: boolean;
   systemPrompt: string;
   prompt: string;
   displayPrompt?: string;
@@ -858,11 +865,34 @@ async function runCodexThread(input: {
     ? gatewayConfig.effort
     : resolveCodexReasoningEffort(model, input.reasoningEffort);
   const sessionId = randomUUID();
-  const accessMode = constrainPermissionMode(
-    input.permissionMode ?? settings.codexMode ?? 'on-request',
-    settings.codexMode ?? 'on-request',
+  const accessMode = workflowAccessMode(
+    input.permissionMode,
+    getSettings().codexMode,
+    input.inheritChatAccess,
   );
   const personaPolicy = resolvePersonaCodexPolicy(accessMode, input.personaId);
+  assertWorkerAccessSupported(
+    input.provider,
+    personaPolicy.sandbox === 'read-only' ? 'read-only' : accessMode,
+    input.permissionProfile,
+    false,
+    input.inheritChatAccess,
+  );
+  const assertLiveAccess = () => {
+    const liveMode = workflowAccessMode(
+      accessMode,
+      getSettings().codexMode,
+      input.inheritChatAccess,
+    );
+    const livePolicy = resolvePersonaCodexPolicy(liveMode, input.personaId);
+    if (
+      livePolicy.sandbox !== personaPolicy.sandbox ||
+      livePolicy.approvalPolicy !== personaPolicy.approvalPolicy
+    )
+      throw new Error(
+        'Workflow access changed during startup. Restart this step under the current policy.',
+      );
+  };
   const toolAccess = input.factoryRunId
     ? { args: [] as string[], env: {} as NodeJS.ProcessEnv, close() {} }
     : await openWorkflowValidationTools(sessionId, () => {
@@ -874,10 +904,11 @@ async function runCodexThread(input: {
           workspaceId: input.workspaceId,
           repoIds: input.repoRows.map((repo) => repo.id),
           provider: input.provider,
-          mode: constrainPermissionMode(
-            personaPolicy.sandbox === 'read-only' ? 'read-only' : accessMode,
-            currentSettings.codexMode ?? 'on-request',
-          ),
+          permissionProfile: input.permissionProfile ?? 'default',
+          mode:
+            personaPolicy.sandbox === 'read-only'
+              ? 'read-only'
+              : workflowAccessMode(accessMode, currentSettings.codexMode, input.inheritChatAccess),
           features: currentSettings.userRole ? ROLE_FEATURES[currentSettings.userRole] : [],
         };
       });
@@ -886,6 +917,7 @@ async function runCodexThread(input: {
   let proc: ChildProcess;
   try {
     input.signal?.throwIfAborted();
+    assertLiveAccess();
     proc = spawn(executable, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
   } catch (error) {
     toolAccess.close();
@@ -1009,6 +1041,12 @@ async function runCodexThread(input: {
         if (!line.trim()) continue;
         handleCodexServerLine(state, line.trim(), {
           onThreadReady: () => {
+            try {
+              assertLiveAccess();
+            } catch (error) {
+              finish(error instanceof Error ? error : new Error(String(error)));
+              return;
+            }
             providerThreadId = state.threadId ?? undefined;
             if (providerThreadId) {
               setChatThreadProviderThreadId(input.threadId, providerThreadId, input.provider);
@@ -1049,6 +1087,10 @@ async function runCodexThread(input: {
       cwd,
       developerInstructions: input.systemPrompt,
       approvalPolicy: personaPolicy.approvalPolicy,
+      approvalsReviewer:
+        accessMode === 'on-request' && input.permissionProfile === 'auto-review'
+          ? 'auto_review'
+          : 'user',
       sandbox: personaPolicy.sandbox,
       model,
     };
@@ -1090,6 +1132,9 @@ async function runAcpCliThread(input: {
   provider: AcpAgentProvider;
   model: string;
   permissionMode?: import('../../shared/types.js').CodexMode;
+  permissionProfile?: import('../../shared/agent-access.js').PermissionProfile;
+  /** Main-owned: a reviewed chat delegation already carries its originating ceiling. */
+  inheritChatAccess?: boolean;
   systemPrompt: string;
   prompt: string;
   displayPrompt?: string;
@@ -1122,15 +1167,24 @@ async function runAcpCliThread(input: {
 
   const combinedPrompt = [input.systemPrompt, input.prompt].join('\n\n');
   const label = acpProviderLabel(input.provider);
-  const accessMode = constrainPermissionMode(
-    input.permissionMode ?? settings.codexMode ?? 'on-request',
-    settings.codexMode ?? 'on-request',
+  const accessMode = workflowAccessMode(
+    input.permissionMode,
+    settings.codexMode,
+    input.inheritChatAccess,
   );
   const policy = resolvePersonaCodexPolicy(accessMode, input.personaId);
+  assertWorkerAccessSupported(
+    input.provider,
+    policy.sandbox === 'read-only' ? 'read-only' : accessMode,
+    input.permissionProfile,
+    false,
+    input.inheritChatAccess,
+  );
   const { executable, args } = buildAcpPrintInvocation({
     provider: input.provider,
     model: input.model,
     mode: accessMode,
+    permissionProfile: input.permissionProfile,
     policy,
     prompt: combinedPrompt,
   });
@@ -1416,6 +1470,12 @@ async function executeRemoteWorkflowNode(
 
   let dispatch: Awaited<ReturnType<typeof dispatchWorkflowNode>>;
   try {
+    assertWorkerAccessSupported(
+      node.provider ?? 'codex',
+      node.permissionMode,
+      node.permissionProfile,
+      true,
+    );
     dispatch = await dispatchWorkflowNode({
       dispatchId,
       runId: run.id,
@@ -1555,6 +1615,10 @@ function launchWorkflow(run: WorkflowRun): Promise<void> {
             model: node.model,
             reasoningEffort: node.reasoningEffort,
             permissionMode: node.permissionMode,
+            permissionProfile: node.permissionProfile,
+            inheritChatAccess:
+              Boolean(current.chatOrigin) &&
+              !factoryRunIdFromRequest(current.chatOrigin?.requestId),
             signal,
             systemPrompt: [
               workflowSystemPrompt(

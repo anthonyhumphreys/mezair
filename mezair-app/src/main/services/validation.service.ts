@@ -1,3 +1,4 @@
+import { assertAgentToolContextCurrent } from './agent-mcp/registry.js';
 import { createHash, randomUUID } from 'node:crypto';
 import type { AgentUISurfaceIntent } from '../../shared/agent-ui-intents.js';
 import type { WorkItemReference } from '../../shared/change-review-types.js';
@@ -408,6 +409,24 @@ export async function refreshValidation(surfaceId: string): Promise<AgentUISurfa
   }));
 }
 
+function currentValidationAccess(
+  ctx: AgentToolSessionContext,
+  maximum: AgentToolSessionContext['mode'],
+) {
+  // Workflow tool sessions live in the MCP registry rather than the chat process map.
+  const live = ctx.authorityId !== undefined ? ctx : getAgentToolSessionContext(ctx.sessionId);
+  if (!live) return 'read-only' as const;
+  try {
+    assertAgentToolContextCurrent(ctx);
+  } catch {
+    return 'read-only' as const;
+  }
+  return constrainPermissionMode(
+    constrainPermissionMode(maximum, live.mode),
+    getSettings().codexMode ?? 'on-request',
+  );
+}
+
 export async function startValidation(
   ctx: AgentToolSessionContext,
   surfaceId: string,
@@ -462,6 +481,11 @@ export async function startValidation(
     if ((current.payload.data as ValidationSurfaceData).freshness !== 'current')
       throw new AgentToolError('Source or criteria changed during approval.', 'conflict');
     controller.signal.throwIfAborted();
+    if (currentValidationAccess(ctx, mode) !== mode)
+      throw new AgentToolError(
+        'Session access changed before validation could start.',
+        'forbidden',
+      );
     const ids = new Set(checks.map((check) => check.id));
     const started = patchSurface<ValidationSurfaceData>(surfaceId, undefined, (current) => ({
       ...current,
@@ -513,10 +537,7 @@ async function executeChecks(
       const current = await refreshValidation(surfaceId);
       const data = current.payload.data as ValidationSurfaceData;
       if (data.freshness !== 'current') break;
-      const effectiveMode = constrainPermissionMode(
-        constrainPermissionMode(mode, getAgentToolSessionContext(ctx.sessionId)?.mode ?? mode),
-        getSettings().codexMode ?? 'on-request',
-      );
+      const effectiveMode = currentValidationAccess(ctx, mode);
       if (effectiveMode !== mode) break;
       const outcome = await runVerificationCommand({
         repositoryId: data.repoId,
@@ -525,12 +546,7 @@ async function executeChecks(
         target: { kind: 'integration', integrationId: surfaceId, runId: data.criteriaVersion },
         permissionMode: effectiveMode,
         approve: async () => true,
-        isCancelled: () =>
-          controller.signal.aborted ||
-          constrainPermissionMode(
-            constrainPermissionMode(mode, getAgentToolSessionContext(ctx.sessionId)?.mode ?? mode),
-            getSettings().codexMode ?? 'on-request',
-          ) !== mode,
+        isCancelled: () => controller.signal.aborted || currentValidationAccess(ctx, mode) !== mode,
       });
       const status =
         !outcome.approvalGranted ||

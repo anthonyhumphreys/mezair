@@ -17,6 +17,8 @@ db.exec(SCHEMA_SQL);
 const state = vi.hoisted(() => ({
   mode: 'workspace-auto' as AgentToolSessionContext['mode'],
   criteria: '- Expired links are rejected.',
+  alive: true,
+  refreshGate: undefined as Promise<void> | undefined,
   approve: vi.fn(async () => true),
   command: vi.fn(async (_input: unknown) => ({
     approvalGranted: true,
@@ -34,7 +36,7 @@ vi.mock('../codex-session.service.js', () => ({
   broadcastAgentUIIntent: vi.fn(),
   deliverStructuredAgentFeedback: vi.fn(async () => true),
   getCodexSession: vi.fn(() => ({ id: 'session', mode: state.mode })),
-  getAgentToolSessionContext: vi.fn(() => ({ mode: state.mode })),
+  getAgentToolSessionContext: vi.fn(() => (state.alive ? { mode: state.mode } : undefined)),
   listActiveCodexSessions: vi.fn(() => []),
 }));
 vi.mock('../settings.service.js', () => ({
@@ -47,6 +49,7 @@ vi.mock('../settings.service.js', () => ({
 vi.mock('../workitem-provider.js', () => ({
   getActiveProvider: () => ({
     getItem: async () => {
+      await state.refreshGate;
       if (state.criteria === 'offline') throw new Error('offline');
       return {
         id: 'ANV-42',
@@ -152,6 +155,8 @@ beforeEach(() => {
     "INSERT INTO chat_messages (id, thread_id, role, content) VALUES ('request', 'thread', 'user', 'Reject expired links and preserve the draft.')",
   ).run();
   state.mode = 'workspace-auto';
+  state.alive = true;
+  state.refreshGate = undefined;
   state.criteria = '- Expired links are rejected.';
   state.approve.mockReset().mockResolvedValue(true);
   state.command.mockReset().mockResolvedValue({
@@ -171,6 +176,20 @@ afterAll(() => {
 });
 
 describe('conversational validation', () => {
+  it('does not run a command when the originating session is revoked during refresh', async () => {
+    const surface = await plan();
+    let release!: () => void;
+    state.refreshGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const starting = startValidation(ctx, surface.id);
+    const rejected = expect(starting).rejects.toThrow('Session access changed');
+    state.alive = false;
+    release();
+    await rejected;
+    expect(state.command).not.toHaveBeenCalled();
+  });
+
   it('pins the source and criteria without changing the index or running a command', async () => {
     writeFileSync(join(repo, 'file.txt'), 'working change\n');
     const before = git(repo, 'status', '--porcelain');

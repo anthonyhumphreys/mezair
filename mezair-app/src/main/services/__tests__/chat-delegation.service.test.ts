@@ -118,8 +118,9 @@ const proposal = (): ChatDelegationInput & Record<string, unknown> => ({
       name: 'Review',
       instruction: 'Inspect the code and report concerns. Do not edit files.',
       destinationId: 'local',
-      provider: 'cursor',
+      provider: 'codex',
       model: 'auto',
+      access: 'read-only',
     },
   ],
 });
@@ -237,7 +238,7 @@ describe('chat-native delegation', () => {
       definition: {
         nodes: [
           {
-            provider: 'cursor',
+            provider: 'codex',
             personaId: 'architect',
             permissionMode: 'read-only',
             target: { kind: 'local' },
@@ -261,9 +262,81 @@ describe('chat-native delegation', () => {
     mocks.scope.mockReturnValue(session);
     input.tasks[0].access = 'inherit';
     expect(listAgentTools(session).map((tool) => tool.name)).toContain('delegation_propose');
-    await callAgentTool(session, 'delegation_propose', input);
-    expect(mocks.start.mock.calls[0][0].definition.nodes[0].permissionMode).toBe('read-only');
+    if (provider === 'cursor' || provider === 'devin') {
+      await expect(callAgentTool(session, 'delegation_propose', input)).rejects.toThrow(
+        'strict read-only task',
+      );
+      expect(mocks.approval).not.toHaveBeenCalled();
+    } else {
+      await callAgentTool(session, 'delegation_propose', input);
+      expect(mocks.start.mock.calls[0][0].definition.nodes[0].permissionMode).toBe('read-only');
+    }
   });
+  it.each(AGENT_PROVIDERS)(
+    'inherits Full access for a local %s task when access is omitted',
+    async (provider) => {
+      const input = proposal();
+      input.tasks[0].provider = provider;
+      delete input.tasks[0].access;
+      const session = { ...ctx, mode: 'full-access' as const };
+      mocks.scope.mockReturnValue(session);
+      await callAgentTool(session, 'delegation_propose', input);
+      expect(mocks.start.mock.calls[0][0]).toMatchObject({
+        permissionCeiling: 'full-access',
+        definition: { nodes: [{ provider, permissionMode: 'full-access' }] },
+      });
+    },
+  );
+  it.each(AGENT_PROVIDERS)('carries auto review to a local %s delegate', async (provider) => {
+    const input = proposal();
+    input.tasks[0].provider = provider;
+    input.tasks[0].access = 'inherit';
+    const session = { ...ctx, permissionProfile: 'auto-review' as const };
+    mocks.scope.mockReturnValue(session);
+    await callAgentTool(session, 'delegation_propose', input);
+    expect(mocks.start.mock.calls[0][0].definition.nodes[0].permissionProfile).toBe('auto-review');
+  });
+  it('rejects a pending proposal after the approval profile changes', async () => {
+    const input = proposal();
+    input.tasks[0].access = 'inherit';
+    const session = { ...ctx, permissionProfile: 'auto-review' as const };
+    mocks.scope.mockReturnValue({ ...ctx, permissionProfile: 'default' });
+    mocks.sessions.mockReturnValue([
+      { id: ctx.sessionId, appThreadId: ctx.appThreadId, workspaceId: ctx.workspaceId },
+    ]);
+    await callAgentTool(session, 'delegation_propose', input);
+    await vi.waitFor(() => expect(mocks.feedback).toHaveBeenCalled());
+    expect(mocks.start).not.toHaveBeenCalled();
+  });
+  it.each(['claude', 'cursor', 'devin'] as const)(
+    'cannot silently replace a strict workspace sandbox with %s approvals',
+    async (provider) => {
+      const input = proposal();
+      input.tasks[0].provider = provider;
+      delete input.tasks[0].access;
+      await expect(
+        callAgentTool({ ...ctx, mode: 'workspace-auto' }, 'delegation_propose', input),
+      ).rejects.toThrow('strict workspace-only');
+      expect(mocks.approval).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['claude', 'cursor', 'devin'] as const)(
+    'revalidates a reduced live workspace ceiling before launching %s',
+    async (provider) => {
+      const input = proposal();
+      input.tasks[0].provider = provider;
+      input.tasks[0].access = 'inherit';
+      const source = { ...ctx, mode: 'full-access' as const };
+      mocks.scope.mockReturnValue({ ...ctx, mode: 'workspace-auto' });
+      mocks.sessions.mockReturnValue([
+        { id: ctx.sessionId, appThreadId: ctx.appThreadId, workspaceId: ctx.workspaceId },
+      ]);
+      await callAgentTool(source, 'delegation_propose', input);
+      await vi.waitFor(() => expect(mocks.feedback).toHaveBeenCalled());
+      expect(mocks.start).not.toHaveBeenCalled();
+      expect(mocks.feedback.mock.calls[0][1]).toContain('workspace-only');
+    },
+  );
   it('honours a reduced access ceiling at approval time', async () => {
     const input = proposal();
     input.tasks[0].access = 'inherit';
@@ -320,6 +393,19 @@ describe('chat-native delegation', () => {
     await expect(
       callAgentTool(ctx, 'delegation_propose', { ...proposal(), reason: 'Different purpose' }),
     ).rejects.toMatchObject({ code: 'conflict' });
+  });
+  it('replays legacy omitted-access fingerprints without conflating new requests', async () => {
+    await callAgentTool(ctx, 'delegation_propose', proposal());
+    await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledOnce());
+    mocks.existing.mockReturnValue(run);
+    const retry = proposal();
+    delete retry.tasks[0].access;
+    await expect(callAgentTool(ctx, 'delegation_propose', retry)).rejects.toMatchObject({
+      code: 'conflict',
+    });
+    delete run.chatOrigin!.fingerprintVersion;
+    await callAgentTool(ctx, 'delegation_propose', retry);
+    expect(mocks.start).toHaveBeenCalledOnce();
   });
   it('preflights remote source snapshots before asking for approval', async () => {
     const input = proposal();

@@ -12,6 +12,7 @@ export interface ChatDelegationOrigin {
   threadId: string;
   requestId: string;
   fingerprint: string;
+  fingerprintVersion?: 2;
   reason: string;
   destinations: Record<string, string>;
   source?: 'committed' | 'current-tracked';

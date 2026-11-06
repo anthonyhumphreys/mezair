@@ -72,10 +72,24 @@ export function buildAcpPrintInvocation(input: {
   provider: AcpAgentProvider;
   model?: string;
   mode: CodexMode;
+  permissionProfile?: import('../../shared/agent-access.js').PermissionProfile;
   policy: AcpAccessPolicy;
   prompt: string;
 }): AcpPrintInvocation {
   const label = acpProviderLabel(input.provider);
+  if (
+    input.provider !== 'claude' &&
+    (input.mode === 'read-only' || input.policy.sandbox === 'read-only')
+  )
+    throw new Error(
+      `${label} print mode cannot guarantee a read-only sandbox. Choose a Codex provider for restricted reviews.`,
+    );
+  const profile =
+    input.mode === 'on-request' && input.policy.sandbox !== 'read-only'
+      ? input.permissionProfile
+      : undefined;
+  if (profile === 'dont-ask' && input.provider !== 'claude')
+    throw new Error('Only Claude can enforce its configured allowlist-only permissions.');
   if (input.provider === 'claude') {
     const model = resolveClaudeModel(input.model);
     const readOnly = input.policy.sandbox === 'read-only' || input.mode === 'read-only';
@@ -89,11 +103,17 @@ export function buildAcpPrintInvocation(input: {
         '--permission-mode',
         readOnly
           ? 'plan'
-          : input.mode === 'full-access'
-            ? 'bypassPermissions'
-            : input.mode === 'workspace-auto'
-              ? 'acceptEdits'
-              : 'default',
+          : profile === 'auto-review'
+            ? 'auto'
+            : profile === 'dont-ask'
+              ? 'dontAsk'
+              : profile === 'accept-edits'
+                ? 'acceptEdits'
+                : input.mode === 'full-access'
+                  ? 'bypassPermissions'
+                  : input.mode === 'workspace-auto'
+                    ? 'acceptEdits'
+                    : 'default',
         ...(readOnly
           ? [
               '--tools',
@@ -116,7 +136,9 @@ export function buildAcpPrintInvocation(input: {
       args: [
         '--print',
         '--permission-mode',
-        resolveDevinCliPermissionMode(input.mode, input.policy),
+        profile === 'auto-review'
+          ? 'smart'
+          : resolveDevinCliPermissionMode(input.mode, input.policy),
         '--respect-workspace-trust',
         'false',
         ...(input.model && input.model !== 'auto' ? ['--model', input.model] : []),
@@ -134,7 +156,9 @@ export function buildAcpPrintInvocation(input: {
       'text',
       '--model',
       input.model?.trim() || 'auto',
-      ...resolveCursorPrintModeArgs(input.mode, input.policy),
+      ...(profile === 'auto-review'
+        ? ['--auto-review']
+        : resolveCursorPrintModeArgs(input.mode, input.policy)),
       input.prompt,
     ],
   };

@@ -802,6 +802,7 @@ export interface WorkflowNode {
   requiresValidation?: boolean;
   /** Chosen running mode; remote execution also obeys the target node ceiling. */
   permissionMode?: CodexMode;
+  permissionProfile?: import('./agent-access.js').PermissionProfile;
 }
 
 export interface WorkflowEdge {
@@ -957,6 +958,7 @@ export interface ChatSendOptions {
   model?: string;
   /** Optional per-turn access selection used by the browser workspace. */
   permissionMode?: CodexMode;
+  permissionProfile?: import('./agent-access.js').PermissionProfile;
   serviceTier?: string | null;
 }
 
@@ -1284,7 +1286,13 @@ export interface CodexEvent {
     | 'turn_outcome'
     | 'context_compaction'
     | 'usage_context'
-    | 'thread_metadata';
+    | 'thread_metadata'
+    | 'access_update';
+  access?: {
+    mode: CodexMode;
+    permissionProfile: import('./agent-access.js').PermissionProfile;
+    appliedMode: string;
+  };
   /** Browser-owned sessions are persisted by the main process before broadcast. */
   persistedBy?: 'main';
   /** App routing metadata attached to live provider events. */
@@ -1392,9 +1400,9 @@ export interface CodexSessionCapabilities {
   /** Provider emits thread/goal lifecycle events (Codex-only today). */
   goals: boolean;
   /**
-   * Distinct provider-side access modes when the provider collapses Mezair's
-   * four CodexMode levels — e.g. Cursor exposes ask/agent/plan only. Undefined
-   * for Codex-family providers where all four CodexModes are distinct.
+   * Live provider-side mode IDs, with adapter defaults before discovery.
+   * These describe approval/agent modes, not OS sandbox guarantees.
+   * Undefined for Codex-family providers, which use the sandbox controls.
    */
   accessModes?: string[];
 }
@@ -1418,6 +1426,8 @@ export interface CodexSession {
   status: 'starting' | 'ready' | 'busy' | 'error';
   startedAt: string;
   mode?: CodexMode;
+  /** Access requested when this provider session and its credentials were issued. */
+  requestedMode?: CodexMode;
   /**
    * Provider-side mode actually applied for the current turn — ACP
    * session/set_mode id ('ask' | 'agent' | 'plan' | 'accept-edits' | 'smart' |

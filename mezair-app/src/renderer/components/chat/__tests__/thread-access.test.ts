@@ -339,6 +339,9 @@ describe('current access authority', () => {
       'allowlist-only',
     );
     expect(remoteThreadAccessError({ permissionProfile: 'default' })).toBeUndefined();
+    expect(
+      remoteThreadAccessError({ permissionMode: 'read-only', permissionProfile: 'auto-review' }),
+    ).toBeUndefined();
   });
   it('blocks remote sends during access changes and for profiles the remote contract cannot carry', () => {
     expect(remoteThreadAccessError({ accessChanging: true })).toContain('changing');

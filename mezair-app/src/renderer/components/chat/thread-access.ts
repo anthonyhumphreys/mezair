@@ -609,12 +609,17 @@ export function resolveThreadAccessForDisplay(
 export function remoteThreadAccessError(input: {
   accessError?: string;
   accessChanging?: boolean;
+  permissionMode?: CodexMode;
   permissionProfile?: PermissionProfile;
 }): string | undefined {
   if (input.accessError) return input.accessError;
   if (input.accessChanging)
     return 'Thread access is changing. Wait for it to finish before sending.';
-  if (input.permissionProfile && input.permissionProfile !== 'default')
+  if (
+    input.permissionMode !== 'read-only' &&
+    input.permissionProfile &&
+    input.permissionProfile !== 'default'
+  )
     return 'Remote chats cannot preserve this approval profile. Choose a replacement access setting.';
   return undefined;
 }

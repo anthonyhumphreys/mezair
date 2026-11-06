@@ -469,7 +469,8 @@ export function ChatView({ userRole }: ChatViewProps) {
       provider: modelProvider,
       model,
       permissionMode:
-        isItsmPersona || activeThread?.purpose === 'side-question'
+        activePersona?.capabilities.canWriteFiles === false ||
+        activeThread?.purpose === 'side-question'
           ? 'read-only'
           : threadAccess.level,
       reasoningEffort: reasoningLevel,
@@ -487,7 +488,7 @@ export function ChatView({ userRole }: ChatViewProps) {
       session?.id,
       modelProvider,
       model,
-      isItsmPersona,
+      activePersona?.capabilities.canWriteFiles,
       activeThread?.purpose,
       threadAccess.level,
       workspaceAccessDefault,
@@ -1404,7 +1405,10 @@ export function ChatView({ userRole }: ChatViewProps) {
             accessSelectionError={
               threadAccess.selectionError ??
               (runTarget.remote
-                ? remoteThreadAccessError({ permissionProfile: threadAccess.permissionProfile })
+                ? remoteThreadAccessError({
+                    permissionProfile: threadAccess.permissionProfile,
+                    permissionMode: runTargetInput.permissionMode,
+                  })
                 : undefined)
             }
             onAccessOptionSelect={scaffoldModeActive ? undefined : handleAccessOptionSelect}

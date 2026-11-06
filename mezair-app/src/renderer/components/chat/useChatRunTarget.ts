@@ -425,6 +425,7 @@ export function useChatRunTarget(input: {
           );
           const profileError = remoteThreadAccessError({
             permissionProfile: live.permissionProfile,
+            permissionMode: input.permissionMode,
           });
           if (profileError) throw new Error(profileError);
           if (input.permissionMode !== 'read-only' && live.mode !== input.permissionMode)

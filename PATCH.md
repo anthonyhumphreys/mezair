@@ -359,7 +359,9 @@ Owner modules: `validation.service.ts`, the validation surface triple and its
 registry entries, work-item launch/history, legacy review route handling,
 workflow validation tools and the shared question lifecycle. Local workflow
 tool sessions allow only validation, surface reads and conversational questions,
-with current role/access checks and revocation when the worker exits. Saved
+with current role/access checks and revocation when the worker exits. Re-check
+the issuing authority after source refresh and approval; a stopped or replaced
+session cannot start or continue queued validation commands. Saved
 validation steps cannot complete without current per-criterion evidence.
 Verify Node/web typechecks, lint, service/real-Git tests, the Desktop suite and
 production build. Browser replay is presentation evidence, not native acceptance.
@@ -902,11 +904,32 @@ transport level; do not turn them into Codex's no-escalation workspace sandbox.
 Reject a cross-provider strict workspace-only request that cannot be enforced,
 and fence pending proposals if the coordinator's approval settings change.
 
-Carry thread access explicitly on session start and each normal send. Changing
-one thread must not overwrite global defaults or another thread's access.
+Carry thread access explicitly on session start, prepared launches and each
+normal send. Browser clients reconnect idle sessions when access changes. Plan
+feedback preserves the selected profile while retaining the read-only clamp.
+Re-check live workflow settings after asynchronous setup and before turn start.
+Changing one thread must not overwrite global defaults or another thread's access.
+Use a shared in-memory selection for the chip, ordinary/prepared launches and
+sends; localStorage is persistence only. Preserve the source provider when
+translating a selection, and require an explicit replacement for an unsupported
+profile. Never turn allowlist-only access into default approvals silently.
+Before committing an access change, main retires the thread's provider sessions
+and invalidates in-flight starts. Revoke their bearer tokens immediately and
+resume the conversation with fresh credentials on the next turn. Bound issued
+bearers to their original access ceiling, reauthenticate after receiving request
+bytes, and fence approvals against the current bearer, scope and access revision.
+Keep requested approval profiles separate from temporary Plan clamps and from
+provider-confirmed access. Apply effective changes only after acknowledgement;
+rejected controls retain the prior effective authority. The composer identifies
+the next-turn selection separately from confirmed provider access.
 Reviewed local delegations inherit the coordinator's access unless the task
 explicitly requests read-only. Freeze the originating ceiling, recheck it at
 approval, preserve persona restrictions, and inherit it for expanded children.
+Revalidate worker support after the live ceiling and persona clamps. Reject
+unsupported local or remote specialists before inserting any graph children.
+Preserve translated approval profiles on saved workflow workers while retaining
+their app ceiling. Replay legacy omitted-access fingerprints only for already
+saved runs; new fingerprints distinguish omitted and explicit read-only access.
 Remote tasks retain their read-only default and target ceilings; current-tracked
 review remains strictly read-only. Saved workflows, factories and automations
 retain their existing app ceilings. A provider approval mode is not a substitute

@@ -39,6 +39,8 @@ export function ChatAccessLevelChip({
   disabled = false,
   options,
   appliedMode,
+  requestedMode,
+  selectionError,
   onSelectOption,
   compact = false,
 }: {
@@ -49,6 +51,8 @@ export function ChatAccessLevelChip({
   options?: ChatAccessOption[];
   /** The provider-side mode actually applied for the session, when known. */
   appliedMode?: string;
+  requestedMode?: string;
+  selectionError?: string;
   /**
    * Preferred selector — receives the full option so `plan` options can route
    * through the collaboration-mode transport instead of a CodexMode.
@@ -60,10 +64,16 @@ export function ChatAccessLevelChip({
   const resolvedOptions = (options ?? chatAccessOptionsForProvider(undefined)).filter(
     (option) => onSelectOption || !option.permissionProfile,
   );
-  const selectedOption = resolvedOptions.find((option) =>
-    chatAccessOptionSelected(option, value, appliedMode),
+  const selectedOption = resolvedOptions.find(
+    (option) =>
+      !selectionError && chatAccessOptionSelected(option, value, requestedMode ?? appliedMode),
   );
-  const chipLabel = resolveChatAccessChipLabel(resolvedOptions, value, appliedMode);
+  const requestedLabel = resolveChatAccessChipLabel(resolvedOptions, value, requestedMode);
+  const chipLabel = selectionError
+    ? 'Choose access'
+    : appliedMode
+      ? resolveChatAccessChipLabel(resolvedOptions, value, appliedMode)
+      : `Next: ${requestedLabel}`;
   const elevated = selectedOption?.elevated ?? chatAccessLevelIsElevated(value);
 
   const select = (option: ChatAccessOption) => {
@@ -75,7 +85,11 @@ export function ChatAccessLevelChip({
   };
 
   const requestSelect = (option: ChatAccessOption) => {
-    if (option.disabledReason || chatAccessOptionSelected(option, value, appliedMode)) return;
+    if (
+      option.disabledReason ||
+      (!selectionError && chatAccessOptionSelected(option, value, requestedMode ?? appliedMode))
+    )
+      return;
     if (option.level === 'full-access') {
       setConfirmTarget(option);
       return;
@@ -121,6 +135,10 @@ export function ChatAccessLevelChip({
         menuClassName="w-80"
       >
         <MenuLabel>Thread access</MenuLabel>
+        <p className="px-3 pb-2 text-xs leading-4 text-text-secondary">
+          {selectionError ??
+            `Next turn: ${requestedLabel}. ${appliedMode ? `Current provider: ${resolveChatAccessChipLabel(resolvedOptions, value, appliedMode)}.` : 'No provider access has been confirmed.'}`}
+        </p>
         {resolvedOptions.length === 0 && (
           <p className="px-3 py-2 text-xs text-text-secondary">
             This provider reported no configurable access modes.
@@ -130,7 +148,9 @@ export function ChatAccessLevelChip({
           Delegated agents inherit this access. Provider and destination limits still apply.
         </p>
         {resolvedOptions.map((option, index) => {
-          const selected = chatAccessOptionSelected(option, value, appliedMode);
+          const selected =
+            !selectionError &&
+            chatAccessOptionSelected(option, value, requestedMode ?? appliedMode);
           return (
             <div
               key={`${option.appliedMode ?? option.level ?? index}:${option.level ?? option.collaborationMode}`}

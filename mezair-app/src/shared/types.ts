@@ -1286,7 +1286,13 @@ export interface CodexEvent {
     | 'turn_outcome'
     | 'context_compaction'
     | 'usage_context'
-    | 'thread_metadata';
+    | 'thread_metadata'
+    | 'access_update';
+  access?: {
+    mode: CodexMode;
+    permissionProfile: import('./agent-access.js').PermissionProfile;
+    appliedMode: string;
+  };
   /** Browser-owned sessions are persisted by the main process before broadcast. */
   persistedBy?: 'main';
   /** App routing metadata attached to live provider events. */

@@ -1,4 +1,7 @@
-import { inheritedPermissionProfile } from '../../shared/agent-access.js';
+import {
+  inheritedPermissionProfile,
+  assertWorkerAccessSupported,
+} from '../../shared/agent-access.js';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import type {
@@ -345,7 +348,11 @@ export async function applyDelegationIntegration(
   return describeChatDelegation(run);
 }
 
-function fingerprint(input: ChatDelegationInput, ctx: AgentToolSessionContext): string {
+function fingerprint(
+  input: ChatDelegationInput,
+  ctx: AgentToolSessionContext,
+  omittedAccess = 'default',
+): string {
   return createHash('sha256')
     .update(
       JSON.stringify({
@@ -362,7 +369,7 @@ function fingerprint(input: ChatDelegationInput, ctx: AgentToolSessionContext): 
           provider: t.provider,
           model: t.model,
           reasoningEffort: t.reasoningEffort,
-          access: t.access ?? 'default',
+          access: t.access ?? omittedAccess,
           dependsOn: t.dependsOn ?? [],
         })),
       }),
@@ -398,7 +405,11 @@ export async function proposeChatDelegation(
   const digest = fingerprint(input, ctx);
   const existing = getChatWorkflowRunByRequest(ctx.appThreadId, input.requestId);
   if (existing) {
-    if (existing.chatOrigin?.fingerprint !== digest)
+    if (
+      existing.chatOrigin?.fingerprint !== digest &&
+      (existing.chatOrigin?.fingerprintVersion === 2 ||
+        existing.chatOrigin?.fingerprint !== fingerprint(input, ctx, 'read-only'))
+    )
       throw new AgentToolError(
         'This request ID already belongs to different delegated work.',
         'conflict',
@@ -803,10 +814,31 @@ async function approveAndStart(
       'The chat’s approval settings changed. Propose the work again with the current access.',
       'conflict',
     );
+  if ((ctx.accessRevision ?? 0) !== (liveScope.accessRevision ?? 0))
+    throw new AgentToolError(
+      'The chat access changed while approval was pending. Propose the work again.',
+      'conflict',
+    );
+  const permissionCeiling = constrainPermissionMode(ctx.mode, liveScope.mode);
+  const approvedNodes = nodes.map((node) => {
+    const permissionMode = constrainPermissionMode(
+      node.permissionMode ?? 'read-only',
+      permissionCeiling,
+    );
+    const permissionProfile = permissionMode === 'on-request' ? node.permissionProfile : undefined;
+    assertWorkerAccessSupported(
+      node.provider ?? 'codex',
+      permissionMode,
+      permissionProfile,
+      node.target?.kind !== 'local',
+      true,
+    );
+    return { ...node, permissionMode, permissionProfile };
+  });
   const run = startChatWorkflowRun({
     workspaceId: ctx.workspaceId!,
     repoIds: [...ctx.repoIds],
-    permissionCeiling: constrainPermissionMode(ctx.mode, liveScope.mode),
+    permissionCeiling,
     kickoff: prependThreadContinuation(
       captureThreadContinuation(ctx.appThreadId!).context,
       input.reason,
@@ -815,6 +847,7 @@ async function approveAndStart(
       threadId: ctx.appThreadId!,
       requestId: input.requestId,
       fingerprint: digest,
+      fingerprintVersion: 2,
       reason: input.reason,
       destinations: names,
       source: input.source ?? 'committed',
@@ -829,12 +862,12 @@ async function approveAndStart(
     ...(prepared.remoteReviewBackend ? { remoteReviewBackend: prepared.remoteReviewBackend } : {}),
     definition: {
       name: input.title,
-      nodes,
+      nodes: approvedNodes,
       edges,
       orchestration: {
         ...DEFAULT_ORCHESTRATION,
         profiles: [],
-        maxConcurrency: nodes.every((node) => node.permissionMode === 'read-only') ? 2 : 1,
+        maxConcurrency: approvedNodes.every((node) => node.permissionMode === 'read-only') ? 2 : 1,
         maxNodes: 8,
         maxDepth: 0,
         maxAttempts: 2,

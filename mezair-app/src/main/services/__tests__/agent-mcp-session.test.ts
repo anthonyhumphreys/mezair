@@ -105,6 +105,7 @@ vi.mock('../chat-evidence.service.js', () => ({ saveChatEvent: vi.fn() }));
 vi.mock('../agent-ui-intent.service.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../agent-ui-intent.service.js')>()),
   expireAgentUIIntentsForSession: () => [],
+  getAgentUIIntent: () => null,
 }));
 vi.mock('../thread-assist.service.js', () => ({ scheduleThreadMetadataRefresh: () => undefined }));
 vi.mock('../notification.service.js', () => ({ notifyChatActivity: () => undefined }));
@@ -121,8 +122,11 @@ vi.mock('../codex-runtime.service.js', () => ({ resolveCodexRuntime: async () =>
 import { spawn } from 'node:child_process';
 import {
   getAgentToolSessionContext,
+  invalidateThreadAccess,
+  captureThreadAccessFence,
   sendMessage,
   emitLocalAssistantTurnEnd,
+  deliverStructuredAgentFeedback,
   startSession,
   stopAllSessions,
   stopSession,
@@ -152,8 +156,9 @@ async function startCodex(
 ) {
   const proc = createFakeProcess();
   mocks.spawnResults.push(proc);
+  const before = vi.mocked(spawn).mock.calls.length;
   const started = startSession(['/repo'], repoIds, 'coder', { provider: 'codex', ...options });
-  await vi.waitFor(() => expect(vi.mocked(spawn)).toHaveBeenCalled());
+  await vi.waitFor(() => expect(vi.mocked(spawn).mock.calls.length).toBeGreaterThan(before));
   emit(proc, { jsonrpc: '2.0', method: 'thread/started', params: { thread: { id: 'th-1' } } });
   return { proc, session: await started };
 }
@@ -218,6 +223,8 @@ describe('codex-session agent MCP wiring', () => {
       provider: 'codex',
       mode: 'on-request',
       permissionProfile: 'default',
+      accessRevision: 0,
+      authorityId: expect.any(Number),
       features: ROLE_FEATURES['ba-brm'],
     });
     mocks.settings.userRole = undefined;
@@ -229,6 +236,75 @@ describe('codex-session agent MCP wiring', () => {
     expect(getAgentToolSessionContext(session.id)).toBeUndefined();
   });
 
+  it('retires old credentials before accepting an access reduction and issues a fresh bearer on restart', async () => {
+    const { session } = await startCodex({
+      threadId: 'thread-1',
+      workspace: { workspaceId: 'ws-1' },
+      codexMode: 'full-access',
+    });
+    const oldToken = getAgentMcpTokenForSession(session.id)!;
+    expect(resolveAgentMcpToken(oldToken)?.context.mode).toBe('full-access');
+    const invalidating = invalidateThreadAccess('thread-1');
+    expect(resolveAgentMcpToken(oldToken)).toBeUndefined();
+    await invalidating;
+    const next = await startCodex({
+      threadId: 'thread-1',
+      workspace: { workspaceId: 'ws-1' },
+      codexMode: 'read-only',
+    });
+    const newToken = getAgentMcpTokenForSession(next.session.id)!;
+    expect(newToken).not.toBe(oldToken);
+    expect(resolveAgentMcpToken(newToken)?.context.mode).toBe('read-only');
+    await expect(
+      sendMessage(next.session.id, 'escalate', [], { permissionMode: 'full-access' }),
+    ).rejects.toThrow('fresh permissions');
+    expect(resolveAgentMcpToken(oldToken)).toBeUndefined();
+    expect(resolveAgentMcpToken(newToken)?.context.mode).toBe('read-only');
+  });
+  it('fences discovery that began before the session startup call', async () => {
+    const assertStartAccess = captureThreadAccessFence('discovering-thread');
+    await invalidateThreadAccess('discovering-thread');
+    expect(assertStartAccess).toThrow('access changed');
+    expect(captureThreadAccessFence('discovering-thread')).not.toThrow();
+  });
+  it('fences an access change during startup before a process or usable token can escape', async () => {
+    const starting = startSession(['/repo'], ['r1'], 'coder', {
+      provider: 'codex',
+      threadId: 'starting-thread',
+    });
+    const rejected = expect(starting).rejects.toThrow('access changed');
+    await invalidateThreadAccess('starting-thread');
+    await rejected;
+    expect(spawn).not.toHaveBeenCalled();
+  });
+  it('continues Plan feedback with the selected profile while retaining the read-only clamp', async () => {
+    const { proc, session } = await startCodex({
+      threadId: 'plan-feedback',
+      permissionProfile: 'auto-review',
+    });
+    await sendMessage(session.id, 'Plan it', [], {
+      permissionMode: 'on-request',
+      permissionProfile: 'auto-review',
+      collaborationMode: 'plan',
+    });
+    const first = requests(proc, 'turn/start').at(-1)!;
+    emit(proc, { jsonrpc: '2.0', id: first.id, result: { turn: { id: 'plan-turn' } } });
+    emit(proc, {
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: { turn: { id: 'plan-turn', status: 'completed' } },
+    });
+    await expect(deliverStructuredAgentFeedback(session.id, 'Refine this step')).resolves.toBe(
+      true,
+    );
+    const followup = requests(proc, 'turn/start').at(-1)!;
+    expect(followup).not.toBe(first);
+    expect(followup.params).toMatchObject({
+      sandboxPolicy: { type: 'readOnly' },
+      approvalsReviewer: 'auto_review',
+    });
+    expect(getAgentToolSessionContext(session.id)?.mode).toBe('read-only');
+  });
   it('revokes the token when the provider process exits', async () => {
     const { proc, session } = await startCodex();
     expect(getAgentMcpTokenForSession(session.id)).toBeDefined();

@@ -72,7 +72,7 @@ import { ROLE_FEATURES } from '../../shared/types.js';
 import { openWorkflowValidationTools } from './workflow-validation-tools.js';
 import { cancelAgentQuestionsForSession } from './agent-question.service.js';
 import { providerSpawnEnv } from './agent-spawn-env.js';
-import { workflowAccessMode } from '../../shared/agent-access.js';
+import { workflowAccessMode, assertWorkerAccessSupported } from '../../shared/agent-access.js';
 import { acpProviderLabel, buildAcpPrintInvocation } from './acp-print-cli.js';
 import { computeBootstrapDigest, getWorkspaceBootstrap } from './bootstrap-policy.service.js';
 import { workspaceDefinitionRevision } from './sync-entity-domain.js';
@@ -172,6 +172,13 @@ export function validateWorkflowGraph(nodes: WorkflowNode[], edges: WorkflowEdge
       throw new Error('Unknown workflow provider.');
     if (!getPersonaById(node.personaId)) throw new Error(`Unknown persona: ${node.personaId}`);
     validateWorkflowTarget(node.target, node.provider ?? 'codex', node.name);
+    if (node.target && node.target.kind !== 'local')
+      assertWorkerAccessSupported(
+        node.provider ?? 'codex',
+        node.permissionMode,
+        node.permissionProfile,
+        true,
+      );
     if (
       node.requiresValidation &&
       (isAcpAgentProvider(node.provider) || (node.target && node.target.kind !== 'local'))
@@ -860,10 +867,32 @@ async function runCodexThread(input: {
   const sessionId = randomUUID();
   const accessMode = workflowAccessMode(
     input.permissionMode,
-    settings.codexMode,
+    getSettings().codexMode,
     input.inheritChatAccess,
   );
   const personaPolicy = resolvePersonaCodexPolicy(accessMode, input.personaId);
+  assertWorkerAccessSupported(
+    input.provider,
+    personaPolicy.sandbox === 'read-only' ? 'read-only' : accessMode,
+    input.permissionProfile,
+    false,
+    input.inheritChatAccess,
+  );
+  const assertLiveAccess = () => {
+    const liveMode = workflowAccessMode(
+      accessMode,
+      getSettings().codexMode,
+      input.inheritChatAccess,
+    );
+    const livePolicy = resolvePersonaCodexPolicy(liveMode, input.personaId);
+    if (
+      livePolicy.sandbox !== personaPolicy.sandbox ||
+      livePolicy.approvalPolicy !== personaPolicy.approvalPolicy
+    )
+      throw new Error(
+        'Workflow access changed during startup. Restart this step under the current policy.',
+      );
+  };
   const toolAccess = input.factoryRunId
     ? { args: [] as string[], env: {} as NodeJS.ProcessEnv, close() {} }
     : await openWorkflowValidationTools(sessionId, () => {
@@ -875,6 +904,7 @@ async function runCodexThread(input: {
           workspaceId: input.workspaceId,
           repoIds: input.repoRows.map((repo) => repo.id),
           provider: input.provider,
+          permissionProfile: input.permissionProfile ?? 'default',
           mode:
             personaPolicy.sandbox === 'read-only'
               ? 'read-only'
@@ -887,6 +917,7 @@ async function runCodexThread(input: {
   let proc: ChildProcess;
   try {
     input.signal?.throwIfAborted();
+    assertLiveAccess();
     proc = spawn(executable, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
   } catch (error) {
     toolAccess.close();
@@ -1010,6 +1041,12 @@ async function runCodexThread(input: {
         if (!line.trim()) continue;
         handleCodexServerLine(state, line.trim(), {
           onThreadReady: () => {
+            try {
+              assertLiveAccess();
+            } catch (error) {
+              finish(error instanceof Error ? error : new Error(String(error)));
+              return;
+            }
             providerThreadId = state.threadId ?? undefined;
             if (providerThreadId) {
               setChatThreadProviderThreadId(input.threadId, providerThreadId, input.provider);
@@ -1051,9 +1088,7 @@ async function runCodexThread(input: {
       developerInstructions: input.systemPrompt,
       approvalPolicy: personaPolicy.approvalPolicy,
       approvalsReviewer:
-        accessMode === 'on-request' &&
-        input.inheritChatAccess &&
-        input.permissionProfile === 'auto-review'
+        accessMode === 'on-request' && input.permissionProfile === 'auto-review'
           ? 'auto_review'
           : 'user',
       sandbox: personaPolicy.sandbox,
@@ -1138,11 +1173,18 @@ async function runAcpCliThread(input: {
     input.inheritChatAccess,
   );
   const policy = resolvePersonaCodexPolicy(accessMode, input.personaId);
+  assertWorkerAccessSupported(
+    input.provider,
+    policy.sandbox === 'read-only' ? 'read-only' : accessMode,
+    input.permissionProfile,
+    false,
+    input.inheritChatAccess,
+  );
   const { executable, args } = buildAcpPrintInvocation({
     provider: input.provider,
     model: input.model,
     mode: accessMode,
-    permissionProfile: input.inheritChatAccess ? input.permissionProfile : undefined,
+    permissionProfile: input.permissionProfile,
     policy,
     prompt: combinedPrompt,
   });
@@ -1428,6 +1470,12 @@ async function executeRemoteWorkflowNode(
 
   let dispatch: Awaited<ReturnType<typeof dispatchWorkflowNode>>;
   try {
+    assertWorkerAccessSupported(
+      node.provider ?? 'codex',
+      node.permissionMode,
+      node.permissionProfile,
+      true,
+    );
     dispatch = await dispatchWorkflowNode({
       dispatchId,
       runId: run.id,

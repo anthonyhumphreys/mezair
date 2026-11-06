@@ -320,6 +320,23 @@ describe('chat-native delegation', () => {
       expect(mocks.approval).not.toHaveBeenCalled();
     },
   );
+  it.each(['claude', 'cursor', 'devin'] as const)(
+    'revalidates a reduced live workspace ceiling before launching %s',
+    async (provider) => {
+      const input = proposal();
+      input.tasks[0].provider = provider;
+      input.tasks[0].access = 'inherit';
+      const source = { ...ctx, mode: 'full-access' as const };
+      mocks.scope.mockReturnValue({ ...ctx, mode: 'workspace-auto' });
+      mocks.sessions.mockReturnValue([
+        { id: ctx.sessionId, appThreadId: ctx.appThreadId, workspaceId: ctx.workspaceId },
+      ]);
+      await callAgentTool(source, 'delegation_propose', input);
+      await vi.waitFor(() => expect(mocks.feedback).toHaveBeenCalled());
+      expect(mocks.start).not.toHaveBeenCalled();
+      expect(mocks.feedback.mock.calls[0][1]).toContain('workspace-only');
+    },
+  );
   it('honours a reduced access ceiling at approval time', async () => {
     const input = proposal();
     input.tasks[0].access = 'inherit';
@@ -376,6 +393,19 @@ describe('chat-native delegation', () => {
     await expect(
       callAgentTool(ctx, 'delegation_propose', { ...proposal(), reason: 'Different purpose' }),
     ).rejects.toMatchObject({ code: 'conflict' });
+  });
+  it('replays legacy omitted-access fingerprints without conflating new requests', async () => {
+    await callAgentTool(ctx, 'delegation_propose', proposal());
+    await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledOnce());
+    mocks.existing.mockReturnValue(run);
+    const retry = proposal();
+    delete retry.tasks[0].access;
+    await expect(callAgentTool(ctx, 'delegation_propose', retry)).rejects.toMatchObject({
+      code: 'conflict',
+    });
+    delete run.chatOrigin!.fingerprintVersion;
+    await callAgentTool(ctx, 'delegation_propose', retry);
+    expect(mocks.start).toHaveBeenCalledOnce();
   });
   it('preflights remote source snapshots before asking for approval', async () => {
     const input = proposal();

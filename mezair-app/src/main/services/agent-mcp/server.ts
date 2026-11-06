@@ -176,7 +176,12 @@ export function startAgentMcpServer(options: AgentMcpServerOptions): Promise<Age
 
     const keyFor = (id: string | number) =>
       JSON.stringify([auth.sessionId, mcpSessionId ?? '', id]);
-    const outcome = await handleMcpPayload(auth.context, payload, {
+    const currentAuth = token ? options.resolveToken(token) : undefined;
+    if (!currentAuth || currentAuth.sessionId !== auth.sessionId) {
+      send(res, 401, jsonRpcError(null, -32001, 'Unauthorized'));
+      return;
+    }
+    const outcome = await handleMcpPayload(currentAuth.context, payload, {
       ...options,
       onCancelRequest: (id) => activeCalls.get(keyFor(id))?.abort.abort(),
       runTool: async (ctx, id, name, args) => {
@@ -191,7 +196,10 @@ export function startAgentMcpServer(options: AgentMcpServerOptions): Promise<Age
         res.once('close', onClose);
         if (res.destroyed) abort.abort();
         try {
-          return await callAgentTool(ctx, name, args, abort.signal);
+          const live = token ? options.resolveToken(token) : undefined;
+          if (!live || live.sessionId !== auth.sessionId)
+            throw new Error('The session access changed before this tool could run.');
+          return await callAgentTool(live.context, name, args, abort.signal);
         } finally {
           res.off('close', onClose);
           activeCalls.delete(key);

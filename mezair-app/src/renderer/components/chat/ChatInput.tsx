@@ -177,6 +177,8 @@ interface ChatInputProps {
   accessOptions?: ChatAccessOption[];
   /** H9 — provider-side mode actually applied by the session, when known. */
   accessAppliedMode?: string;
+  accessRequestedMode?: string;
+  accessSelectionError?: string;
   /** H9 — full-option selector so 'plan' can route via collaboration mode. */
   onAccessOptionSelect?: (option: ChatAccessOption) => void;
   collaborationMode?: 'default' | 'plan';
@@ -227,6 +229,8 @@ function ChatInputImpl({
   codexModeDisabled = false,
   accessOptions,
   accessAppliedMode,
+  accessRequestedMode,
+  accessSelectionError,
   onAccessOptionSelect,
   collaborationMode = 'default',
   onCollaborationModeChange,
@@ -1517,6 +1521,8 @@ function ChatInputImpl({
                 value={codexMode}
                 options={accessOptions}
                 appliedMode={accessAppliedMode}
+                requestedMode={accessRequestedMode}
+                selectionError={accessSelectionError}
                 onChange={onCodexModeChange}
                 onSelectOption={onAccessOptionSelect}
                 disabled={codexModeDisabled}

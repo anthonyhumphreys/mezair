@@ -405,6 +405,46 @@ describe('cross-environment delegation', () => {
       });
     },
   );
+  it('keeps Cursor print-mode automatic review on a local specialist', () => {
+    const current = run(['parent']);
+    current.nodes[0].provider = 'cursor';
+    current.nodes[0].permissionMode = 'workspace-auto';
+    current.orchestration!.profiles[0].provider = 'cursor';
+    expandWorkflowTeam(current, current.nodes[0], [
+      { profileId: 'reviewer', name: 'Review', prompt: 'Inspect' },
+    ]);
+    expect(current.nodes[1]).toMatchObject({
+      permissionMode: 'on-request',
+      permissionProfile: 'auto-review',
+    });
+  });
+  it.each(['cursor', 'devin'] as const)(
+    'rejects a read-only %s specialist before inserting any children',
+    (provider) => {
+      const current = run(['parent']);
+      current.nodes[0].permissionMode = 'read-only';
+      current.orchestration!.profiles[0].provider = provider;
+      expect(() =>
+        expandWorkflowTeam(current, current.nodes[0], [
+          { profileId: 'reviewer', name: 'Review', prompt: 'Inspect' },
+        ]),
+      ).toThrow('read-only');
+      expect(current.nodes).toHaveLength(1);
+      expect(current.edges).toHaveLength(0);
+    },
+  );
+  it('rejects a remote automatic-review profile instead of silently changing its reviewer', () => {
+    const current = run(['parent']);
+    current.nodes[0].permissionMode = 'on-request';
+    current.nodes[0].permissionProfile = 'auto-review';
+    current.orchestration!.profiles[0].target = { kind: 'device', enrollmentId: 'remote' };
+    expect(() =>
+      expandWorkflowTeam(current, current.nodes[0], [
+        { profileId: 'reviewer', name: 'Review', prompt: 'Inspect' },
+      ]),
+    ).toThrow('Remote workers cannot preserve');
+    expect(current.nodes).toHaveLength(1);
+  });
   it('rejects unsupported sandbox inheritance before mutating the graph', () => {
     const current = run(['parent']);
     current.nodes[0].permissionMode = 'workspace-auto';

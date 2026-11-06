@@ -15,6 +15,9 @@ export interface AgentToolSessionContext {
   provider: AgentProvider;
   mode: CodexMode;
   permissionProfile?: import('../../shared/agent-access.js').PermissionProfile;
+  /** Main-owned execution and bearer generations, never supplied by a tool. */
+  accessRevision?: number;
+  authorityId?: number;
   features: readonly Feature[];
   /** Main-owned allowlist for narrowly scoped workers. Omitted for interactive chats. */
   allowedToolNames?: readonly string[];

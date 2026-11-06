@@ -1,10 +1,15 @@
 import type { AgentProvider, CodexMode } from '../../../shared/types';
-import { isAcpAgentProvider, type AcpAgentProvider } from '../../../shared/agent-providers';
+import {
+  isAgentProvider,
+  isAcpAgentProvider,
+  type AcpAgentProvider,
+} from '../../../shared/agent-providers';
 import {
   ACP_ACCESS_MODES,
   providerAccessMode,
   isPermissionProfile,
   type PermissionProfile,
+  translateInteractiveAccess,
 } from '../../../shared/agent-access';
 import { agentProviderLabel } from '../../utils/agent-display';
 
@@ -344,6 +349,9 @@ export interface ThreadAccessStore {
   /** Level applied to threads with no explicit override. Mirrors the default. */
   defaultLevel: CodexMode;
   defaultProfile?: PermissionProfile;
+  defaultProvider?: AgentProvider;
+  defaultSelected?: boolean;
+  providers?: Record<string, AgentProvider>;
   profiles?: Record<string, PermissionProfile>;
   /** Last level pushed into `settings.codexMode`, for external-change checks. */
   appliedLevel: CodexMode | null;
@@ -365,7 +373,68 @@ function storage(): Storage | null {
   }
 }
 
+const accessStores = new Map<string, ThreadAccessStore>();
+const accessListeners = new Map<string, Set<() => void>>();
+const accessChanges = new Map<string, Promise<void>>();
+export function subscribeThreadAccess(workspaceId: string, listener: () => void): () => void {
+  const listeners = accessListeners.get(workspaceId) ?? new Set();
+  accessListeners.set(workspaceId, listeners);
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (!listeners.size) accessListeners.delete(workspaceId);
+  };
+}
+export function beginThreadAccessChange(
+  workspaceId: string,
+  threadId: string | null,
+  change: () => Promise<void>,
+): Promise<void> {
+  const key = JSON.stringify([workspaceId, threadId]);
+  const prior = accessChanges.get(key);
+  if (prior) return Promise.reject(new Error('An access change is already in progress.'));
+  const pending = Promise.resolve().then(change);
+  accessChanges.set(key, pending);
+  void pending.then(
+    () => {
+      if (accessChanges.get(key) === pending) accessChanges.delete(key);
+    },
+    () => {
+      if (accessChanges.get(key) === pending) accessChanges.delete(key);
+    },
+  );
+  return pending;
+}
+export async function awaitThreadAccessChange(
+  workspaceId: string,
+  threadId: string,
+): Promise<void> {
+  for (;;) {
+    const pending = [
+      accessChanges.get(JSON.stringify([workspaceId, threadId])),
+      accessChanges.get(JSON.stringify([workspaceId, null])),
+    ].filter((value): value is Promise<void> => Boolean(value));
+    if (!pending.length) return;
+    await Promise.all(pending);
+  }
+}
+export function assertThreadAccessReady(workspaceId: string, threadId: string): void {
+  if (
+    accessChanges.has(JSON.stringify([workspaceId, threadId])) ||
+    accessChanges.has(JSON.stringify([workspaceId, null]))
+  )
+    throw new Error('Thread access is changing. Wait for it to finish before sending.');
+}
+
 export function readThreadAccessStore(workspaceId: string): ThreadAccessStore {
+  const cached = accessStores.get(workspaceId);
+  if (cached) return cached;
+  const loaded = loadThreadAccessStore(workspaceId);
+  accessStores.set(workspaceId, loaded);
+  return loaded;
+}
+
+function loadThreadAccessStore(workspaceId: string): ThreadAccessStore {
   const fallback: ThreadAccessStore = {
     defaultLevel: 'on-request',
     appliedLevel: null,
@@ -393,6 +462,11 @@ export function readThreadAccessStore(workspaceId: string): ThreadAccessStore {
       defaultProfile: isPermissionProfile(parsed.defaultProfile)
         ? parsed.defaultProfile
         : 'default',
+      defaultSelected: parsed.defaultSelected === true,
+      defaultProvider: isAgentProvider(parsed.defaultProvider) ? parsed.defaultProvider : undefined,
+      providers: Object.fromEntries(
+        Object.entries(parsed.providers ?? {}).filter(([, provider]) => isAgentProvider(provider)),
+      ),
       profiles: Object.fromEntries(
         Object.entries(parsed.profiles ?? {}).filter(([, profile]) => isPermissionProfile(profile)),
       ),
@@ -403,6 +477,8 @@ export function readThreadAccessStore(workspaceId: string): ThreadAccessStore {
 }
 
 export function writeThreadAccessStore(workspaceId: string, store: ThreadAccessStore): void {
+  accessStores.set(workspaceId, store);
+  for (const listener of accessListeners.get(workspaceId) ?? []) listener();
   const local = storage();
   if (!workspaceId || !local) return;
   try {
@@ -438,6 +514,7 @@ export function reconcileThreadAccessStore(
   store: ThreadAccessStore,
   settingsLevel: CodexMode | undefined,
 ): ThreadAccessStore {
+  if (store.defaultSelected) return store;
   const live = isChatAccessLevel(settingsLevel) ? settingsLevel : store.defaultLevel;
   if (store.appliedLevel === live) return store;
   return { ...store, defaultLevel: live };
@@ -473,4 +550,39 @@ export function resolveThreadPermissionProfile(
     (threadId && store?.threads[threadId] ? store.profiles?.[threadId] : store?.defaultProfile) ??
     'default'
   );
+}
+
+/** The same current selection drives the chip, every start, and every send. */
+export function resolveThreadAccessSelection(
+  store: ThreadAccessStore,
+  threadId: string | null,
+  workspaceDefault: CodexMode | null | undefined,
+  provider: AgentProvider,
+) {
+  const mode = resolveThreadAccessLevel(
+    store,
+    threadId,
+    store.defaultSelected ? store.defaultLevel : workspaceDefault,
+  );
+  const profile =
+    mode === 'on-request' ? resolveThreadPermissionProfile(store, threadId) : 'default';
+  const source =
+    (threadId && store.threads[threadId] ? store.providers?.[threadId] : store.defaultProvider) ??
+    provider;
+  return translateInteractiveAccess(source, provider, mode, profile);
+}
+export function bindThreadAccessProvider(
+  workspaceId: string,
+  threadId: string | null,
+  provider: AgentProvider,
+): void {
+  const store = readThreadAccessStore(workspaceId);
+  if (threadId && store.threads[threadId]) {
+    if (!store.providers?.[threadId])
+      writeThreadAccessStore(workspaceId, {
+        ...store,
+        providers: { ...store.providers, [threadId]: provider },
+      });
+  } else if (!store.defaultProvider)
+    writeThreadAccessStore(workspaceId, { ...store, defaultProvider: provider });
 }

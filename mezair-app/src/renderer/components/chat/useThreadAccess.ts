@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { PermissionProfile } from '../../../shared/agent-access';
-import type { CodexMode } from '../../../shared/types';
+import type { AgentProvider, CodexMode } from '../../../shared/types';
 import {
   isChatAccessLevel,
+  subscribeThreadAccess,
+  beginThreadAccessChange,
+  resolveThreadAccessSelection,
   markAccessLevelApplied,
   readThreadAccessStore,
   reconcileThreadAccessStore,
@@ -10,7 +13,6 @@ import {
   resolveThreadPermissionProfile,
   setThreadAccessLevel,
   writeThreadAccessStore,
-  type ThreadAccessStore,
 } from './thread-access';
 
 /** Per-thread selection. Requests carry access explicitly; app defaults are never overwritten. */
@@ -24,19 +26,27 @@ export function useThreadAccess(
      * `defaultLevel` for threads without an explicit override.
      */
     workspaceDefault?: CodexMode | null;
+    provider?: AgentProvider;
+    onBeforeChange?: () => Promise<void>;
     /** Called when the chip is changed on an empty thread (no threadId). */
-    onWorkspaceDefaultChange?: (level: CodexMode) => void;
+    onWorkspaceDefaultChange?: (level: CodexMode) => void | Promise<void>;
   },
 ) {
   const workspaceDefault = options?.workspaceDefault ?? null;
   const onWorkspaceDefaultChange = options?.onWorkspaceDefaultChange;
-  const [store, setStore] = useState<ThreadAccessStore | null>(null);
+  const storeKey = workspaceId ?? '';
+  const subscribe = useCallback(
+    (listener: () => void) => subscribeThreadAccess(storeKey, listener),
+    [storeKey],
+  );
+  const snapshot = useCallback(() => readThreadAccessStore(storeKey), [storeKey]);
+  const store = useSyncExternalStore(subscribe, snapshot);
+  const [changing, setChanging] = useState(false);
 
   // Load the workspace store, then reconcile against the live settings value
   // so an external Settings → Workspace change becomes the new default.
   useEffect(() => {
     if (!workspaceId) {
-      setStore(null);
       return;
     }
     let cancelled = false;
@@ -45,12 +55,9 @@ export function useThreadAccess(
       .then((settings) => {
         if (cancelled) return;
         const live = isChatAccessLevel(settings.codexMode) ? settings.codexMode : undefined;
-        setStore(() => {
-          const base = readThreadAccessStore(workspaceId);
-          const next = reconcileThreadAccessStore(base, live);
-          if (next !== base) writeThreadAccessStore(workspaceId, next);
-          return next;
-        });
+        const base = readThreadAccessStore(workspaceId);
+        const next = reconcileThreadAccessStore(base, live);
+        if (next !== base) writeThreadAccessStore(workspaceId, next);
       })
       .catch(console.error);
     return () => {
@@ -58,39 +65,78 @@ export function useThreadAccess(
     };
   }, [workspaceId]);
 
+  const priorWorkspaceDefault = useRef<{ key: string; level: CodexMode | null } | null>(null);
+  useEffect(() => {
+    const prior = priorWorkspaceDefault.current;
+    priorWorkspaceDefault.current = { key: storeKey, level: workspaceDefault };
+    const current = readThreadAccessStore(storeKey);
+    const changed =
+      prior?.key === storeKey ? prior.level !== workspaceDefault : !current.defaultSelected;
+    if (workspaceDefault && !changing && changed) {
+      if (current.defaultLevel !== workspaceDefault)
+        writeThreadAccessStore(storeKey, {
+          ...current,
+          defaultLevel: workspaceDefault,
+          defaultProfile: 'default',
+        });
+    }
+  }, [workspaceDefault, storeKey, changing]);
   const level = resolveThreadAccessLevel(store, activeThreadId, workspaceDefault);
 
+  const onBeforeChange = options?.onBeforeChange;
+  const provider = options?.provider ?? 'codex';
   const setLevel = useCallback(
-    (mode: CodexMode, profile: PermissionProfile = 'default') => {
-      setStore((current) => {
-        const base: ThreadAccessStore = current ?? {
-          defaultLevel: mode,
-          appliedLevel: null,
-          threads: {},
-        };
-        const next = markAccessLevelApplied(setThreadAccessLevel(base, activeThreadId, mode), mode);
-        const selected = mode === 'on-request' ? profile : 'default';
-        if (activeThreadId) next.profiles = { ...next.profiles, [activeThreadId]: selected };
-        else next.defaultProfile = selected;
-        if (workspaceId) writeThreadAccessStore(workspaceId, next);
-        return next;
-      });
-      // On an empty thread the chip is choosing this workspace's default —
-      // keep Settings → Workspace in sync.
-      if (!activeThreadId) onWorkspaceDefaultChange?.(mode);
+    async (mode: CodexMode, profile: PermissionProfile = 'default') => {
+      setChanging(true);
+      try {
+        await beginThreadAccessChange(storeKey, activeThreadId, async () => {
+          await onBeforeChange?.();
+          const base = readThreadAccessStore(storeKey);
+          const next = markAccessLevelApplied(
+            setThreadAccessLevel(base, activeThreadId, mode),
+            mode,
+          );
+          const selected = mode === 'on-request' ? profile : 'default';
+          if (activeThreadId) {
+            next.profiles = { ...next.profiles, [activeThreadId]: selected };
+            next.providers = { ...next.providers, [activeThreadId]: provider };
+          } else {
+            next.defaultSelected = true;
+            next.defaultProfile = selected;
+            next.defaultProvider = provider;
+          }
+          writeThreadAccessStore(storeKey, next);
+          if (!activeThreadId) await onWorkspaceDefaultChange?.(mode);
+        });
+      } finally {
+        setChanging(false);
+      }
     },
-    [activeThreadId, workspaceId, onWorkspaceDefaultChange],
+    [storeKey, activeThreadId, provider, onBeforeChange, onWorkspaceDefaultChange],
   );
+  let selection = {
+    mode: level,
+    permissionProfile: resolveThreadPermissionProfile(store, activeThreadId),
+  };
+  let selectionError: string | undefined;
+  try {
+    selection = resolveThreadAccessSelection(store, activeThreadId, workspaceDefault, provider);
+  } catch (error) {
+    selectionError =
+      error instanceof Error ? error.message : 'Choose a replacement access setting.';
+  }
 
   return {
     /** Effective access level for the active thread. */
-    level,
-    permissionProfile: resolveThreadPermissionProfile(store, activeThreadId),
+    level: selection.mode,
+    permissionProfile: selection.permissionProfile,
+    selectionError,
+    changing,
     setLevel,
     /** Per-thread overrides for rail badges. */
     threadLevels: store?.threads,
     defaultLevel:
-      workspaceDefault && isChatAccessLevel(workspaceDefault)
+      !store.defaultSelected && workspaceDefault && isChatAccessLevel(workspaceDefault)
         ? workspaceDefault
         : store?.defaultLevel,
   };

@@ -78,6 +78,8 @@ import {
   sendMessage,
   startSession,
   stopSession,
+  stopSessionAndWait,
+  captureThreadAccessFence,
   subscribeToCodexEvents,
 } from './codex-session.service.js';
 import { getFullStatus, getFileDiff } from './git.service.js';
@@ -1194,6 +1196,7 @@ async function startBrowserSession(
     permissionMode?: unknown;
   },
 ) {
+  const assertStartAccess = captureThreadAccessFence(threadId);
   const thread = assertThread(context, threadId);
   if (requestedRepositoryId && !thread.repoIds.includes(requestedRepositoryId)) {
     throw new BrowserWorkspaceCommandError(
@@ -1226,6 +1229,7 @@ async function startBrowserSession(
     binding?.provider ??
     (isAgentProvider(settings.llmProvider) ? settings.llmProvider : 'codex');
   const executionOptions = await getBrowserWorkspaceExecutionOptions([selectedProvider]);
+  assertStartAccess();
   const providerOption = requireProviderOption(executionOptions, selectedProvider);
   const model = selection?.model ?? (existing ? getCodexSessionModel(existing.id) : undefined);
   if (model !== undefined) requireProviderModel(providerOption, model);
@@ -1508,7 +1512,7 @@ async function executeBrowserWorkspaceCommandInternal(
           );
         }
         const thread = assertThread(context, command.threadId);
-        const session = assertSession(context, command.sessionId);
+        let session = assertSession(context, command.sessionId);
         if (session.origin !== 'browser') {
           throw new BrowserWorkspaceCommandError(
             'forbidden',
@@ -1554,6 +1558,15 @@ async function executeBrowserWorkspaceCommandInternal(
             `The requested access differs from the active ${session.mode} turn. An interrupt was sent; retry after that turn settles to continue with ${permissionMode} access.`,
           );
         }
+        if (session.mode && permissionMode !== session.mode) {
+          await stopSessionAndWait(session.id);
+          endChatSession(session.id);
+          session = await startBrowserSession(context, thread.id, undefined, {
+            provider: selectedProvider,
+            model: selectedModel,
+            permissionMode,
+          });
+        }
         const timestamp = new Date().toISOString();
         const message: ChatMessage = {
           id: `browser:${context.commandId}`,
@@ -1588,6 +1601,7 @@ async function executeBrowserWorkspaceCommandInternal(
           ok: true,
           data: {
             sessionId: session.id,
+            session: getCodexSession(session.id) ?? session,
             requestedPermissionMode: command.permissionMode ?? session.mode ?? permissionMode,
             effectivePermissionMode,
             maximumPermissionMode,

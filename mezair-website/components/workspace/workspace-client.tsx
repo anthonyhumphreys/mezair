@@ -823,6 +823,8 @@ export function BrowserWorkspaceClient({
       if (!result) throw new Error("Desktop did not accept the message.");
       if (generation !== workspaceGeneration.current) return;
       setHistory((current) => ({ ...current, [threadId]: [...(current[threadId] ?? []), { id: `browser:${Date.now()}`, role: "user", content: message, timestamp: new Date().toISOString() }] }));
+      const confirmedSession = parseSession(result.session);
+      if (confirmedSession) setSessions((current) => ({ ...current, [threadId]: confirmedSession }));
       if (typeof result.effectivePermissionMode === "string" && PERMISSION_MODES.includes(result.effectivePermissionMode as WorkspacePermissionMode)) {
         setSelectedPermissionMode(result.effectivePermissionMode as WorkspacePermissionMode);
       }

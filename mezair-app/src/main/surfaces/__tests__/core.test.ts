@@ -2,6 +2,12 @@ import Database from 'better-sqlite3';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SCHEMA_SQL } from '../../db/schema.js';
 import type { AgentToolSessionContext } from '../../agent-tools/dispatch.js';
+import {
+  mintAgentMcpToken,
+  resolveAgentMcpToken,
+  revokeAgentMcpToken,
+  resetAgentMcpRegistryForTests,
+} from '../../services/agent-mcp/registry.js';
 import type { MainSurfaceHandler } from '../types.js';
 
 const inMemoryDb = new Database(':memory:');
@@ -49,6 +55,7 @@ const ctx: AgentToolSessionContext = {
 };
 
 beforeEach(() => {
+  resetAgentMcpRegistryForTests();
   for (const table of [
     'surface_comments',
     'agent_ui_intent_events',
@@ -401,6 +408,24 @@ describe('defineSurfaceTools', () => {
 });
 
 describe('approvals', () => {
+  it('rejects an approval answered after its bearer was revoked', async () => {
+    const token = mintAgentMcpToken(ctx.sessionId, () => ctx);
+    const captured = resolveAgentMcpToken(token)!.context;
+    const pending = requestUserApproval(captured, { title: 'Commit?', detail: 'Write files' });
+    const rejected = expect(pending).rejects.toThrow('access changed');
+    const question = (
+      session.broadcastAgentUIIntent.mock.calls.at(-1) as unknown as [{ id: string }]
+    )[0];
+    revokeAgentMcpToken(ctx.sessionId);
+    resolveMezairOwnedQuestion(question.id, {
+      intentId: question.id,
+      action: 'submit',
+      answers: { approve: true },
+      answeredAt: new Date().toISOString(),
+    });
+    await rejected;
+  });
+
   it('publishes a Mezair-owned approval question and resolves on answer', async () => {
     const pending = requestUserApproval(ctx, {
       title: 'Create 3 work items?',

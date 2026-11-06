@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   CHAT_ACCESS_LEVELS,
+  readThreadAccessStore,
+  writeThreadAccessStore,
+  resolveThreadAccessSelection,
+  beginThreadAccessChange,
+  awaitThreadAccessChange,
+  assertThreadAccessReady,
   chatAccessLevelIsElevated,
   chatAccessLevelLabel,
   chatAccessLevelRequiresConfirm,
@@ -308,5 +314,126 @@ describe('chatAccessOptionSelected / resolveChatAccessChipLabel', () => {
   it('labels plan mode from either the option or the applied id', () => {
     const cursorOptions = chatAccessOptionsForProvider('cursor');
     expect(resolveChatAccessChipLabel(cursorOptions, 'on-request', 'plan')).toBe('Plan');
+  });
+});
+
+describe('current access authority', () => {
+  it('retains an explicit empty-thread reduction while a workspace default prop is stale', () => {
+    const store: ThreadAccessStore = {
+      defaultLevel: 'read-only',
+      defaultSelected: true,
+      appliedLevel: 'read-only',
+      threads: {},
+    };
+    expect(resolveThreadAccessSelection(store, 'new-thread', 'full-access', 'codex').mode).toBe(
+      'read-only',
+    );
+    expect(reconcileThreadAccessStore(store, 'full-access')).toBe(store);
+  });
+  it('drains another transition begun while a send is waiting', async () => {
+    let releaseFirst!: () => void;
+    let releaseNext!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const nextGate = new Promise<void>((resolve) => {
+      releaseNext = resolve;
+    });
+    const first = beginThreadAccessChange('drain', 'thread', () => firstGate);
+    let second!: Promise<void>;
+    void first.then(() => {
+      second = beginThreadAccessChange('drain', null, () => nextGate);
+    });
+    let sent = false;
+    const waiting = awaitThreadAccessChange('drain', 'thread').then(() => {
+      sent = true;
+    });
+    releaseFirst();
+    await first;
+    await Promise.resolve();
+    expect(sent).toBe(false);
+    expect(() => assertThreadAccessReady('drain', 'thread')).toThrow('changing');
+    releaseNext();
+    await second;
+    await waiting;
+    expect(() => assertThreadAccessReady('drain', 'thread')).not.toThrow();
+  });
+
+  it('keeps the current reduction when persistence rejects the write', () => {
+    const old = JSON.stringify({ defaultLevel: 'full-access', appliedLevel: null, threads: {} });
+    vi.stubGlobal('localStorage', {
+      getItem: () => old,
+      setItem: () => {
+        throw new Error('quota');
+      },
+    });
+    try {
+      const initial = readThreadAccessStore('storage-failure');
+      writeThreadAccessStore(
+        'storage-failure',
+        setThreadAccessLevel(initial, 'thread', 'read-only'),
+      );
+      expect(
+        resolveThreadAccessSelection(
+          readThreadAccessStore('storage-failure'),
+          'thread',
+          undefined,
+          'codex',
+        ).mode,
+      ).toBe('read-only');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it('never broadens Claude allowlist-only access when switching to Codex', () => {
+    const store: ThreadAccessStore = {
+      defaultLevel: 'on-request',
+      defaultProfile: 'dont-ask',
+      defaultProvider: 'claude',
+      appliedLevel: null,
+      threads: {},
+    };
+    expect(() => resolveThreadAccessSelection(store, 'thread', undefined, 'codex')).toThrow(
+      'allowlist-only',
+    );
+  });
+  it('translates Smart into automatic approval review when switching to Codex', () => {
+    const store: ThreadAccessStore = {
+      defaultLevel: 'workspace-auto',
+      defaultProvider: 'devin',
+      appliedLevel: null,
+      threads: {},
+    };
+    expect(resolveThreadAccessSelection(store, 'thread', undefined, 'codex')).toEqual({
+      mode: 'on-request',
+      permissionProfile: 'auto-review',
+    });
+  });
+  it('blocks a send until main has fenced the old access and the current selection is committed', async () => {
+    let revoke!: () => void;
+    const revocation = new Promise<void>((resolve) => {
+      revoke = resolve;
+    });
+    let sent = false;
+    const change = beginThreadAccessChange('fence', 'thread', async () => {
+      await revocation;
+      writeThreadAccessStore('fence', {
+        defaultLevel: 'read-only',
+        appliedLevel: null,
+        threads: {},
+      });
+    });
+    const sending = awaitThreadAccessChange('fence', 'thread').then(() => {
+      sent = true;
+    });
+    await Promise.resolve();
+    expect(sent).toBe(false);
+    revoke();
+    await change;
+    await sending;
+    expect(
+      resolveThreadAccessSelection(readThreadAccessStore('fence'), 'thread', undefined, 'codex')
+        .mode,
+    ).toBe('read-only');
   });
 });

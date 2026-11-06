@@ -1359,7 +1359,11 @@ function Inspector({
                   <option value="">Use current running mode</option>
                   <option value="read-only">Read only</option>
                   <option value="on-request">Ask for extra access</option>
-                  <option value="workspace-auto">Auto in workspace</option>
+                  <option value="workspace-auto" disabled={node.provider === 'claude'}>
+                    {node.provider === 'claude'
+                      ? 'Workspace sandbox unavailable for Claude'
+                      : 'Auto in workspace'}
+                  </option>
                   <option value="full-access">Full access</option>
                 </select>
                 <p className="mt-1 text-xs text-text-tertiary">

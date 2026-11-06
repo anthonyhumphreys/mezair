@@ -54,6 +54,8 @@ import {
   steerTurn,
   followUpTurn,
   stopSession,
+  invalidateThreadAccess,
+  captureThreadAccessFence,
   stopSessionAndWait,
   interruptTurn,
   emitLocalAssistantTurnStart,
@@ -338,8 +340,10 @@ export function registerChatHandlers(): void {
       personaId: string,
       options?: ChatStartOptions,
     ): Promise<CodexSession> => {
+      const assertStartAccess = captureThreadAccessFence(options?.threadId);
       const provider = options?.provider ?? getSettings().llmProvider;
       await assertChatProviderAvailable(provider);
+      assertStartAccess();
 
       const temporaryThread = getChatThread(options?.threadId ?? '');
       const temporaryFlag = options?.temporaryChat === true;
@@ -420,19 +424,27 @@ export function registerChatHandlers(): void {
       workspaceId: string,
       rootPath: string,
       personaId: string,
-      options?: Pick<ChatStartOptions, 'provider' | 'model'>,
+      options?: Pick<
+        ChatStartOptions,
+        'provider' | 'model' | 'codexMode' | 'permissionProfile' | 'threadId'
+      >,
     ): Promise<CodexSession> => {
+      const assertStartAccess = captureThreadAccessFence(options?.threadId);
       const provider = options?.provider ?? getSettings().llmProvider;
       await assertChatProviderAvailable(provider);
+      assertStartAccess();
 
       const codexSession = await startSession([rootPath], [], personaId, {
         provider,
         model: options?.model,
+        codexMode: options?.codexMode,
+        permissionProfile: options?.permissionProfile,
+        threadId: options?.threadId,
         scaffold: { workspaceId, rootPath },
       });
 
       createChatSession(
-        null,
+        options?.threadId ?? null,
         null,
         personaId,
         codexSession.id,
@@ -487,6 +499,10 @@ export function registerChatHandlers(): void {
     },
   );
 
+  ipcMain.handle('chat:invalidate-thread-access', (_event, threadId: string) => {
+    if (typeof threadId !== 'string' || !threadId) throw new Error('A thread is required.');
+    return invalidateThreadAccess(threadId);
+  });
   ipcMain.handle('chat:stop-session', (_event, sessionId: string) => stopSessionAndWait(sessionId));
 
   ipcMain.handle('chat:interrupt', (_event, sessionId: string): void => {

@@ -51,7 +51,7 @@ function writtenRequests(proc: FakeAcpProcess, method: string): Record<string, u
 const mocks = vi.hoisted(() => ({
   settings: {
     llmProvider: 'cursor',
-    enabledLlmProviders: ['cursor', 'devin', 'codex', 'openai', 'azure', 'llmgateway'],
+    enabledLlmProviders: ['cursor', 'devin', 'claude', 'codex', 'openai', 'azure', 'llmgateway'],
     codexMode: 'workspace-auto',
     openaiModel: 'auto',
     reasoningLevel: 'medium',
@@ -73,6 +73,13 @@ vi.mock('node:child_process', () => ({
   }),
 }));
 
+vi.mock('../claude-agent-process.js', () => ({
+  ClaudeAgentProcess: class {
+    constructor() {
+      return vi.mocked(spawn)('claude', [], { stdio: 'pipe' }) as unknown as FakeAcpProcess;
+    }
+  },
+}));
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/mezair-test', getVersion: () => '0.0.0-test' },
   BrowserWindow: { getAllWindows: () => [] },
@@ -124,6 +131,8 @@ import { spawn } from 'node:child_process';
 import {
   listPendingApprovalRequests,
   startSession,
+  getAgentToolSessionContext,
+  getCodexSession,
   steerTurn,
   sendMessage,
   followUpTurn,
@@ -692,5 +701,70 @@ describe('ACP session parity (cursor/devin)', () => {
       sendMessage(session.id, 'run', [], { permissionMode: 'full-access' }),
     ).rejects.toThrow('does not advertise');
     expect(writtenRequests(proc, 'session/prompt')).toHaveLength(0);
+  });
+  it('keeps effective and selected access unchanged when ACP rejects a transition', async () => {
+    const proc = createFakeAcpProcess();
+    const session = await startAcpSession(proc);
+    await sendConfiguredMessage(proc, session.id, 'first');
+    emit(proc, { jsonrpc: '2.0', id: 'first', result: { stopReason: 'end_turn' } });
+    const before = getAgentToolSessionContext(session.id);
+    const changing = sendMessage(session.id, 'next', [], { permissionMode: 'full-access' });
+    const rejected = expect(changing).rejects.toThrow('rejected');
+    await vi.waitFor(() => expect(writtenRequests(proc, 'session/set_mode')).toHaveLength(2));
+    expect(getAgentToolSessionContext(session.id)).toEqual(before);
+    emit(proc, {
+      jsonrpc: '2.0',
+      id: writtenRequests(proc, 'session/set_mode').at(-1)?.id,
+      error: { message: 'blocked' },
+    });
+    await rejected;
+    expect(getAgentToolSessionContext(session.id)).toEqual(before);
+    expect(getCodexSession(session.id)?.mode).toBe('workspace-auto');
+  });
+  it('preserves automatic approval review across a Plan turn and an optionless queued follow-up', async () => {
+    const proc = createFakeAcpProcess();
+    const session = await startAcpSession(proc, {
+      provider: 'codex',
+      codexMode: 'on-request',
+      permissionProfile: 'auto-review',
+    });
+    await sendMessage(session.id, 'plan', [], { collaborationMode: 'plan' });
+    await acknowledgeLastRequest(proc, 'turn/start');
+    expect(getAgentToolSessionContext(session.id)?.mode).toBe('read-only');
+    await followUpTurn({
+      sessionId: session.id,
+      requestId: 'after-plan',
+      intent: 'queue',
+      message: 'implement',
+    });
+    emit(proc, {
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: { turn: { id: 'plan', status: 'completed' } },
+    });
+    await vi.waitFor(() => expect(writtenRequests(proc, 'turn/start')).toHaveLength(2));
+    expect(writtenRequests(proc, 'turn/start').at(-1)?.params).toMatchObject({
+      approvalsReviewer: 'auto_review',
+      sandboxPolicy: { type: 'workspaceWrite' },
+    });
+  });
+  it('selects Claude’s eligible model before enabling Auto review', async () => {
+    const proc = createFakeAcpProcess();
+    const session = await startAcpSession(proc, {
+      provider: 'claude',
+      codexMode: 'on-request',
+      permissionProfile: 'auto-review',
+    });
+    const sending = sendMessage(session.id, 'work', [], { model: 'opus' });
+    await vi.waitFor(() =>
+      expect(writtenRequests(proc, 'session/set_config_option')).toHaveLength(1),
+    );
+    expect(writtenRequests(proc, 'session/set_mode')).toHaveLength(0);
+    await acknowledgeLastRequest(proc, 'session/set_config_option');
+    await acknowledgeLastRequest(proc, 'session/set_mode');
+    await sending;
+    expect(writtenRequests(proc, 'session/set_mode').at(-1)?.params).toMatchObject({
+      modeId: 'auto',
+    });
   });
 });

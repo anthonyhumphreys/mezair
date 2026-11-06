@@ -1,4 +1,8 @@
-import { inheritedPermissionProfile, portableAgentAccess } from '../../shared/agent-access';
+import {
+  inheritedPermissionProfile,
+  portableAgentAccess,
+  assertWorkerAccessSupported,
+} from '../../shared/agent-access';
 import { randomUUID } from 'node:crypto';
 import { resolveCodexReasoningEffort } from '../../shared/codex-models';
 import type {
@@ -70,21 +74,22 @@ export function expandWorkflowTeam(
         parent.provider ?? 'codex',
         parent.permissionMode,
         parent.permissionProfile,
+        'print',
       )
     : undefined;
   const childAccess = profiles.map((profile) => {
-    if (
-      inherited?.mode === 'workspace-auto' &&
-      ['claude', 'cursor', 'devin'].includes(profile.provider ?? 'codex')
-    )
-      throw new Error(`${profile.provider} cannot inherit a strict workspace-only sandbox.`);
-    return {
-      permissionMode: inherited?.mode,
-      permissionProfile:
-        inherited?.mode === 'on-request'
-          ? inheritedPermissionProfile(profile.provider ?? 'codex', inherited.permissionProfile)
-          : undefined,
-    };
+    const permissionProfile =
+      inherited?.mode === 'on-request'
+        ? inheritedPermissionProfile(profile.provider ?? 'codex', inherited.permissionProfile)
+        : undefined;
+    assertWorkerAccessSupported(
+      profile.provider ?? 'codex',
+      inherited?.mode,
+      permissionProfile,
+      Boolean(profile.target && profile.target.kind !== 'local'),
+      true,
+    );
+    return { permissionMode: inherited?.mode, permissionProfile };
   });
   const incoming = run.edges.filter((edge) => edge.target === parent.id);
   tasks.forEach((task, index) => {

@@ -137,8 +137,9 @@ export function Menu({
 
     const panel = panelRef.current;
     if (panel) {
-      const selected = panel.querySelector<HTMLElement>('[aria-checked="true"]');
-      (selected ?? menuItems(panel)[0])?.focus();
+      const items = menuItems(panel);
+      const selected = items.find((item) => item.getAttribute('aria-checked') === 'true');
+      (selected ?? items[0])?.focus();
     }
 
     const closeOnOutsidePointer = (event: globalThis.MouseEvent) => {

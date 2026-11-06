@@ -115,6 +115,7 @@ import {
   getAgentMcpEndpoint,
   getAgentMcpTokenForSession,
   mintAgentMcpToken,
+  bindAgentMcpTokenAccess,
   revokeAgentMcpToken,
 } from './agent-mcp/registry.js';
 import {
@@ -149,6 +150,10 @@ interface ManagedSession {
   /** Access mode pinned by the session caller, such as a read-only side chat. */
   modeOverride?: CodexMode;
   permissionProfile?: PermissionProfile;
+  effectivePermissionProfile?: PermissionProfile;
+  collaborationMode?: ChatSendOptions['collaborationMode'];
+  accessRevision?: number;
+  issuedAccessKey?: string;
   process: AgentProcess;
   /** Isolated process group captured at spawn time on POSIX. */
   processGroupId?: number;
@@ -284,6 +289,8 @@ const followUpReceipts = new Map<string, Map<string, FollowUpReceipt>>();
 const pendingProviderFollowUps = new Map<string, PendingProviderFollowUp>();
 const pendingProviderResponses = new Map<string, PendingProviderResponse>();
 const pendingUserTurnRequests = new Map<string, PendingUserTurnRequest>();
+const pendingAccessTransitions = new Map<string, () => void>();
+const threadAccessRevisions = new Map<string, number>();
 const PROVIDER_RESPONSE_TIMEOUT_MS = 15_000;
 
 export interface CodexEventSubscription {
@@ -390,6 +397,7 @@ export async function startSession(
   runtime?: RemoteSessionRuntimeOptions,
 ): Promise<CodexSession> {
   const id = randomUUID();
+  const assertStartAccess = captureThreadAccessFence(options?.threadId);
   const settings = getSettings();
   const agentProvider = runtime?.provider ?? options?.provider ?? settings.llmProvider;
   const appThread = options?.threadId ? getChatThread(options.threadId) : null;
@@ -441,6 +449,12 @@ export async function startSession(
         )
       : undefined;
   const model = gatewayConfig?.model ?? configuredModel;
+  const selectedProfile = options?.permissionProfile ?? 'default';
+  if (
+    !isPermissionProfile(selectedProfile) ||
+    !supportsPermissionProfile(agentProvider, selectedProfile)
+  )
+    throw new Error('Choose a supported permission profile for this provider.');
   const codexPolicy = resolvePersonaCodexPolicy(mode, personaId);
   if (isAcpAgentProvider(agentProvider) && codexPolicy.sandbox === 'read-only')
     throw new Error(
@@ -509,6 +523,7 @@ export async function startSession(
 
   let proc: AgentProcess;
   try {
+    assertStartAccess();
     proc =
       provider === 'claude'
         ? new ClaudeAgentProcess(env, model)
@@ -542,7 +557,11 @@ export async function startSession(
     kind: options?.scaffold ? 'scaffold' : repoIds.length > 0 ? 'repo' : 'workspace',
     personaId,
     mode: codexPolicy.sandbox === 'read-only' ? 'read-only' : mode,
-    modeOverride,
+    modeOverride: mode,
+    permissionProfile: selectedProfile,
+    effectivePermissionProfile: codexPolicy.sandbox === 'read-only' ? 'default' : selectedProfile,
+    accessRevision: 0,
+    issuedAccessKey: mcpToken ? `${mode}:${selectedProfile}` : undefined,
     process: proc,
     ...(process.platform !== 'win32' && proc.pid !== undefined ? { processGroupId: proc.pid } : {}),
     provider,
@@ -570,6 +589,12 @@ export async function startSession(
   };
 
   sessions.set(id, session);
+  const issued = portableAgentAccess(
+    agentProvider,
+    codexPolicy.sandbox === 'read-only' ? 'read-only' : mode,
+    selectedProfile,
+  );
+  bindAgentMcpTokenAccess(id, issued.mode, issued.permissionProfile);
   runtime?.onSessionCreated?.(id);
 
   // Handle stdout — JSON-RPC events, one per line
@@ -679,10 +704,16 @@ export async function startSession(
       cwd,
       developerInstructions: systemPrompt,
       approvalPolicy: codexPolicy.approvalPolicy,
+      approvalsReviewer: selectedProfile === 'auto-review' ? 'auto_review' : 'user',
       sandbox: codexPolicy.sandbox,
       ...(options?.temporaryChat ? { ephemeral: true } : {}),
     };
-    session.appliedMode = codexPolicy.sandbox === 'read-only' ? 'read-only' : mode;
+    session.appliedMode =
+      codexPolicy.sandbox === 'read-only'
+        ? 'read-only'
+        : selectedProfile === 'auto-review'
+          ? 'auto-review'
+          : mode;
     if (options?.forkFromProviderThreadId) {
       sendCodexJsonRpc(proc, 'thread/fork', {
         threadId: options.forkFromProviderThreadId,
@@ -779,9 +810,6 @@ export async function sendMessage(
   const isSideQuestion =
     session.appThreadId !== undefined &&
     getChatThread(session.appThreadId)?.purpose === 'side-question';
-  if (!session.temporaryChat && !isSideQuestion && options?.permissionMode !== undefined) {
-    session.modeOverride = options.permissionMode;
-  }
   const mode = resolveSessionTurnMode({
     temporaryChat: session.temporaryChat,
     sideQuestion: isSideQuestion,
@@ -815,14 +843,31 @@ export async function sendMessage(
     throw new Error(
       `${acpProviderLabel(session.provider)} cannot enforce a read-only sandbox. Choose another provider.`,
     );
-  session.mode = codexPolicy.sandbox === 'read-only' ? 'read-only' : mode;
-  session.permissionProfile = session.mode === 'on-request' ? profile : 'default';
+  if (session.issuedAccessKey && session.issuedAccessKey !== `${mode}:${profile}`)
+    throw new Error(
+      'Thread access changed. Restart the provider session to issue fresh permissions.',
+    );
+  const effectiveMode = codexPolicy.sandbox === 'read-only' ? 'read-only' : mode;
+  const effectiveProfile = effectiveMode === 'on-request' ? profile : 'default';
+  const acceptAccess = (appliedMode: string) => {
+    if (!isCurrentSession(session)) return;
+    if (session.mode !== effectiveMode || session.effectivePermissionProfile !== effectiveProfile)
+      session.accessRevision = (session.accessRevision ?? 0) + 1;
+    session.mode = effectiveMode;
+    session.modeOverride = mode;
+    session.permissionProfile = profile;
+    session.effectivePermissionProfile = effectiveProfile;
+    session.appliedMode = appliedMode;
+    session.collaborationMode = options?.collaborationMode ?? 'default';
+    broadcastEvent(session.id, {
+      type: 'access_update',
+      access: { mode: effectiveMode, permissionProfile: effectiveProfile, appliedMode },
+    });
+  };
 
   session.status = 'busy';
   setSessionThreadAttention(session, 'working');
   broadcastEvent(sessionId, { type: 'status', status: 'thinking' });
-
-  session.model = model;
 
   try {
     if (isAcpAgentProvider(session.provider)) {
@@ -834,36 +879,34 @@ export async function sendMessage(
       // or a read-only persona would still run in agent/smart mode.
       const acpModeId = providerAccessMode(
         session.provider,
-        session.mode ?? mode,
+        effectiveMode,
         options?.collaborationMode,
-        session.permissionProfile,
+        effectiveProfile,
       );
       if (session.acpAccessModes && !session.acpAccessModes.includes(acpModeId))
         throw new Error(
           `${acpProviderLabel(session.provider)} does not advertise access mode ${acpModeId}. Choose another mode.`,
         );
-      // Mode changes go through the standard `session/set_mode`; model selection
-      // uses `session/set_config_option` against the agent's `model` config
-      // option. Both agents reject the legacy `session/set_config` method.
-      const modeRequest = {
+      const acpModel = resolveAcpModelValue(session.provider, model);
+      const applyModel = async () => {
+        if (acpModel)
+          await sendProviderRequestAndWait(session, 'session/set_config_option', {
+            sessionId: session.threadId,
+            configId: 'model',
+            value: acpModel,
+          });
+        assertSessionActive(session);
+        session.model = model;
+      };
+      // Claude checks Auto eligibility against the currently selected model.
+      const modelFirst = session.provider === 'claude' && acpModeId === 'auto';
+      if (modelFirst) await applyModel();
+      await sendProviderRequestAndWait(session, 'session/set_mode', {
         sessionId: session.threadId,
         modeId: acpModeId,
-      };
-      // Apply controls before the prompt. ACP agents can reject a config
-      // change once the concurrent prompt has already started running.
-      await sendProviderRequestAndWait(session, 'session/set_mode', modeRequest);
-      session.appliedMode = acpModeId;
-      assertSessionActive(session);
-      const acpModel = resolveAcpModelValue(session.provider, model);
-      if (acpModel) {
-        const modelRequest = {
-          sessionId: session.threadId,
-          configId: 'model',
-          value: acpModel,
-        };
-        await sendProviderRequestAndWait(session, 'session/set_config_option', modelRequest);
-        assertSessionActive(session);
-      }
+      });
+      acceptAccess(acpModeId);
+      if (!modelFirst) await applyModel();
       assertSessionActive(session);
       sendFollowUpAwareProviderRequest(
         session,
@@ -883,8 +926,6 @@ export async function sendMessage(
     const effort = gatewayConfig
       ? gatewayConfig.effort
       : normaliseReasoningEffort(options?.reasoningEffort ?? settings.reasoningLevel);
-    session.appliedMode =
-      profile !== 'default' && session.mode === 'on-request' ? profile : session.mode;
     sendFollowUpAwareProviderRequest(
       session,
       'turn/start',
@@ -900,6 +941,14 @@ export async function sendMessage(
         collaborationMode: buildCodexCollaborationMode(options?.collaborationMode, model, effort),
       },
       followUpTracking,
+      () => {
+        session.model = model;
+        acceptAccess(
+          effectiveProfile === 'auto-review' && effectiveMode === 'on-request'
+            ? 'auto-review'
+            : effectiveMode,
+        );
+      },
     );
     session.continuationContext = undefined;
     session.continuationNeedsRefresh = false;
@@ -999,6 +1048,7 @@ function sendFollowUpAwareProviderRequest(
     receipt: FollowUpReceipt;
     request: Pick<ChatFollowUpRequest, 'requestId' | 'intent'>;
   },
+  accessTransition?: () => void,
 ): void {
   if (!tracking) {
     if (method !== 'turn/start' && method !== 'session/prompt') {
@@ -1008,8 +1058,10 @@ function sendFollowUpAwareProviderRequest(
     const requestId = randomUUID();
     const key = buildPendingRequestKey(session.id, requestId);
     pendingUserTurnRequests.set(key, { method });
+    if (accessTransition) pendingAccessTransitions.set(key, accessTransition);
     if (!sendCodexJsonRpcWithId(session.process, method, params, requestId)) {
       pendingUserTurnRequests.delete(key);
+      pendingAccessTransitions.delete(key);
       throw new Error(`${acpProcessLabel(session.provider)} could not accept ${method}.`);
     }
     return;
@@ -1018,8 +1070,10 @@ function sendFollowUpAwareProviderRequest(
   const protocolRequestId = randomUUID();
   const key = buildPendingRequestKey(session.id, protocolRequestId);
   pendingProviderFollowUps.set(key, { ...tracking, method });
+  if (accessTransition) pendingAccessTransitions.set(key, accessTransition);
   if (!sendCodexJsonRpcWithId(session.process, method, params, protocolRequestId)) {
     pendingProviderFollowUps.delete(key);
+    pendingAccessTransitions.delete(key);
     throw new Error(`${acpProcessLabel(session.provider)} could not accept ${method}.`);
   }
 }
@@ -1039,7 +1093,8 @@ export function getAgentToolSessionContext(sessionId: string): AgentToolSessionC
     repoIds: session.repoIds,
     provider: session.agentProvider,
     // A persona-clamped read-only session stays read-only whatever the caller pinned.
-    ...portableAgentAccess(session.agentProvider, session.mode, session.permissionProfile),
+    ...portableAgentAccess(session.agentProvider, session.mode, session.effectivePermissionProfile),
+    accessRevision: session.accessRevision,
     features: (role && ROLE_FEATURES[role]) || [],
   };
 }
@@ -1525,6 +1580,8 @@ export function stopSession(sessionId: string): void {
     }
   }
   sessions.delete(sessionId);
+  for (const key of pendingAccessTransitions.keys())
+    if (key.startsWith(`${sessionId}:`)) pendingAccessTransitions.delete(key);
   removeTemporaryChatDirectory(session);
   pendingPlanFeedback.delete(sessionId);
   pendingFollowUps.delete(sessionId);
@@ -1538,6 +1595,26 @@ export function stopSession(sessionId: string): void {
       pendingApprovalDetails.delete(requestKey);
     }
   }
+}
+
+/** Capture before asynchronous provider discovery as well as process startup. */
+export function captureThreadAccessFence(threadId?: string): () => void {
+  const revision = threadId ? (threadAccessRevisions.get(threadId) ?? 0) : 0;
+  return () => {
+    if (threadId && (threadAccessRevisions.get(threadId) ?? 0) !== revision)
+      throw new Error(
+        'Thread access changed while the provider was starting. Send again with the current access.',
+      );
+  };
+}
+
+export async function invalidateThreadAccess(threadId: string): Promise<string[]> {
+  threadAccessRevisions.set(threadId, (threadAccessRevisions.get(threadId) ?? 0) + 1);
+  const ids = [...sessions.values()]
+    .filter((session) => session.appThreadId === threadId)
+    .map((session) => session.id);
+  await Promise.all(ids.map((id) => stopSessionAndWait(id)));
+  return ids;
 }
 
 /** Stop a provider session and wait until its isolated POSIX group is gone. */
@@ -2020,6 +2097,16 @@ function observeAcpInitializeResult(session: ManagedSession, line: string): void
 }
 
 function handleServerMessage(session: ManagedSession, line: string): void {
+  try {
+    const reply = JSON.parse(line);
+    if (reply.error && reply.id !== undefined) {
+      const key = buildPendingRequestKey(session.id, reply.id);
+      pendingAccessTransitions.delete(key);
+    }
+  } catch {
+    /* protocol parser reports malformed lines */
+  }
+
   observeAcpInitializeResult(session, line);
   handleCodexServerLine(session, line, {
     onThreadReady: () => {
@@ -2059,6 +2146,9 @@ function handleServerMessage(session: ManagedSession, line: string): void {
       session.turnId = turnId;
     },
     onResponse: ({ requestId, result }) => {
+      const accessKey = buildPendingRequestKey(session.id, requestId);
+      pendingAccessTransitions.get(accessKey)?.();
+      pendingAccessTransitions.delete(accessKey);
       resolvePendingProviderResponse(session.id, requestId, result);
       const requestKey = buildPendingRequestKey(session.id, requestId);
       pendingProviderFollowUps.delete(requestKey);
@@ -2326,8 +2416,9 @@ async function flushPendingPlanFeedback(session: ManagedSession): Promise<void> 
   try {
     await sendMessage(session.id, queued.join('\n'), [], {
       model: session.model,
-      collaborationMode: session.appliedMode === 'plan' ? 'plan' : undefined,
-      permissionMode: session.mode,
+      collaborationMode: session.collaborationMode,
+      permissionMode: session.modeOverride ?? session.mode,
+      permissionProfile: session.permissionProfile,
     });
   } catch (error) {
     pendingPlanFeedback.set(session.id, [
@@ -2476,8 +2567,9 @@ export async function deliverStructuredAgentFeedback(
   } else if (delivery === 'prompt') {
     await sendMessage(session.id, payload, [], {
       model: session.model,
-      collaborationMode: session.appliedMode === 'plan' ? 'plan' : undefined,
-      permissionMode: session.mode,
+      collaborationMode: session.collaborationMode,
+      permissionMode: session.modeOverride ?? session.mode,
+      permissionProfile: session.permissionProfile,
     });
   } else if (delivery === 'queue') {
     const queued = pendingPlanFeedback.get(session.id) ?? [];

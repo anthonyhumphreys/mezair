@@ -40,14 +40,70 @@ export function portableAgentAccess(
   provider: AgentProvider,
   mode: CodexMode,
   profile?: PermissionProfile,
+  execution: 'interactive' | 'print' = 'interactive',
 ): { mode: CodexMode; permissionProfile: PermissionProfile } {
   if (mode === 'workspace-auto' && isAcpAgentProvider(provider))
     return {
       mode: 'on-request',
       permissionProfile:
-        provider === 'devin' ? 'auto-review' : provider === 'claude' ? 'accept-edits' : 'default',
+        provider === 'devin' || (provider === 'cursor' && execution === 'print')
+          ? 'auto-review'
+          : provider === 'claude'
+            ? 'accept-edits'
+            : 'default',
     };
   return { mode, permissionProfile: mode === 'on-request' ? (profile ?? 'default') : 'default' };
+}
+
+/** Check the resolved authority, including any later persona or origin reduction. */
+export function assertWorkerAccessSupported(
+  provider: AgentProvider,
+  mode: CodexMode | undefined,
+  profile: PermissionProfile = 'default',
+  remote = false,
+  strictWorkspace = false,
+): void {
+  if (remote && profile !== 'default')
+    throw new Error(
+      'Remote workers cannot preserve this approval profile. Choose default approvals or a local worker.',
+    );
+  if (!remote && mode === 'read-only' && (provider === 'cursor' || provider === 'devin'))
+    throw new Error(`${provider} cannot enforce a strict read-only task.`);
+  if (
+    mode === 'workspace-auto' &&
+    isAcpAgentProvider(provider) &&
+    (strictWorkspace || provider === 'claude')
+  )
+    throw new Error(`${provider} cannot inherit a strict workspace-only sandbox.`);
+  if (profile === 'dont-ask' && provider !== 'claude')
+    throw new Error(
+      `${provider} cannot preserve allowlist-only permissions. Choose a replacement access setting.`,
+    );
+}
+
+export function translateInteractiveAccess(
+  source: AgentProvider,
+  target: AgentProvider,
+  mode: CodexMode,
+  profile: PermissionProfile = 'default',
+): { mode: CodexMode; permissionProfile: PermissionProfile } {
+  const requested =
+    source === target
+      ? { mode, permissionProfile: profile }
+      : portableAgentAccess(source, mode, profile);
+  if (source !== target && requested.mode === 'workspace-auto' && isAcpAgentProvider(target))
+    throw new Error(
+      'Choose a replacement access setting: this provider cannot preserve the workspace-only sandbox.',
+    );
+  let nextProfile =
+    source === target
+      ? requested.permissionProfile
+      : inheritedPermissionProfile(target, requested.permissionProfile);
+  if (target === 'devin' && requested.mode === 'on-request' && nextProfile === 'auto-review')
+    return { mode: 'workspace-auto', permissionProfile: 'default' };
+  if (!supportsPermissionProfile(target, nextProfile))
+    throw new Error('Choose a replacement access setting for this provider.');
+  return { ...requested, permissionProfile: nextProfile };
 }
 
 /** Provider-native controls. These are approval modes, not equivalent OS sandboxes. */

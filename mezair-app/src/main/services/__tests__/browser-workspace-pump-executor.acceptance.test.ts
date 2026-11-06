@@ -37,6 +37,8 @@ const provider = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   interruptTurn: vi.fn(),
   stopSession: vi.fn(),
+  stopSessionAndWait: vi.fn(async () => undefined),
+  captureThreadAccessFence: () => () => undefined,
   resolveApproval: vi.fn(),
   resolveInputRequest: vi.fn(),
 }));

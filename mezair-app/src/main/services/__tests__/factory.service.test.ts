@@ -498,7 +498,13 @@ describe('factory drafting latency and scope', () => {
   it('uses a compact workflow catalogue and validates the generated draft', async () => {
     vi.mocked(listWorkflowTemplates).mockReturnValue([structuredClone(workflow)]);
     vi.mocked(callLlm).mockResolvedValue(JSON.stringify(definition));
-    const result = await draftFactory('Build a factory', 'ws');
+    const onProgress = vi.fn();
+    const result = await draftFactory('Build a factory', 'ws', { onProgress });
+    expect(onProgress.mock.calls.map(([message]) => message)).toEqual([
+      'Checking repositories and saved workflows…',
+      'Generating the draft…',
+      'Validating the draft…',
+    ]);
     expect(result.workflowTemplateId).toBe('workflow');
     const [prompt, , , , options] = vi.mocked(callLlm).mock.calls.at(-1)!;
     expect(prompt).not.toContain('"prompt":"Implement"');

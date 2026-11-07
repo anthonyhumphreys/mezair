@@ -76,6 +76,13 @@ import {
   updateAgentUIIntentPresentationAndBroadcast,
 } from '../services/codex-session.service.js';
 import {
+  captureTurnCheckpoints,
+  deleteThreadCheckpoints,
+  listThreadCheckpoints,
+  previewCheckpointRestore,
+  restoreCheckpoint,
+} from '../services/chat-checkpoint.service.js';
+import {
   callPreferredLocalModel,
   classifyPromptForLocalModel,
   isLikelyLocalModelRefusal,
@@ -495,9 +502,46 @@ export function registerChatHandlers(): void {
         if (handledLocally) return;
       }
 
+      const checkpointKey = options?.checkpointKey;
+      if (
+        typeof checkpointKey === 'string' &&
+        checkpointKey &&
+        !isTemporaryChatSession(sessionId)
+      ) {
+        const threadId = getCodexSession(sessionId)?.appThreadId;
+        const thread = threadId ? getChatThread(threadId) : null;
+        if (thread && !thread.temporary && thread.purpose !== 'side-question') {
+          // Best effort: a checkpoint failure never blocks the message.
+          await captureTurnCheckpoints(
+            thread.id,
+            checkpointKey.slice(0, 120),
+            thread.repoIds,
+          ).catch((error) => console.warn('[Checkpoints] skipped', error));
+        }
+      }
+
       await sendMessage(sessionId, enrichedMessage, attachments, options);
     },
   );
+
+  ipcMain.handle('chat:list-checkpoints', (_event, threadId: string) => {
+    if (typeof threadId !== 'string' || !threadId) throw new Error('A thread is required.');
+    return listThreadCheckpoints(threadId);
+  });
+  ipcMain.handle('chat:preview-checkpoint', (_event, threadId: string, messageId: string) => {
+    if (typeof threadId !== 'string' || !threadId || typeof messageId !== 'string' || !messageId)
+      throw new Error('A thread and message are required.');
+    return previewCheckpointRestore(threadId, messageId);
+  });
+  ipcMain.handle('chat:restore-checkpoint', (_event, threadId: string, messageId: string) => {
+    if (typeof threadId !== 'string' || !threadId || typeof messageId !== 'string' || !messageId)
+      throw new Error('A thread and message are required.');
+    const active = listActiveCodexSessions().some(
+      (session) => session.appThreadId === threadId && session.status === 'busy',
+    );
+    if (active) throw new Error('Stop the running turn before rewinding files.');
+    return restoreCheckpoint(threadId, messageId);
+  });
 
   ipcMain.handle('chat:invalidate-thread-access', (_event, threadId: string) => {
     if (typeof threadId !== 'string' || !threadId) throw new Error('A thread is required.');
@@ -736,6 +780,9 @@ export function registerChatHandlers(): void {
 
   ipcMain.handle('chat:delete-thread', async (_event, threadId: string): Promise<void> => {
     await assertChatDelegationsFinished(threadId);
+    await deleteThreadCheckpoints(threadId).catch((error) =>
+      console.warn('[Checkpoints] cleanup failed', error),
+    );
     deleteChatThread(threadId);
   });
 

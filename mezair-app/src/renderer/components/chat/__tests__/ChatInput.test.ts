@@ -10,6 +10,8 @@ import {
   getSlashCommandResults,
   getRunSettingsLabel,
   shouldSendChatMessageFromKey,
+  resolveComposerEnter,
+  busyEnterHint,
   type ChatSlashCommand,
 } from '../ChatInput';
 
@@ -188,5 +190,45 @@ describe('getSkillMentionResults', () => {
     expect(getSkillMentionResults(skills, 'project').map((skill) => skill.name)).toEqual([
       'add-feature',
     ]);
+  });
+});
+
+describe('resolveComposerEnter', () => {
+  const enter = (busy: boolean, extra: { shiftKey?: boolean; metaKey?: boolean } = {}) => ({
+    key: 'Enter',
+    shiftKey: false,
+    busy,
+    ...extra,
+  });
+
+  it('sends the selected option when idle', () => {
+    expect(resolveComposerEnter(enter(false), 'guide')).toBe('selected');
+    expect(resolveComposerEnter(enter(false, { shiftKey: true }), 'guide')).toBeNull();
+  });
+
+  it('guides on Enter and queues on the modifier by default', () => {
+    expect(resolveComposerEnter(enter(true), 'guide')).toBe('guide');
+    expect(resolveComposerEnter(enter(true, { metaKey: true }), 'guide')).toBe('queue');
+  });
+
+  it('honours the queue preference', () => {
+    expect(resolveComposerEnter(enter(true), 'queue')).toBe('queue');
+    expect(resolveComposerEnter(enter(true, { metaKey: true }), 'queue')).toBe('guide');
+  });
+
+  it('keeps the legacy newline behaviour when chosen', () => {
+    expect(resolveComposerEnter(enter(true), 'newline')).toBeNull();
+    expect(resolveComposerEnter(enter(true, { metaKey: true }), 'newline')).toBe('selected');
+  });
+
+  it('never sends on Shift+Enter or during IME composition', () => {
+    expect(resolveComposerEnter(enter(true, { shiftKey: true }), 'guide')).toBeNull();
+    expect(resolveComposerEnter({ ...enter(true), isComposing: true }, 'guide')).toBeNull();
+  });
+
+  it('describes only the modes the provider supports', () => {
+    expect(busyEnterHint('guide', true, true)).toMatch(/Enter to guide now · .* to queue next/);
+    expect(busyEnterHint('guide', false, true)).toBe('Enter to queue next');
+    expect(busyEnterHint('queue', true, false)).toBe('Enter to guide now');
   });
 });

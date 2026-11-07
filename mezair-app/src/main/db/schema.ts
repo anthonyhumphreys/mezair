@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 119;
+export const SCHEMA_VERSION = 120;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS factory_definitions (
@@ -235,6 +235,19 @@ CREATE INDEX IF NOT EXISTS idx_chat_threads_workspace_work_item
 
 CREATE INDEX IF NOT EXISTS idx_chat_threads_side_question_parent
   ON chat_threads(side_question_of_thread_id);
+
+CREATE TABLE IF NOT EXISTS chat_checkpoints (
+  id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+  message_id TEXT NOT NULL,
+  repo_id TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  ref_name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'turn' CHECK (kind IN ('turn', 'restore')),
+  created_at TEXT NOT NULL,
+  UNIQUE(thread_id, message_id, repo_id)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_checkpoints_thread ON chat_checkpoints(thread_id, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_timestamp
   ON chat_messages(thread_id, timestamp ASC);
@@ -544,6 +557,7 @@ CREATE TABLE IF NOT EXISTS settings (
   telemetry_enabled INTEGER NOT NULL DEFAULT 0,
   usage_statistics_enabled INTEGER NOT NULL DEFAULT 0,
   custom_themes TEXT NOT NULL DEFAULT '[]',
+  chat_busy_enter TEXT NOT NULL DEFAULT 'guide',
   llm_gateway_api_key BLOB,
   llm_gateway_billing_mode TEXT NOT NULL DEFAULT 'devpass',
   updated_at TEXT DEFAULT (datetime('now'))
@@ -4186,6 +4200,21 @@ CREATE INDEX idx_share_ticket_publications_share ON share_ticket_publications(sh
 `,
   118: `ALTER TABLE settings ADD COLUMN usage_statistics_enabled INTEGER NOT NULL DEFAULT 0;`,
   119: `ALTER TABLE settings ADD COLUMN custom_themes TEXT NOT NULL DEFAULT '[]';`,
+  120: `
+ALTER TABLE settings ADD COLUMN chat_busy_enter TEXT NOT NULL DEFAULT 'guide';
+CREATE TABLE IF NOT EXISTS chat_checkpoints (
+  id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+  message_id TEXT NOT NULL,
+  repo_id TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  ref_name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'turn' CHECK (kind IN ('turn', 'restore')),
+  created_at TEXT NOT NULL,
+  UNIQUE(thread_id, message_id, repo_id)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_checkpoints_thread ON chat_checkpoints(thread_id, created_at);
+`,
 };
 
 // Development builds could stamp v68 or v69 without the sync table migration.

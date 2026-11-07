@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Save } from 'lucide-react';
 import type {
+  ChatBusyEnterAction,
   AgentProvider,
   AppSettings,
   CodexCliStatus,
@@ -29,7 +30,7 @@ import {
 } from '../../../utils/chat-model-options';
 import { DEFAULT_MODEL_PICKER_PREFERENCES } from '../../../../shared/model-picker';
 import { ModelPickerPreferencesEditor } from '../ModelPickerPreferencesEditor';
-import { Button } from '../../ui';
+import { Button, SegmentedControl } from '../../ui';
 import { CodexRuntimeSetup } from '../CodexRuntimeSetup';
 import { useSettingsContext } from '../SettingsContext';
 import { PROVIDER_CREDENTIAL_KEYS } from '../settings-keys';
@@ -578,6 +579,39 @@ export function ProvidersCategory() {
           model={selectedModelId}
           onChange={(preferences) => draft.update('modelPicker', preferences)}
         />
+      </SettingsPanel>
+      <SettingsPanel
+        panelId="composer-enter"
+        title="Sending while an agent works"
+        description="What Enter does in the composer during a running turn. Shift+Enter always adds a line, and Escape stops the run."
+        saveKeys={['chatBusyEnter']}
+        autosave
+      >
+        <SegmentedControl<ChatBusyEnterAction>
+          label="Enter while an agent is working"
+          value={settings.chatBusyEnter ?? 'guide'}
+          onChange={(value) => draft.update('chatBusyEnter', value)}
+          options={[
+            {
+              value: 'guide',
+              label: 'Guide now',
+              title: 'Enter steers the running turn; ⌘/Ctrl+Enter queues',
+            },
+            {
+              value: 'queue',
+              label: 'Queue next',
+              title: 'Enter queues for after this turn; ⌘/Ctrl+Enter guides',
+            },
+            { value: 'newline', label: 'New line', title: 'Enter adds a line; ⌘/Ctrl+Enter sends' },
+          ]}
+        />
+        <p className="text-xs text-text-tertiary">
+          {(settings.chatBusyEnter ?? 'guide') === 'guide'
+            ? 'Enter sends guidance the agent picks up mid-run. ⌘/Ctrl+Enter queues it for after the turn instead.'
+            : (settings.chatBusyEnter ?? 'guide') === 'queue'
+              ? 'Enter queues the message for after the current turn. ⌘/Ctrl+Enter guides the running turn instead.'
+              : 'Enter adds a new line. ⌘/Ctrl+Enter sends with the mode selected on the send button.'}
+        </p>
       </SettingsPanel>
       <SettingsPanel
         panelId="agent-providers"

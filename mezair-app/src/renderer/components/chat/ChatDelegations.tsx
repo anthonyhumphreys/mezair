@@ -36,16 +36,17 @@ export function integrationApplicationHeadline(
   return 'The combined result is in a retained integration checkout. It has not been applied to your repository.';
 }
 
-export function ChatDelegations({ threadId }: { threadId: string }) {
+/** Live delegated runs for a thread (polled, shared across subscribers). */
+export function useThreadDelegations(threadId: string | null) {
   const [snapshot, setSnapshot] = useState<{
     threadId: string;
     runs: ChatDelegationRun[];
     error: boolean;
   }>({ threadId: '', runs: [], error: false });
-  const [showOlder, setShowOlder] = useState(false);
-  const key = `chat-delegations:${threadId}`;
+  const key = `chat-delegations:${threadId ?? ''}`;
   const subscription = useRef(0);
   useEffect(() => {
+    if (!threadId) return;
     const generation = ++subscription.current;
     const unsubscribe = sharedPollingCache.subscribe(
       key,
@@ -68,20 +69,75 @@ export function ChatDelegations({ threadId }: { threadId: string }) {
       unsubscribe();
     };
   }, [key, threadId]);
-  const current = snapshot.threadId === threadId;
-  const runs = current ? snapshot.runs : [];
-  const error = current && snapshot.error;
+  const current = Boolean(threadId) && snapshot.threadId === threadId;
+  const refresh = useCallback(() => sharedPollingCache.refresh(key), [key]);
+  return {
+    runs: current ? snapshot.runs : EMPTY_RUNS,
+    error: current && snapshot.error,
+    refresh,
+  };
+}
+
+const EMPTY_RUNS: ChatDelegationRun[] = [];
+
+/**
+ * Assigns each run to the turn whose time window contains its start, so
+ * delegated agents appear inside the turn that launched them. Runs older than
+ * the first loaded turn are returned under `unplaced`.
+ */
+export function placeDelegationsInTurns(
+  runs: ChatDelegationRun[],
+  turns: Array<{ key: string; startedAt?: string }>,
+): { byTurn: Map<string, ChatDelegationRun[]>; unplaced: ChatDelegationRun[] } {
+  const byTurn = new Map<string, ChatDelegationRun[]>();
+  const unplaced: ChatDelegationRun[] = [];
+  const starts = turns
+    .map((turn) => ({ key: turn.key, at: turn.startedAt ? Date.parse(turn.startedAt) : NaN }))
+    .filter((turn) => !Number.isNaN(turn.at));
+  for (const run of runs) {
+    const created = Date.parse(run.createdAt);
+    let owner: string | null = null;
+    for (const turn of starts) {
+      if (turn.at <= created) owner = turn.key;
+      else break;
+    }
+    if (!owner || Number.isNaN(created)) {
+      unplaced.push(run);
+      continue;
+    }
+    const list = byTurn.get(owner) ?? [];
+    list.push(run);
+    byTurn.set(owner, list);
+  }
+  return { byTurn, unplaced };
+}
+
+/** Delegated runs rendered inside a turn (or at the end for unplaced runs). */
+export function ChatDelegationList({
+  threadId,
+  runs,
+  error = false,
+  onRefresh,
+  label = 'Delegated work',
+}: {
+  threadId: string;
+  runs: ChatDelegationRun[];
+  error?: boolean;
+  onRefresh: () => Promise<void>;
+  label?: string;
+}) {
+  const [showOlder, setShowOlder] = useState(false);
   if (!runs.length && !error) return null;
   return (
-    <section aria-label="Delegated work" className="mt-6 w-full border-t border-border-subtle pt-4">
-      <div className="mb-3 flex items-center gap-2 text-xs font-medium text-text-secondary">
-        <GitFork size={14} aria-hidden="true" /> Delegated work
-        <span className="font-normal text-text-tertiary">{runs.length}</span>
+    <section aria-label={label} className="w-full rounded-xl border border-border-subtle px-3 py-2">
+      <div className="mb-1 flex items-center gap-2 text-xs font-medium text-text-secondary">
+        <GitFork size={14} aria-hidden="true" /> {label}
+        <span className="font-normal tabular-nums text-text-tertiary">{runs.length}</span>
       </div>
       {error && (
-        <p className="mb-3 text-xs text-warning" role="status">
+        <p className="mb-2 text-xs text-warning" role="status">
           Could not refresh delegated work. Showing the last available status.{' '}
-          <button className={actionClass} onClick={() => void sharedPollingCache.refresh(key)}>
+          <button type="button" className={actionClass} onClick={() => void onRefresh()}>
             Retry
           </button>
         </p>
@@ -100,17 +156,23 @@ export function ChatDelegations({ threadId }: { threadId: string }) {
               key={`${threadId}:${run.id}`}
               run={run}
               threadId={threadId}
-              onRefresh={() => sharedPollingCache.refresh(key)}
+              onRefresh={onRefresh}
             />
           ))}
       </div>
       {runs.length > 3 && (
-        <button className={actionClass} onClick={() => setShowOlder(!showOlder)}>
+        <button type="button" className={actionClass} onClick={() => setShowOlder(!showOlder)}>
           {showOlder ? 'Show recent work' : 'Show earlier work'}
         </button>
       )}
     </section>
   );
+}
+
+/** Thread-level list (all runs), kept for surfaces without a turn transcript. */
+export function ChatDelegations({ threadId }: { threadId: string }) {
+  const { runs, error, refresh } = useThreadDelegations(threadId);
+  return <ChatDelegationList threadId={threadId} runs={runs} error={error} onRefresh={refresh} />;
 }
 
 function DelegationRun({

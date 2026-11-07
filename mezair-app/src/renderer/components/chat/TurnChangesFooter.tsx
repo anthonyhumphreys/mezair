@@ -103,8 +103,11 @@ export function TurnChangesFooter({
   reviewRequest,
   readOnly: readOnlyProp,
   laterTurnEditedPaths,
+  usage,
 }: {
   workItems: ChatTurnWorkItem[];
+  /** Folded into the summary row so a turn ends on one line, not three. */
+  usage?: ChatTurnUsage;
   repos: RepoInfo[];
   preferredRepoId?: string | null;
   threadId?: string;
@@ -289,7 +292,8 @@ export function TurnChangesFooter({
               />
             ))}
           </span>
-          <span className="ml-auto">
+          <span className="ml-auto flex items-center gap-2">
+            {usage && <TurnUsageText usage={usage} />}
             <Button variant="ghost" size="sm" onClick={reviewTheseChanges}>
               <ScanSearch size={12} aria-hidden="true" />
               Review these changes
@@ -335,7 +339,7 @@ export function TurnChangesFooter({
  * and cost (observed for ACP, priced for Codex). Unknown values are simply
  * omitted so a partial stream never shows nonsense.
  */
-export function TurnUsageFooter({ usage }: { usage: ChatTurnUsage }) {
+export function formatTurnUsage(usage: ChatTurnUsage): { short: string; full: string } | null {
   const parts: string[] = [];
   if (usage.inputTokens > 0 || usage.outputTokens > 0) {
     parts.push(`${formatTurnTokenCount(usage.inputTokens)} in`);
@@ -351,12 +355,39 @@ export function TurnUsageFooter({ usage }: { usage: ChatTurnUsage }) {
     parts.push(formatTurnCost(usage.costUsd));
   }
   if (!usage.model && parts.length === 0) return null;
+  const full = [usage.model, ...parts].filter(Boolean).join(' · ');
+  const total = usage.inputTokens + usage.outputTokens;
+  const short = [
+    total > 0 ? `${formatTurnTokenCount(total)} tok` : null,
+    usage.costUsd !== undefined && usage.costUsd > 0 ? formatTurnCost(usage.costUsd) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return { short: short || (usage.model ?? ''), full };
+}
 
+/** Compact usage; the model, token split, context and cost are in the tooltip. */
+export function TurnUsageText({ usage }: { usage: ChatTurnUsage }) {
+  const formatted = formatTurnUsage(usage);
+  if (!formatted) return null;
   return (
-    <div className="message-bubble flex justify-start" data-testid="turn-usage-footer">
-      <p className="px-1 text-eyebrow text-text-muted">
-        {[usage.model, ...parts].filter(Boolean).join(' · ')}
-      </p>
+    <span
+      className="text-eyebrow tabular-nums text-text-muted"
+      title={formatted.full}
+      aria-label={`Usage: ${formatted.full}`}
+      data-testid="turn-usage"
+    >
+      {formatted.short}
+    </span>
+  );
+}
+
+/** Usage on its own row, for turns that changed no files. */
+export function TurnUsageFooter({ usage }: { usage: ChatTurnUsage }) {
+  if (!formatTurnUsage(usage)) return null;
+  return (
+    <div className="message-bubble flex justify-start px-1" data-testid="turn-usage-footer">
+      <TurnUsageText usage={usage} />
     </div>
   );
 }

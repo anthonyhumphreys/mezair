@@ -354,6 +354,11 @@ const api: MezairAPI = {
       ipcRenderer.invoke('chat:delete-artifact-annotation', id),
     listThreads: (workspaceId: string | null) =>
       ipcRenderer.invoke('chat:list-threads', workspaceId),
+    listCheckpoints: (threadId: string) => ipcRenderer.invoke('chat:list-checkpoints', threadId),
+    previewCheckpoint: (threadId: string, messageId: string) =>
+      ipcRenderer.invoke('chat:preview-checkpoint', threadId, messageId),
+    restoreCheckpoint: (threadId: string, messageId: string) =>
+      ipcRenderer.invoke('chat:restore-checkpoint', threadId, messageId),
     listWorkItemThreads: (workspaceId: string | null) =>
       ipcRenderer.invoke('chat:list-work-item-threads', workspaceId),
     createThread: (input: {
@@ -1423,6 +1428,13 @@ const api: MezairAPI = {
     stage: (repoId: string, paths: string[]) => ipcRenderer.invoke('git:stage', repoId, paths),
     unstage: (repoId: string, paths: string[]) => ipcRenderer.invoke('git:unstage', repoId, paths),
     discard: (repoId: string, paths: string[]) => ipcRenderer.invoke('git:discard', repoId, paths),
+    applyHunk: (
+      repoId: string,
+      filePath: string,
+      hunkIndex: number,
+      fingerprint: string,
+      action: 'stage' | 'unstage' | 'discard',
+    ) => ipcRenderer.invoke('git:apply-hunk', repoId, filePath, hunkIndex, fingerprint, action),
     commit: (repoId: string, message: string) => ipcRenderer.invoke('git:commit', repoId, message),
     generateCommitMessage: (repoId: string) =>
       ipcRenderer.invoke('git:generate-commit-message', repoId),

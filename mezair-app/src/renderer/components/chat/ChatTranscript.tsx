@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo, useRef, useState, type RefObject } from 'react';
 import { AlertTriangle, ArrowDown } from 'lucide-react';
 import type { AgentProvider, RepoInfo } from '../../../shared/types';
+import type { ChatDelegationRun } from '../../../shared/chat-delegation';
 import { buildChatTurnTimeline, type ComposedChatTurn } from './chat-turns';
 import { SurfaceHost } from '../surfaces/SurfaceHost';
 import { QuestionIntentSurface } from './AgentUIIntentSurface';
@@ -19,7 +20,12 @@ import {
 } from './chat-run-outcome';
 import { stripFindingMarkers } from '../../utils/finding-parser';
 import type { StarterPrompt } from '../../utils/starter-prompts';
-import { ChatDelegations } from './ChatDelegations';
+import {
+  ChatDelegationList,
+  placeDelegationsInTurns,
+  useThreadDelegations,
+} from './ChatDelegations';
+import { summarizeTurnChanges } from './chat-turn-changes';
 import { VirtualChatTurns } from './VirtualChatTurns';
 import { TranscriptViewScope } from './TranscriptViewState';
 
@@ -62,6 +68,18 @@ interface ChatTranscriptProps {
   messagesEndRef: RefObject<HTMLDivElement | null>;
   showJumpToLatest: boolean;
   onJumpToLatest: () => void;
+  /** Message ids with a pre-turn checkpoint (rewind available). */
+  checkpointIds?: ReadonlySet<string>;
+  onRewind?: (messageId: string) => void;
+  /** Inline edit of a sent message; resends in a new branch. */
+  onEditResend?: (
+    sourceIndex: number,
+    messageId: string | undefined,
+    text: string,
+    restoreFiles: boolean,
+  ) => void;
+  /** Resends the latest request (shown on the last settled answer). */
+  onRetry?: (content: string) => void;
 }
 
 /**
@@ -106,7 +124,16 @@ export function ChatTranscript({
   messagesEndRef,
   showJumpToLatest,
   onJumpToLatest,
+  checkpointIds,
+  onRewind,
+  onEditResend,
+  onRetry,
 }: ChatTranscriptProps) {
+  const delegations = useThreadDelegations(paneKind === 'transcript' ? activeThreadId : null);
+  const placedDelegations = useMemo(
+    () => placeDelegationsInTurns(delegations.runs, turns),
+    [delegations.runs, turns],
+  );
   const [reviewRequest, setReviewRequest] = useState<{
     threadId: string | null;
     turnKey: string;
@@ -215,13 +242,28 @@ export function ChatTranscript({
                       : undefined
                   }
                   requestFileReview={requestFileReview}
+                  delegationRuns={placedDelegations.byTurn.get(turn.key)}
+                  onRefreshDelegations={delegations.refresh}
+                  isLastTurn={turnIndex === turns.length - 1}
+                  hasCheckpoint={Boolean(turn.user?.id && checkpointIds?.has(turn.user.id))}
+                  onRewind={onRewind}
+                  onEditResend={onEditResend}
+                  onRetry={onRetry}
                 />
               )}
             />
           )}
 
           {activeThreadId && paneKind === 'transcript' && (
-            <ChatDelegations key={`delegations:${activeThreadId}`} threadId={activeThreadId} />
+            <div className="mt-6">
+              <ChatDelegationList
+                threadId={activeThreadId}
+                runs={placedDelegations.unplaced}
+                error={delegations.error && placedDelegations.byTurn.size === 0}
+                onRefresh={delegations.refresh}
+                label={turns.length > 0 ? 'Earlier delegated work' : 'Delegated work'}
+              />
+            </div>
           )}
           {error && (
             <ChatErrorNotice
@@ -242,7 +284,7 @@ export function ChatTranscript({
           className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-bg-elevated px-3 py-1.5 text-xs font-medium text-text-secondary shadow-lg transition-colors hover:border-accent/40 hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
         >
           <ArrowDown size={13} />
-          {busy ? 'Jump to live work' : 'Jump to latest'}
+          {busy ? 'Jump to the running turn' : 'Jump to latest'}
         </button>
       )}
     </div>
@@ -261,7 +303,14 @@ type ChatTranscriptTurnProps = Pick<
   | 'onReuseMessage'
   | 'changesRepos'
   | 'changesPreferredRepoId'
+  | 'onRewind'
+  | 'onEditResend'
+  | 'onRetry'
 > & {
+  delegationRuns?: ChatDelegationRun[];
+  onRefreshDelegations: () => Promise<void>;
+  isLastTurn: boolean;
+  hasCheckpoint: boolean;
   turn: ComposedChatTurn;
   turnIndex: number;
   searchActive?: boolean;
@@ -290,6 +339,13 @@ const ChatTranscriptTurn = memo(function ChatTranscriptTurn({
   laterTurnEditedPaths,
   reviewRequest,
   requestFileReview,
+  delegationRuns,
+  onRefreshDelegations,
+  isLastTurn,
+  hasCheckpoint,
+  onRewind,
+  onEditResend,
+  onRetry,
 }: ChatTranscriptTurnProps) {
   const liveState = getChatTurnLiveState({
     busy,
@@ -305,6 +361,15 @@ const ChatTranscriptTurn = memo(function ChatTranscriptTurn({
     busy,
     pendingTarget: pendingQuestionTarget,
   });
+  const turnChanges = turnComplete
+    ? summarizeTurnChanges([...turn.work, ...turn.trailingWork])
+    : null;
+  const showChangesFooter = Boolean(
+    turnComplete && turnChanges && (turn.answer || turn.runOutcome || runSummary?.changes),
+  );
+  const userEntry = turn.user;
+  const userMessageId = userEntry?.id;
+  const canRetry = Boolean(onRetry && isLastTurn && turnComplete && userEntry?.content.trim());
 
   return (
     <section
@@ -314,15 +379,27 @@ const ChatTranscriptTurn = memo(function ChatTranscriptTurn({
       className={`w-full space-y-4 ${searchActive ? 'rounded-sm outline outline-1 outline-offset-4 outline-accent/50' : ''}`}
       aria-label={`Turn ${turnIndex + 1}`}
     >
-      {turn.user && (
+      {userEntry && (
         <UserMessage
-          content={turn.user.content}
-          attachments={turn.user.attachments}
-          delivery={turn.user.delivery}
-          deliveryError={turn.user.deliveryError}
-          deliveryIntent={turn.user.deliveryIntent}
-          onEdit={() => onReuseMessage(turn.user!.sourceIndex, turn.user!.content)}
-          onBranch={onBranch ? () => onBranch(turn.user!.sourceIndex) : undefined}
+          content={userEntry.content}
+          attachments={userEntry.attachments}
+          delivery={userEntry.delivery}
+          deliveryError={userEntry.deliveryError}
+          deliveryIntent={userEntry.deliveryIntent}
+          timestamp={userEntry.timestamp}
+          onEdit={() => onReuseMessage(userEntry.sourceIndex, userEntry.content)}
+          onEditResend={
+            onEditResend && !busy && userEntry.delivery !== 'failed'
+              ? (text, restoreFiles) =>
+                  onEditResend(userEntry.sourceIndex, userMessageId, text, restoreFiles)
+              : undefined
+          }
+          onRewind={
+            onRewind && hasCheckpoint && userMessageId && !busy
+              ? () => onRewind(userMessageId)
+              : undefined
+          }
+          onBranch={onBranch ? () => onBranch(userEntry.sourceIndex) : undefined}
         />
       )}
       {timeline.map((item, index) => {
@@ -370,7 +447,13 @@ const ChatTranscriptTurn = memo(function ChatTranscriptTurn({
               label={personaName}
               colour={personaColour}
               active={liveState === 'responding'}
+              timestamp={item.entry.timestamp}
               onBranch={onBranch ? () => onBranch(item.entry.sourceIndex) : undefined}
+              onRegenerate={
+                canRetry && item.entry === turn.answer
+                  ? () => onRetry!(userEntry!.content)
+                  : undefined
+              }
             />
           </TranscriptViewScope>
         );
@@ -378,20 +461,26 @@ const ChatTranscriptTurn = memo(function ChatTranscriptTurn({
       {lastWorkIndex < 0 && !turn.answer && liveState && (
         <TurnWorkMessage items={[]} active startedAt={turn.startedAt} />
       )}
-      {/* H5 — usage/context/cost rollup for the turn. */}
-      {turn.usage && <TurnUsageFooter usage={turn.usage} />}
+      {activeThreadId && delegationRuns && delegationRuns.length > 0 && (
+        <ChatDelegationList
+          threadId={activeThreadId}
+          runs={delegationRuns}
+          onRefresh={onRefreshDelegations}
+        />
+      )}
       {runSummary && shouldShowRunOutcomeFooter(runSummary) && (
         <ChatRunOutcomeFooter
           summary={runSummary}
           repos={changesRepos}
           preferredRepoId={changesPreferredRepoId}
+          hideChanges={showChangesFooter}
           onReviewFile={
             turnComplete ? (filePath) => requestFileReview(turn.key, filePath) : undefined
           }
         />
       )}
-      {/* CH2 — settled turns surface their file changes. */}
-      {turnComplete && (turn.answer || turn.runOutcome || runSummary?.changes) && (
+      {/* One turn-end row: changed files, review, and usage. */}
+      {showChangesFooter ? (
         <TurnChangesFooter
           workItems={[...turn.work, ...turn.trailingWork]}
           repos={changesRepos}
@@ -400,7 +489,10 @@ const ChatTranscriptTurn = memo(function ChatTranscriptTurn({
           turnId={turn.key}
           laterTurnEditedPaths={laterTurnEditedPaths}
           reviewRequest={reviewRequest}
+          usage={turn.usage}
         />
+      ) : (
+        turnComplete && turn.usage && <TurnUsageFooter usage={turn.usage} />
       )}
     </section>
   );

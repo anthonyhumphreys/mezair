@@ -28,6 +28,7 @@ import {
 import type {
   AgentProvider,
   ChatAttachment,
+  ChatBusyEnterAction,
   ChatAttachmentInput,
   ChatFileMentionSearchResult,
   ChatFollowUpIntent,
@@ -37,6 +38,7 @@ import type {
   ReasoningEffort,
 } from '../../../shared/types';
 import { VoiceInputButton } from './VoiceInputButton';
+import { ContextMeter, type ChatContextUsage } from './ContextMeter';
 import { ModelPicker } from './ModelPicker';
 import type { ModelPickerPreferences } from '../../../shared/model-picker';
 import type { ChatModelOption } from '../../utils/chat-model-options';
@@ -203,6 +205,10 @@ interface ChatInputProps {
    * under the composer. Intended for empty threads.
    */
   showSyntaxHint?: boolean;
+  /** What plain Enter does while the agent is working (Settings → Chat). */
+  busyEnterAction?: ChatBusyEnterAction;
+  /** Context-window fill reported for the latest turn. */
+  contextUsage?: ChatContextUsage | null;
 }
 
 function ChatInputImpl({
@@ -247,6 +253,8 @@ function ChatInputImpl({
   quickPrompts = NO_QUICK_PROMPTS,
   slashCommands = NO_SLASH_COMMANDS,
   focusRequest = 0,
+  busyEnterAction = 'guide',
+  contextUsage = null,
   showSyntaxHint = false,
 }: ChatInputProps) {
   const [value, setValue] = useState(() => loadDraft(draftKey));
@@ -266,7 +274,12 @@ function ChatInputImpl({
   const [pendingFollowUpId, setPendingFollowUpId] = useState<string | null>(null);
   const [standardSendPending, setStandardSendPending] = useState(false);
   const [sideQuestionPending, setSideQuestionPending] = useState(false);
-  const [busySendChoice, setBusySendChoice] = useState<BusySendChoice>('guide');
+  const [busySendChoice, setBusySendChoice] = useState<BusySendChoice>(
+    busyEnterAction === 'queue' ? 'queue' : 'guide',
+  );
+  useEffect(() => {
+    if (busyEnterAction !== 'newline') setBusySendChoice(busyEnterAction);
+  }, [busyEnterAction]);
   const [idleSendChoice, setIdleSendChoice] = useState<IdleSendChoice>('send');
   const [pendingFollowUpIntent, setPendingFollowUpIntent] = useState<ChatFollowUpIntent | null>(
     null,
@@ -992,8 +1005,8 @@ function ChatInputImpl({
       return;
     }
 
-    if (
-      shouldSendChatMessageFromKey({
+    const enterAction = resolveComposerEnter(
+      {
         busy,
         key: e.key,
         shiftKey: e.shiftKey,
@@ -1001,11 +1014,16 @@ function ChatInputImpl({
         ctrlKey: e.ctrlKey,
         isComposing: e.nativeEvent.isComposing,
         keyCode: e.nativeEvent.keyCode,
-      })
-    ) {
-      e.preventDefault();
-      if (selectedSendOption && !selectedSendOption.disabled) selectedSendOption.run();
-    }
+      },
+      busyEnterAction,
+    );
+    if (!enterAction) return;
+    e.preventDefault();
+    const option =
+      enterAction === 'selected'
+        ? selectedSendOption
+        : (sendOptions.find((candidate) => candidate.id === enterAction) ?? selectedSendOption);
+    if (option && !option.disabled) option.run();
   };
 
   const handleVoiceTranscript = useCallback(
@@ -1626,6 +1644,7 @@ function ChatInputImpl({
             </div>
 
             <div className="ml-auto flex shrink-0 flex-nowrap items-center justify-end gap-1.5">
+              {contextUsage && !veryCompactFooter && <ContextMeter usage={contextUsage} />}
               <VoiceInputButton
                 onTranscript={(text) => {
                   setVoiceError(null);
@@ -1715,14 +1734,14 @@ function ChatInputImpl({
       {hasContent && selectedSendOption && (
         <p className="mt-1.5 px-1 text-right text-xs text-text-tertiary">
           {busy
-            ? `Enter adds a line · ${SEND_SHORTCUT} to ${selectedSendOption.shortLabel.toLowerCase()}`
+            ? busyEnterHint(busyEnterAction, canGuide, canQueue)
             : 'Enter to send · Shift Enter for a new line'}
         </p>
       )}
 
       <p id="chat-composer-keyboard-hint" className="sr-only">
         {busy
-          ? `Enter adds a line while the agent is working. ${selectedSendOption ? `Control or Command plus Enter sends using ${selectedSendOption.label}.` : 'Stop the run or wait to send.'}`
+          ? `While the agent is working: ${busyEnterHint(busyEnterAction, canGuide, canQueue)}. Shift plus Enter adds a line. Escape stops the run.`
           : 'Enter sends. Shift plus Enter adds a line.'}
         {mentionRepoIds.length > 0
           ? ' Type slash for commands, at for files, or dollar for skills.'
@@ -1778,7 +1797,7 @@ function ChatInputImpl({
                   </li>
                   <li>
                     <span className="font-mono text-text-primary">Enter</span>{' '}
-                    {busy ? `adds a line while working; ${SEND_SHORTCUT} sends,` : 'sends,'}{' '}
+                    {busy ? `${busyEnterHint(busyEnterAction, canGuide, canQueue)};` : 'sends,'}{' '}
                     <span className="font-mono text-text-primary">Shift+Enter</span> adds a line
                   </li>
                 </ul>
@@ -2298,6 +2317,43 @@ export function getSkillMentionResults(
         .includes(normalizedQuery);
     })
     .slice(0, limit);
+}
+
+/**
+ * Which send option a key press triggers. Idle: Enter sends. Busy: plain Enter
+ * follows the user's setting (guide or queue) and ⌘/Ctrl+Enter sends the other
+ * one; with `newline`, plain Enter adds a line and ⌘/Ctrl+Enter sends the
+ * selected option. Shift+Enter always adds a line.
+ */
+export function resolveComposerEnter(
+  event: ChatComposerKeyEvent,
+  busyEnterAction: ChatBusyEnterAction,
+): 'selected' | 'guide' | 'queue' | null {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229)
+    return null;
+  const modified = event.metaKey === true || event.ctrlKey === true;
+  if (!event.busy) return 'selected';
+  if (busyEnterAction === 'newline') return modified ? 'selected' : null;
+  const primary = busyEnterAction;
+  const secondary = primary === 'guide' ? 'queue' : 'guide';
+  return modified ? secondary : primary;
+}
+
+/** Visible and spoken keyboard hint for a busy composer. */
+export function busyEnterHint(
+  busyEnterAction: ChatBusyEnterAction,
+  canGuide: boolean,
+  canQueue: boolean,
+): string {
+  if (busyEnterAction === 'newline') return `Enter adds a line · ${SEND_SHORTCUT} sends`;
+  const label = (mode: 'guide' | 'queue') => (mode === 'guide' ? 'guide now' : 'queue next');
+  const primary = busyEnterAction;
+  const secondary = primary === 'guide' ? 'queue' : 'guide';
+  const available = (mode: 'guide' | 'queue') => (mode === 'guide' ? canGuide : canQueue);
+  if (!available(primary) && available(secondary)) return `Enter to ${label(secondary)}`;
+  return available(secondary)
+    ? `Enter to ${label(primary)} · ${SEND_SHORTCUT} to ${label(secondary)}`
+    : `Enter to ${label(primary)}`;
 }
 
 export function shouldSendChatMessageFromKey(event: ChatComposerKeyEvent): boolean {

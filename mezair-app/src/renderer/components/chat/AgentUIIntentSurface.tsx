@@ -656,7 +656,7 @@ function QuestionForm({
               type="button"
               onClick={() => void submit('submit', { [questions[0].id]: true })}
               disabled={submitting}
-              className="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-accent-foreground hover:bg-accent/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-secondary disabled:opacity-40"
+              className="inline-flex items-center gap-2 rounded-md border border-border bg-bg-tertiary px-3 py-2 text-xs font-semibold text-text-primary hover:border-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-secondary disabled:opacity-40"
             >
               {submitting && (
                 <Loader2 size={13} className="animate-spin motion-reduce:animate-none" />

@@ -70,6 +70,33 @@ it('adds local custom theme storage without disturbing the selected built-in the
   }
 });
 
+it('adds turn checkpoints and the busy-Enter preference with Guide as the default', () => {
+  const db = new Database(':memory:');
+  try {
+    db.exec(
+      "CREATE TABLE settings (id INTEGER PRIMARY KEY, theme TEXT); INSERT INTO settings VALUES (1, 'dark');" +
+        'CREATE TABLE chat_threads (id TEXT PRIMARY KEY);',
+    );
+    for (const statement of MIGRATIONS[120]!
+      .split(';')
+      .map((part) => part.trim())
+      .filter(Boolean))
+      db.exec(statement);
+    expect(db.prepare('SELECT chat_busy_enter FROM settings WHERE id = 1').get()).toEqual({
+      chat_busy_enter: 'guide',
+    });
+    db.exec("INSERT INTO chat_threads VALUES ('t1')");
+    const insert = db.prepare(
+      `INSERT INTO chat_checkpoints (id, thread_id, message_id, repo_id, commit_sha, ref_name, created_at)
+       VALUES (?, 't1', 'm1', 'r1', 'abc', 'refs/mezair/checkpoints/t1/m1', 'now')`,
+    );
+    insert.run('c1');
+    expect(() => insert.run('c2')).toThrow(/UNIQUE/);
+  } finally {
+    db.close();
+  }
+});
+
 it('defaults workspaces to Local and preserves existing workspace Sync bindings', () => {
   const db = new Database(':memory:');
   try {
@@ -545,7 +572,7 @@ describe('fresh database schema', () => {
         ).map((column) => column.name),
       );
 
-      expect(SCHEMA_VERSION).toBe(119);
+      expect(SCHEMA_VERSION).toBe(120);
       for (const column of [
         'local_llm_mode',
         'local_llm_provider',

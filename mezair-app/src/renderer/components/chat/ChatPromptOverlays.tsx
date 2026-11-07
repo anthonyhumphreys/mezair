@@ -7,12 +7,13 @@ import {
   ListChecks,
   Loader2,
   MessageSquare,
+  ShieldAlert,
 } from 'lucide-react';
 import type { AgentUIPlanIntent, AgentUIQuestionIntent } from '../../../shared/agent-ui-intents';
 import type { ChatPlanSnapshot } from '../../../shared/types';
 import type { WorkflowChatIntent } from '../../utils/workflow-chat-intent';
 import { PlanIntentSurface, QuestionIntentSurface } from './AgentUIIntentSurface';
-import { buildChatRequestTargetDomId } from './chat-run-outcome';
+import { buildChatRequestTargetDomId, type ChatQuestionTarget } from './chat-run-outcome';
 
 /**
  * Composer-level prompt overlays — extracted from ChatView (Phase 5 split).
@@ -44,12 +45,12 @@ export function PendingQuestionPrompt({
     <div
       id={buildChatRequestTargetDomId(`intent:${intent.id}`)}
       tabIndex={-1}
-      className={`border-t ${approval ? 'border-warning/25 bg-warning/[0.035]' : 'border-border bg-bg-secondary'}`}
+      className={`overflow-hidden rounded-xl border ${approval ? 'border-warning/35 bg-warning/[0.035]' : 'border-border bg-bg-secondary'}`}
     >
       <button
         type="button"
         onClick={() => setExpanded((current) => !current)}
-        className="mx-auto flex w-full max-w-[760px] items-center gap-2.5 px-4 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
+        className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
         aria-expanded={expanded}
         aria-controls={panelId}
       >
@@ -75,11 +76,7 @@ export function PendingQuestionPrompt({
         </span>
         {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
       </button>
-      <div
-        id={panelId}
-        hidden={!expanded}
-        className="mx-auto max-w-[760px] border-t border-border-subtle"
-      >
+      <div id={panelId} hidden={!expanded} className="border-t border-border-subtle">
         <QuestionIntentSurface intent={intent} compact />
       </div>
     </div>
@@ -125,7 +122,7 @@ export function PlanChip({
   if (total === 0) return null;
 
   return (
-    <div className="mx-auto w-full max-w-[1040px] px-4 pb-2 xl:px-6">
+    <div className={expanded ? 'w-full' : ''}>
       <div className={expanded ? 'rounded-xl border border-border-subtle bg-bg-secondary' : ''}>
         <button
           type="button"
@@ -219,7 +216,7 @@ export function WorkflowActionConfirmation({
 
   return (
     <div
-      className="flex flex-wrap items-center gap-3 border-t border-border bg-bg-secondary px-4 py-3"
+      className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-bg-secondary px-4 py-3"
       role="region"
       aria-live="polite"
       aria-label="Confirm workflow action"
@@ -252,6 +249,49 @@ export function WorkflowActionConfirmation({
       >
         {confirming && <Loader2 size={13} className="animate-spin" />}
         {confirmLabel}
+      </button>
+    </div>
+  );
+}
+
+export const JUMP_TO_REQUEST_SHORTCUT =
+  typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘⇧A' : 'Ctrl+Shift+A';
+
+/**
+ * Composer-level pointer to an approval or input request that lives in the
+ * transcript. The decision itself stays in one place (the card); this only
+ * makes it impossible to miss and one keystroke away.
+ */
+export function PendingRequestPointer({
+  target,
+  onReview,
+}: {
+  target: ChatQuestionTarget;
+  onReview: (targetId: string) => void;
+}) {
+  const approval = target.kind === 'approval';
+  return (
+    <div
+      className={`flex items-center gap-2.5 rounded-xl border px-4 py-2.5 ${approval ? 'border-warning/35 bg-warning/[0.035]' : 'border-border bg-bg-secondary'}`}
+    >
+      {approval ? (
+        <ShieldAlert size={14} aria-hidden="true" className="shrink-0 text-warning" />
+      ) : (
+        <MessageSquare size={14} aria-hidden="true" className="shrink-0 text-text-secondary" />
+      )}
+      <p className="min-w-0 flex-1 truncate text-xs">
+        <span className="font-semibold text-text-primary">
+          {approval ? 'Approval needed' : 'Input needed'}
+        </span>
+        {target.label && <span className="text-text-secondary"> · {target.label}</span>}
+      </p>
+      <button
+        type="button"
+        onClick={() => onReview(target.id)}
+        className="inline-flex shrink-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium text-text-primary hover:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+      >
+        Review
+        <kbd className="font-sans text-eyebrow text-text-tertiary">{JUMP_TO_REQUEST_SHORTCUT}</kbd>
       </button>
     </div>
   );

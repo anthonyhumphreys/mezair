@@ -16,7 +16,7 @@ export const useProcessingActive = () => useContext(ProcessingActiveContext);
 const labels: Record<ProcessingState, string> = {
   working: 'Working',
   waiting: 'Your input is needed',
-  answering: 'Work done',
+  answering: 'Writing the answer',
   completed: 'Work completed',
   failed: 'Work failed',
   stopped: 'Work stopped',
@@ -81,6 +81,9 @@ function StepTicker({ text }: { text: string }) {
   );
 }
 
+/** How long the heat animation keeps running after the last visible change. */
+const AMBIENT_MOTION_QUIET_MS = 12_000;
+
 export function ProcessingCard({
   state,
   detail,
@@ -127,6 +130,16 @@ export function ProcessingCard({
     previousActions.current = actions;
   }, [actions, active]);
 
+  // Ambient heat follows activity: it runs while actions keep arriving and
+  // settles after a quiet spell, so a long run is not one endless loop.
+  const [recentlyActive, setRecentlyActive] = useState(true);
+  useEffect(() => {
+    if (!active) return;
+    setRecentlyActive(true);
+    const timer = window.setTimeout(() => setRecentlyActive(false), AMBIENT_MOTION_QUIET_MS);
+    return () => window.clearTimeout(timer);
+  }, [active, strike, detail]);
+
   useEffect(() => {
     if (!active) return;
     const updateVisibility = () => setPageVisible(!document.hidden);
@@ -169,11 +182,17 @@ export function ProcessingCard({
           className="processing-card"
           data-processing-state={state}
           data-processing-compact={compact ? 'true' : undefined}
-          data-processing-motion={active && visible && pageVisible ? 'running' : 'paused'}
+          data-processing-motion={
+            active && visible && pageVisible && recentlyActive ? 'running' : 'paused'
+          }
           data-processing-settled={settled ? 'true' : undefined}
           data-processing-expanded={expanded ? 'true' : undefined}
         >
           {strike > 0 && <span key={strike} className="processing-card-flare" aria-hidden="true" />}
+          {/* Announced outside the button so its accessible name does not mask the change. */}
+          <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            {labels[state]}
+          </span>
           <button
             type="button"
             className="processing-card-header"
@@ -196,9 +215,7 @@ export function ProcessingCard({
             </span>
             <span className="min-w-0 flex-1">
               <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="font-medium text-text-primary" role="status">
-                  {labels[state]}
-                </span>
+                <span className="font-medium text-text-primary">{labels[state]}</span>
                 {actions > 0 && (
                   <span className="text-text-secondary">
                     <span key={actions} className="processing-count tabular-nums">

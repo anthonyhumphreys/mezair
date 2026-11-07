@@ -207,7 +207,7 @@ describe('processing evidence and rendering', () => {
     const html = renderToStaticMarkup(
       createElement(TurnWorkMessage, { items, active: true, answering: true }),
     );
-    expect(html).toContain('Work done');
+    expect(html).toContain('Writing the answer');
     expect(html).toContain('data-processing-motion="paused"');
   });
 

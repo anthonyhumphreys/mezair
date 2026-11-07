@@ -2,6 +2,7 @@ import { simpleGit, type SimpleGit } from 'simple-git';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type {
@@ -14,6 +15,12 @@ import type {
   GitDiffResult,
   GitPullRequestCreateResult,
 } from '../../shared/types.js';
+import {
+  buildSingleHunkPatch,
+  parseFileDiff,
+  selectHunk,
+  type GitHunkAction,
+} from '../../shared/git-hunks.js';
 import { parseAdoRemoteUrl, parseGitHubRemoteUrl } from './code-review-pr.service.js';
 import { getSettings } from './settings.service.js';
 import { callLlm } from './llm.service.js';
@@ -194,6 +201,7 @@ export async function getFullStatus(repoPath: string): Promise<GitStatusResult> 
     path: f.path,
     status: mapFileStatus(f.index, f.working_dir),
     staged: f.index !== ' ' && f.index !== '?' && f.index !== '!',
+    workingTreeChanged: f.working_dir !== ' ',
     oldPath: (f as unknown as { from?: string }).from || undefined,
   }));
 
@@ -452,6 +460,60 @@ export async function getFileDiff(
   }
 
   return { filePath, oldContent, newContent, hunks };
+}
+
+/** Rejects absolute paths and paths that escape the repository root. */
+export function assertRepoRelativePath(repoPath: string, filePath: string): void {
+  if (!filePath || path.isAbsolute(filePath))
+    throw new Error('A repository-relative path is required.');
+  const resolved = path.resolve(repoPath, filePath);
+  const root = path.resolve(repoPath);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+    throw new Error('The path is outside the repository.');
+  }
+}
+
+/**
+ * Applies one hunk of a file's current diff: `stage` copies it into the index,
+ * `unstage` removes it from the index, and `discard` reverts it in the working
+ * tree. The renderer passes the fingerprint it rendered; a hunk that changed
+ * since is refused rather than applied to the wrong lines.
+ */
+export async function applyFileHunk(
+  repoPath: string,
+  filePath: string,
+  hunkIndex: number,
+  fingerprint: string,
+  action: GitHunkAction,
+): Promise<void> {
+  assertRepoRelativePath(repoPath, filePath);
+  if (!Number.isInteger(hunkIndex) || hunkIndex < 0) throw new Error('Invalid hunk.');
+  if (action !== 'stage' && action !== 'unstage' && action !== 'discard') {
+    throw new Error('Invalid hunk action.');
+  }
+  const git = gitClient(repoPath);
+  const diff = await git.raw(
+    action === 'unstage' ? ['diff', '--cached', '--', filePath] : ['diff', '--', filePath],
+  );
+  const parsed = parseFileDiff(diff);
+  if (parsed.binary) throw new Error('Binary changes cannot be split into hunks.');
+  const hunk = selectHunk(parsed, hunkIndex, fingerprint);
+  const patch = buildSingleHunkPatch(parsed, hunk);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mezair-hunk-'));
+  const patchFile = path.join(dir, 'hunk.patch');
+  try {
+    fs.writeFileSync(patchFile, patch, 'utf-8');
+    const args =
+      action === 'stage'
+        ? ['apply', '--cached', '--whitespace=nowarn', patchFile]
+        : action === 'unstage'
+          ? ['apply', '--cached', '-R', '--whitespace=nowarn', patchFile]
+          : ['apply', '-R', '--whitespace=nowarn', patchFile];
+    await execFileAsync('git', args, { cwd: repoPath, timeout: 30_000 });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 export async function mergeBranch(repoPath: string, branch: string): Promise<string> {

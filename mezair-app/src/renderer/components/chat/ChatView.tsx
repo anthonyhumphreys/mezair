@@ -10,6 +10,7 @@ import type { AgentUIPlanIntent, AgentUIQuestionIntent } from '../../../shared/a
 import type {
   AgentProvider,
   ChatAttachment,
+  ChatBusyEnterAction,
   ChatLayout,
   Persona,
   ReasoningEffort,
@@ -31,7 +32,16 @@ import {
 } from './chat-review-feedback';
 import { useChatScroll } from './useChatScroll';
 import { buildFindingFollowUpPrompt } from './ChatFindingCard';
-import { PendingQuestionPrompt, PlanChip, WorkflowActionConfirmation } from './ChatPromptOverlays';
+import {
+  PendingQuestionPrompt,
+  PendingRequestPointer,
+  PlanChip,
+  WorkflowActionConfirmation,
+} from './ChatPromptOverlays';
+import { ChatAttentionSlot, type ChatAttentionItem } from './ChatAttentionSlot';
+import { CheckpointRewindDialog, useThreadCheckpoints } from './turn-changes/CheckpointRewind';
+import { adjacentThreadId, nextThreadNeedingYou } from './chat-thread-nav';
+import { isEditableShortcutTarget } from '../../utils/keyboard';
 import { useChatErrorRecovery } from './useChatErrorRecovery';
 import { createChatTurnComposer } from './chat-turns';
 import { buildChatRequestTargetDomId, getPendingQuestionTarget } from './chat-run-outcome';
@@ -409,6 +419,83 @@ export function ChatView({ userRole }: ChatViewProps) {
     (control ?? target).focus({ preventScroll: true });
   }, []);
 
+  // --- Composer preference ---------------------------------------------------
+  const [busyEnterAction, setBusyEnterAction] = useState<ChatBusyEnterAction>('guide');
+  useEffect(() => {
+    let cancelled = false;
+    window.mezair.settings
+      .get()
+      .then((settings) => {
+        if (!cancelled) setBusyEnterAction(settings.chatBusyEnter ?? 'guide');
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // --- Checkpoints, rewind, edit-and-resend, retry ---------------------------
+  const { checkpointIds, refresh: refreshCheckpoints } = useThreadCheckpoints(
+    isTemporaryChat ? null : activeThreadId,
+    busy,
+  );
+  const [rewindMessageId, setRewindMessageId] = useState<string | null>(null);
+  const [rewindUndo, setRewindUndo] = useState<{
+    threadId: string;
+    undoKey: string;
+    filesChanged: number;
+  } | null>(null);
+  const [undoingRewind, setUndoingRewind] = useState(false);
+
+  const handleRewind = useCallback((messageId: string) => setRewindMessageId(messageId), []);
+
+  const undoRewind = useCallback(async () => {
+    if (!rewindUndo) return;
+    setUndoingRewind(true);
+    try {
+      await window.mezair.chat.restoreCheckpoint(rewindUndo.threadId, rewindUndo.undoKey);
+      setRewindUndo(null);
+      setSendNotice('Rewind undone. The files are back to how they were before it.');
+    } catch (err) {
+      setSendNotice(err instanceof Error ? err.message : 'Could not undo the rewind.');
+    } finally {
+      setUndoingRewind(false);
+    }
+  }, [rewindUndo]);
+
+  const handleEditResend = useCallback(
+    async (
+      sourceIndex: number,
+      messageId: string | undefined,
+      text: string,
+      restoreFiles: boolean,
+    ) => {
+      if (busy || !text.trim()) return;
+      const sourceThreadId = activeThreadId;
+      try {
+        if (restoreFiles && messageId && sourceThreadId) {
+          const result = await window.mezair.chat.restoreCheckpoint(sourceThreadId, messageId);
+          setRewindUndo({ threadId: sourceThreadId, ...result });
+        }
+        // The edited message replaces this one in a new branch; the original
+        // conversation stays as it was.
+        const branchId = sourceIndex > 0 ? await forkThread(sourceIndex - 1) : null;
+        if (!branchId) await startNewSession();
+        requestChatAction(text, branchId ?? undefined);
+      } catch (err) {
+        setSendNotice(err instanceof Error ? err.message : 'Could not resend the edited message.');
+      }
+    },
+    [activeThreadId, busy, forkThread, requestChatAction, startNewSession],
+  );
+
+  const handleRetry = useCallback(
+    (content: string) => {
+      if (!busy && content.trim()) requestChatAction(content, activeThreadId ?? undefined);
+    },
+    [activeThreadId, busy, requestChatAction],
+  );
+
   const { showJumpToLatest, jumpToLatest: handleJumpToLatest } = useChatScroll({
     containerRef: messagesContainerRef,
     scopeKey: activeThreadId ? `${activeWorkspace?.id ?? 'no-workspace'}:${activeThreadId}` : null,
@@ -521,6 +608,78 @@ export function ChatView({ userRole }: ChatViewProps) {
       runTarget.devices,
     ],
   );
+  // --- Keyboard: stop, jump to request, move between threads -----------------
+  const keyboardStateRef = useRef({
+    busy,
+    threads,
+    activeThreadId,
+    pendingQuestionTarget,
+    remote: runTarget.remote,
+  });
+  keyboardStateRef.current = {
+    busy,
+    threads,
+    activeThreadId,
+    pendingQuestionTarget,
+    remote: runTarget.remote,
+  };
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return;
+      const state = keyboardStateRef.current;
+      const mod = event.metaKey || event.ctrlKey;
+      const overlayOpen = Boolean(document.querySelector('[role="dialog"], [role="menu"]'));
+
+      if (event.key === 'Escape' && !mod && !event.shiftKey && !event.altKey) {
+        if (!state.busy || overlayOpen) return;
+        const target = event.target as HTMLElement | null;
+        const inComposerOrPage =
+          !target ||
+          target === document.body ||
+          target.closest('[data-chat-scroll-container]') !== null ||
+          target.getAttribute('aria-label') === 'Chat message';
+        if (!inComposerOrPage) return;
+        event.preventDefault();
+        if (state.remote) void runTarget.stop();
+        else interrupt();
+        return;
+      }
+      if (!mod || event.altKey || overlayOpen) return;
+
+      if (event.shiftKey && event.key.toLowerCase() === 'a') {
+        const pending = state.pendingQuestionTarget;
+        if (!pending) return;
+        event.preventDefault();
+        handleJumpToQuestion(pending.id);
+        return;
+      }
+      if (event.shiftKey && event.key.toLowerCase() === 'j') {
+        const next = nextThreadNeedingYou(state.threads, state.activeThreadId);
+        if (!next) return;
+        event.preventDefault();
+        void selectThread(next);
+        return;
+      }
+      if (!event.shiftKey && (event.key === '[' || event.key === ']')) {
+        if (
+          isEditableShortcutTarget(event.target) &&
+          (event.target as HTMLElement).tagName !== 'TEXTAREA'
+        )
+          return;
+        const next = adjacentThreadId(
+          state.threads,
+          state.activeThreadId,
+          event.key === ']' ? 1 : -1,
+        );
+        if (!next || next === state.activeThreadId) return;
+        event.preventDefault();
+        void selectThread(next);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleJumpToQuestion, interrupt, runTarget.stop, selectThread]);
+
   const leadingControls = useMemo(
     () =>
       !scaffoldModeActive && !isTemporaryChat ? (
@@ -933,6 +1092,12 @@ export function ChatView({ userRole }: ChatViewProps) {
     showPanelsCluster &&
     !showItsmWorkbench &&
     !panels.previewMode;
+  const reviewRepos = useMemo(
+    () => (isTemporaryChat || scaffoldModeActive || runTarget.remote ? [] : activeRepos),
+    [activeRepos, isTemporaryChat, runTarget.remote, scaffoldModeActive],
+  );
+  const showReviewPanel =
+    panels.reviewOpen && showPanelsCluster && !showItsmWorkbench && reviewRepos.length > 0;
   const sidePanels = useMemo(
     () => (
       <ChatSidePanels
@@ -953,6 +1118,7 @@ export function ChatView({ userRole }: ChatViewProps) {
         workspaceId={isTemporaryChat ? null : (activeWorkspace?.id ?? null)}
         onItsmPrompt={requestChatAction}
         showActivitySidebar={showActivitySidebar}
+        review={showReviewPanel ? { repos: reviewRepos, busy, onClose: panels.closeReview } : null}
         activity={{
           workspaceName: isTemporaryChat
             ? 'Temporary chat'
@@ -1024,9 +1190,259 @@ export function ChatView({ userRole }: ChatViewProps) {
       setExecutionSessionStates,
       stopSession,
       goalsSupported,
+      showReviewPanel,
+      reviewRepos,
+      panels.closeReview,
       agentLabel,
     ],
   );
+  // Run-target details live with the run-target picker, not above the composer.
+  const runTargetNotes =
+    runTarget.legacyRecords.length > 0 ||
+    (runTarget.hosted && !runTarget.record && runTarget.sessionLimitSeconds !== null) ||
+    (runTarget.remote && !runTarget.record && modelProvider === 'codex') ? (
+      <>
+        {runTarget.legacyRecords.length > 0 && (
+          <label className="flex basis-full items-center gap-2 text-xs text-text-secondary">
+            Earlier remote chats
+            <select
+              aria-label="Earlier remote chats"
+              value={runTarget.legacyId ?? ''}
+              disabled={runTarget.sending}
+              onChange={(event) => runTarget.setLegacyId(event.target.value || null)}
+              className="max-w-72 rounded-md border border-border bg-bg-secondary px-2 py-1 text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <option value="">Current chat</option>
+              {runTarget.legacyRecords.map((chat) => (
+                <option key={chat.id} value={chat.id}>
+                  {chat.turns[0]?.prompt.slice(0, 60) ?? 'Remote chat'}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {runTarget.hosted && !runTarget.record && runTarget.sessionLimitSeconds !== null && (
+          <p className="basis-full text-xs text-text-secondary">
+            Pauses after 5 idle minutes. Your account allows up to{' '}
+            {runTarget.sessionLimitSeconds >= 3600
+              ? `${runTarget.sessionLimitSeconds / 3600} hours`
+              : `${runTarget.sessionLimitSeconds / 60} minutes`}{' '}
+            per active cloud session.
+          </p>
+        )}
+        {runTarget.remote && !runTarget.record && modelProvider === 'codex' && (
+          <details className="basis-full text-xs text-text-secondary">
+            <summary className="cursor-pointer">Codex sign-in options</summary>
+            <select
+              aria-label="Codex remote authentication"
+              className="mt-2 rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              value={runTarget.credentialChoice}
+              onChange={(event) =>
+                runTarget.setCredentialChoice(
+                  event.target.value as typeof runTarget.credentialChoice,
+                )
+              }
+            >
+              {!runTarget.hosted && (
+                <option value="target-local">Use the destination's existing login</option>
+              )}
+              <option value="codex-host-auth">Use my Codex login from this device</option>
+              <option value="codex-account">Sign in on the destination</option>
+              <option value="openai-api-key">Use my saved OpenAI API key</option>
+            </select>
+          </details>
+        )}
+      </>
+    ) : null;
+  const composerLeadingControls =
+    leadingControls || runTargetNotes ? (
+      <>
+        {leadingControls}
+        {runTargetNotes}
+      </>
+    ) : undefined;
+
+  const contextUsage = useMemo(() => {
+    for (let index = composedTurns.length - 1; index >= 0; index -= 1) {
+      const usage = composedTurns[index].usage;
+      if (
+        usage?.contextUsed !== undefined &&
+        usage.contextSize !== undefined &&
+        usage.contextSize > 0
+      )
+        return { used: usage.contextUsed, size: usage.contextSize };
+    }
+    return null;
+  }, [composedTurns]);
+
+  // --- Composer attention ----------------------------------------------------
+  // One slot, most urgent first: confirmations that gate input, questions,
+  // approvals waiting in the transcript, then blocking errors and notices.
+  const queuedCount = session?.queuedSendCount ?? 0;
+  const attentionItems: ChatAttentionItem[] = [];
+  if (pendingWorkflowAction) {
+    attentionItems.push({
+      id: 'workflow',
+      label: 'Workflow confirmation',
+      node: (
+        <WorkflowActionConfirmation
+          pending={pendingWorkflowAction}
+          confirming={confirmingWorkflowAction}
+          error={workflowActionError}
+          onConfirm={() => void confirmWorkflowAction()}
+          onKeepInChat={keepWorkflowPromptInChat}
+        />
+      ),
+    });
+  }
+  if (pendingQuestions[0]) {
+    attentionItems.push({
+      id: `question:${pendingQuestions[0].id}`,
+      label: pendingQuestions[0].payload.title ?? 'Question',
+      node: (
+        <PendingQuestionPrompt
+          key={pendingQuestions[0].id}
+          intent={pendingQuestions[0]}
+          additionalCount={Math.max(0, pendingQuestions.length - 1)}
+        />
+      ),
+    });
+  }
+  if (pendingQuestionTarget && pendingQuestionTarget.kind !== 'intent') {
+    attentionItems.push({
+      id: `request:${pendingQuestionTarget.id}`,
+      label: pendingQuestionTarget.kind === 'approval' ? 'Approval' : 'Input request',
+      node: (
+        <PendingRequestPointer target={pendingQuestionTarget} onReview={handleJumpToQuestion} />
+      ),
+    });
+  }
+  if (runTarget.remote && runTarget.error) {
+    attentionItems.push({
+      id: 'remote-error',
+      label: 'Remote error',
+      node: (
+        <p
+          role="alert"
+          className="rounded-xl border border-error/30 bg-error/5 px-4 py-2.5 text-sm text-error"
+        >
+          {runTarget.error}
+        </p>
+      ),
+    });
+  }
+  if (runTarget.hosted && !runTarget.record && !runTarget.providerReady) {
+    attentionItems.push({
+      id: 'hosted-provider',
+      label: 'Cloud agent setup',
+      node: (
+        <p className="rounded-xl border border-border bg-bg-secondary px-4 py-2.5 text-xs text-text-secondary">
+          Enable and connect {agentProviderLabel(modelProvider)} in{' '}
+          <SettingsLink to="sync#cloud-agents">Cloud agent settings</SettingsLink> before sending.
+        </p>
+      ),
+    });
+  }
+  if (sendNotice) {
+    attentionItems.push({
+      id: 'send-notice',
+      label: 'Notice',
+      node: (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 rounded-xl border border-info/25 bg-info/5 px-4 py-2.5 text-xs text-text-secondary"
+        >
+          <span className="min-w-0">{sendNotice}</span>
+          <button
+            type="button"
+            onClick={() => setSendNotice(null)}
+            className="shrink-0 rounded-md px-1.5 py-0.5 text-text-tertiary transition-colors hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          >
+            Dismiss
+          </button>
+        </div>
+      ),
+    });
+  }
+
+  if (rewindUndo) {
+    attentionItems.push({
+      id: 'rewind-undo',
+      label: 'Rewind',
+      node: (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 rounded-xl border border-border bg-bg-secondary px-4 py-2.5 text-xs text-text-secondary"
+        >
+          <span className="min-w-0">
+            Rewound {rewindUndo.filesChanged} file{rewindUndo.filesChanged === 1 ? '' : 's'}. The
+            previous versions were saved first.
+          </span>
+          <span className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              disabled={undoingRewind}
+              onClick={() => void undoRewind()}
+              className="rounded-md px-2 py-1 font-medium text-text-primary hover:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-50"
+            >
+              {undoingRewind ? 'Undoing…' : 'Undo rewind'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setRewindUndo(null)}
+              className="rounded-md px-2 py-1 text-text-tertiary hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            >
+              Dismiss
+            </button>
+          </span>
+        </div>
+      ),
+    });
+  }
+
+  const showPlanChip =
+    !pendingQuestions[0] && !isTemporaryChat && Boolean(stickyPlanIntent || stickyPlanSnapshot);
+  const isSideQuestionThread = activeThread?.purpose === 'side-question';
+  const composerStatus =
+    showPlanChip || queuedCount > 0 || isSideQuestionThread ? (
+      <>
+        {showPlanChip && (
+          <PlanChip
+            key={stickyPlanIntent?.id ?? 'snapshot'}
+            intent={stickyPlanIntent}
+            snapshot={stickyPlanIntent ? null : stickyPlanSnapshot}
+          />
+        )}
+        {queuedCount > 0 && (
+          <span
+            role="status"
+            className="inline-flex items-center gap-1.5 rounded-full border border-info/25 px-2.5 py-1 text-xs text-text-secondary"
+            title={`${agentLabel} will pick ${queuedCount === 1 ? 'it' : 'them'} up when the current turn finishes.`}
+          >
+            <span className="tabular-nums font-medium text-info">{queuedCount}</span>
+            queued for the next turn
+          </span>
+        )}
+        {isSideQuestionThread && (
+          <span
+            role="status"
+            className="inline-flex items-center gap-2 rounded-full border border-border-subtle px-2.5 py-1 text-xs text-text-secondary"
+          >
+            Side question · read-only
+            {sideQuestion?.sideThreadId === activeThreadId && (
+              <button
+                type="button"
+                onClick={() => void returnFromSideQuestion()}
+                className="rounded-md px-1 font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+              >
+                Back to main task
+              </button>
+            )}
+          </span>
+        )}
+      </>
+    ) : null;
+
   const content = (
     <div className="flex h-full flex-col">
       {/* CH4 — title + PR chip + one segmented Panels control. */}
@@ -1053,7 +1469,15 @@ export function ChatView({ userRole }: ChatViewProps) {
             : null
         }
         showPanels={showPanelsCluster}
-        activePanel={showActivitySidebar ? 'activity' : panels.previewMode ? 'preview' : null}
+        activePanel={
+          showActivitySidebar
+            ? 'activity'
+            : panels.previewMode
+              ? 'preview'
+              : showReviewPanel
+                ? 'review'
+                : null
+        }
         onSelectPanel={(panel: ChatPanelId | null) => panels.setActivePanel(panel)}
         goal={isTemporaryChat ? null : activeGoal}
         onOpenGoal={
@@ -1066,6 +1490,7 @@ export function ChatView({ userRole }: ChatViewProps) {
         }
         showSurfaces={!isTemporaryChat && !scaffoldModeActive}
         previewAvailable={browserAvailable}
+        reviewAvailable={reviewRepos.length > 0}
         activityRunningCount={executionTopology.runningCount}
         showItsmToggle={userRole === 'itsm' && isItsmPersona}
         itsmWorkbenchActive={showItsmWorkbench}
@@ -1204,146 +1629,33 @@ export function ChatView({ userRole }: ChatViewProps) {
               messagesEndRef={messagesEndRef}
               showJumpToLatest={showJumpToLatest}
               onJumpToLatest={handleJumpToLatest}
+              checkpointIds={checkpointIds}
+              onRewind={isTemporaryChat ? undefined : handleRewind}
+              onEditResend={
+                isTemporaryChat || isWorkItemLayout || runTarget.remote
+                  ? undefined
+                  : (sourceIndex, messageId, text, restoreFiles) =>
+                      void handleEditResend(sourceIndex, messageId, text, restoreFiles)
+              }
+              onRetry={runTarget.remote ? undefined : handleRetry}
+            />
+          )}
+          {activeThreadId && rewindMessageId && (
+            <CheckpointRewindDialog
+              open
+              threadId={activeThreadId}
+              messageId={rewindMessageId}
+              repos={repos}
+              onClose={() => setRewindMessageId(null)}
+              onRestored={(result) => {
+                setRewindUndo({ threadId: activeThreadId, ...result });
+                refreshCheckpoints();
+              }}
             />
           )}
 
-          {/* Input */}
-          {!pendingQuestions[0] && !isTemporaryChat && (stickyPlanIntent || stickyPlanSnapshot) && (
-            <PlanChip
-              key={stickyPlanIntent?.id ?? 'snapshot'}
-              intent={stickyPlanIntent}
-              snapshot={stickyPlanIntent ? null : stickyPlanSnapshot}
-            />
-          )}
-          {pendingQuestions[0] && (
-            <PendingQuestionPrompt
-              key={pendingQuestions[0].id}
-              intent={pendingQuestions[0]}
-              additionalCount={Math.max(0, pendingQuestions.length - 1)}
-            />
-          )}
-          {pendingWorkflowAction && (
-            <WorkflowActionConfirmation
-              pending={pendingWorkflowAction}
-              confirming={confirmingWorkflowAction}
-              error={workflowActionError}
-              onConfirm={() => void confirmWorkflowAction()}
-              onKeepInChat={keepWorkflowPromptInChat}
-            />
-          )}
-          {/* H2 — live queue depth or a transient notice for rejected sends. */}
-          {(() => {
-            const queuedCount = session?.queuedSendCount ?? 0;
-            const composerNotice =
-              sendNotice ??
-              (queuedCount > 0
-                ? `Queued — ${agentLabel} will pick ${
-                    queuedCount === 1 ? 'it' : `all ${queuedCount} messages`
-                  } up when the current turn finishes.`
-                : null);
-            if (!composerNotice) return null;
-            return (
-              <div className="mx-auto w-full max-w-[1040px] px-4 pb-2 xl:px-6">
-                <div
-                  role="status"
-                  className="flex items-center justify-between gap-3 rounded-lg border border-info/25 bg-info/5 px-3 py-2 text-xs text-text-secondary"
-                >
-                  <span className="min-w-0">{composerNotice}</span>
-                  {sendNotice && (
-                    <button
-                      type="button"
-                      onClick={() => setSendNotice(null)}
-                      className="shrink-0 rounded-md px-1.5 py-0.5 text-text-tertiary transition-colors hover:bg-bg-tertiary hover:text-text-primary"
-                      aria-label="Dismiss notice"
-                    >
-                      Dismiss
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-          {activeThread?.purpose === 'side-question' && (
-            <div
-              className="mx-4 mb-2 flex items-center justify-between gap-3 rounded-lg border border-border-subtle px-3 py-2 text-xs text-text-secondary"
-              role="status"
-            >
-              <span>Side question · Read-only conversation.</span>
-              {sideQuestion?.sideThreadId === activeThreadId && (
-                <button
-                  type="button"
-                  onClick={() => void returnFromSideQuestion()}
-                  className="shrink-0 rounded-md px-2 py-1 font-medium text-accent hover:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-                >
-                  Back to main task
-                </button>
-              )}
-            </div>
-          )}
-          {runTarget.legacyRecords.length > 0 && (
-            <label className="mx-4 mb-2 flex items-center gap-2 text-xs text-text-secondary xl:mx-6">
-              Earlier remote chats
-              <select
-                aria-label="Earlier remote chats"
-                value={runTarget.legacyId ?? ''}
-                disabled={runTarget.sending}
-                onChange={(event) => runTarget.setLegacyId(event.target.value || null)}
-                className="max-w-72 rounded-md border border-border bg-bg-secondary px-2 py-1 text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              >
-                <option value="">Current chat</option>
-                {runTarget.legacyRecords.map((chat) => (
-                  <option key={chat.id} value={chat.id}>
-                    {chat.turns[0]?.prompt.slice(0, 60) ?? 'Remote chat'}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          {runTarget.remote && runTarget.error && (
-            <p
-              role="alert"
-              className="mx-auto w-full max-w-[1040px] px-4 pb-2 text-sm text-error xl:px-6"
-            >
-              {runTarget.error}
-            </p>
-          )}
-          {runTarget.hosted && !runTarget.record && !runTarget.providerReady && (
-            <p className="mx-auto w-full max-w-[1040px] px-4 pb-2 text-xs text-text-secondary xl:px-6">
-              Enable and connect {agentProviderLabel(modelProvider)} in{' '}
-              <SettingsLink to="sync#cloud-agents">Cloud agent settings</SettingsLink>.
-            </p>
-          )}
-          {runTarget.hosted && !runTarget.record && runTarget.sessionLimitSeconds !== null && (
-            <p className="mx-auto w-full max-w-[1040px] px-4 pb-2 text-xs text-text-secondary xl:px-6">
-              Pauses after 5 idle minutes. Your account allows up to{' '}
-              {runTarget.sessionLimitSeconds >= 3600
-                ? `${runTarget.sessionLimitSeconds / 3600} hours`
-                : `${runTarget.sessionLimitSeconds / 60} minutes`}{' '}
-              per active cloud session.
-            </p>
-          )}
-          {runTarget.remote && !runTarget.record && modelProvider === 'codex' && (
-            <details className="mx-auto w-full max-w-[1040px] px-4 pb-2 text-xs text-text-secondary xl:px-6">
-              <summary className="cursor-pointer">Codex sign-in options</summary>
-              <select
-                aria-label="Codex remote authentication"
-                className="mt-2 rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                value={runTarget.credentialChoice}
-                onChange={(event) =>
-                  runTarget.setCredentialChoice(
-                    event.target.value as typeof runTarget.credentialChoice,
-                  )
-                }
-              >
-                {!runTarget.hosted && (
-                  <option value="target-local">Use the destination's existing login</option>
-                )}
-                <option value="codex-host-auth">Use my Codex login from this device</option>
-                <option value="codex-account">Sign in on the destination</option>
-                <option value="openai-api-key">Use my saved OpenAI API key</option>
-              </select>
-            </details>
-          )}
+          {/* One attention area above the composer: the most urgent item, then quiet status. */}
+          <ChatAttentionSlot items={attentionItems} status={composerStatus} />
           <ChatInput
             onSend={handleChatInputSend}
             followUpCapabilities={runTarget.remote ? undefined : session?.capabilities?.followUp}
@@ -1431,7 +1743,7 @@ export function ChatView({ userRole }: ChatViewProps) {
                       ?.displayName ?? 'Remote device')
                   : 'This device',
             ].join(' · ')}
-            leadingControls={leadingControls}
+            leadingControls={composerLeadingControls}
             contextControls={contextControls}
             prefill={isTemporaryChat ? null : composerPrefill}
             draftKey={isTemporaryChat ? undefined : composerDraftKey}
@@ -1439,6 +1751,8 @@ export function ChatView({ userRole }: ChatViewProps) {
             mentionRepoIds={mentionRepoIds}
             slashCommands={isTemporaryChat ? undefined : slashCommands}
             focusRequest={composerFocusRequest}
+            busyEnterAction={busyEnterAction}
+            contextUsage={runTarget.remote ? null : contextUsage}
           />
         </div>
 

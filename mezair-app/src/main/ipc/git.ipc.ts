@@ -18,7 +18,9 @@ import {
   getFileDiff,
   mergeBranch,
   createPullRequestFromChanges,
+  applyFileHunk,
 } from '../services/git.service.js';
+import type { GitHunkAction } from '../../shared/git-hunks.js';
 import {
   commitTurnDelivery,
   createTurnPullRequest,
@@ -85,6 +87,22 @@ export function registerGitHandlers(): void {
   ipcMain.handle('git:discard', (_e, repoId: string, paths: string[]) => {
     return discardFiles(repoPath(repoId), paths);
   });
+
+  ipcMain.handle(
+    'git:apply-hunk',
+    (
+      _e,
+      repoId: string,
+      filePath: string,
+      hunkIndex: number,
+      fingerprint: string,
+      action: GitHunkAction,
+    ) => {
+      if (typeof filePath !== 'string' || typeof fingerprint !== 'string')
+        throw new Error('Invalid hunk request.');
+      return applyFileHunk(repoPath(repoId), filePath, hunkIndex, fingerprint, action);
+    },
+  );
 
   ipcMain.handle('git:commit', (_e, repoId: string, message: string) => {
     return commitChanges(repoPath(repoId), message);

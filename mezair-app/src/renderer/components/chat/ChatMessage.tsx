@@ -16,6 +16,7 @@ import {
   GitBranch,
   RefreshCw,
   Pencil,
+  History,
   Sparkles,
   Image as ImageIcon,
   Circle,
@@ -39,6 +40,7 @@ import { DiffViewer } from './DiffViewer';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { buildEditorUrl } from '../../utils/editor-link';
 import { copyTextToClipboard } from '../../utils/clipboard';
+import { formatMessageTime } from './chat-time';
 import { isAbsoluteEditorPath } from '../../../shared/editor-file-link';
 import { buildApprovalAwareWorkSegments, type ChatTurnWorkItem } from './chat-turns';
 import { agentEventLabel } from '../../utils/agent-display';
@@ -823,16 +825,49 @@ function ApprovalRequestEvent({ event }: { event: CodexEvent & { sessionId?: str
       setResolved(decision === 'decline' ? 'declined' : 'accepted');
     });
   };
+  const titleId = useId();
+  const sessionScope = isCommand
+    ? 'this same command'
+    : event.approvalKind === 'file_change'
+      ? 'further file changes'
+      : isPermissions
+        ? 'these permissions'
+        : 'the same request';
+  const canDecide =
+    !resolved && !pending && Boolean(event.sessionId) && event.approvalRequestId !== undefined;
+  const onDecisionKey = (keyEvent: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!canDecide || cursorOptions.length > 0) return;
+    if (keyEvent.metaKey || keyEvent.ctrlKey || keyEvent.altKey || keyEvent.shiftKey) return;
+    const target = keyEvent.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      return;
+    const key = keyEvent.key.toLowerCase();
+    const decision =
+      key === 'a' ? 'accept' : key === 's' ? 'acceptForSession' : key === 'd' ? 'decline' : null;
+    if (!decision) return;
+    keyEvent.preventDefault();
+    void decide(decision);
+  };
 
   return (
     <div
+      role="group"
+      aria-labelledby={titleId}
       aria-busy={pending}
-      className="overflow-hidden rounded-xl border border-border bg-bg-secondary"
+      onKeyDown={onDecisionKey}
+      className={`overflow-hidden rounded-xl border bg-bg-secondary ${resolved ? 'border-border' : 'border-warning/35'}`}
     >
+      {!resolved && (
+        <span role="alert" className="sr-only">
+          Approval needed: {title}
+        </span>
+      )}
       <div className="flex items-start gap-2.5 px-4 py-3">
-        <AlertCircle size={14} className="mt-0.5 shrink-0 text-warning" />
+        <AlertCircle size={14} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-text-primary">{title}</p>
+          <p id={titleId} className="text-sm font-medium text-text-primary">
+            {title}
+          </p>
           {detail && (
             <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-bg-primary/60 p-3 font-mono text-xs leading-5 text-text-secondary">
               {detail}
@@ -869,12 +904,13 @@ function ApprovalRequestEvent({ event }: { event: CodexEvent & { sessionId?: str
           {cursorOptions.length > 0 ? (
             cursorOptions.map((option) => (
               <button
+                type="button"
                 key={option.optionId}
                 onClick={() => void decide(cursorPermissionDecision(option.kind), option.optionId)}
                 className={
                   option.kind.startsWith('reject')
-                    ? 'flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-tertiary'
-                    : 'flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground transition-colors hover:bg-accent/85'
+                    ? 'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-tertiary'
+                    : 'flex items-center gap-1.5 rounded-lg border border-border bg-bg-tertiary px-3 py-1.5 text-xs font-semibold text-text-primary transition-colors hover:border-text-tertiary'
                 }
               >
                 {option.kind.startsWith('reject') ? <X size={12} /> : <Check size={12} />}
@@ -883,24 +919,36 @@ function ApprovalRequestEvent({ event }: { event: CodexEvent & { sessionId?: str
             ))
           ) : (
             <>
+              {/* Neutral weight: approving is not the "safe" default, so it is not accent-filled. */}
               <button
+                type="button"
                 onClick={() => void decide('accept')}
-                className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground transition-colors hover:bg-accent/85"
+                className="flex items-center gap-1.5 rounded-lg border border-border bg-bg-tertiary px-3 py-1.5 text-xs font-semibold text-text-primary transition-colors hover:border-text-tertiary"
               >
-                <Check size={12} /> Approve once
+                <Check size={12} aria-hidden="true" /> Approve once
+                <kbd className="ml-1 font-sans text-eyebrow font-normal text-text-tertiary">A</kbd>
               </button>
               <button
+                type="button"
                 onClick={() => void decide('acceptForSession')}
-                className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-tertiary"
+                title={`Also allows ${sessionScope} without asking until this agent session ends`}
+                className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-text-primary"
               >
-                Approve for this session
+                Approve for session
+                <kbd className="ml-1 font-sans text-eyebrow font-normal text-text-tertiary">S</kbd>
               </button>
               <button
+                type="button"
                 onClick={() => void decide('decline')}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-tertiary"
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-text-primary"
               >
-                <X size={12} /> Decline
+                <X size={12} aria-hidden="true" /> Decline
+                <kbd className="ml-1 font-sans text-eyebrow font-normal text-text-tertiary">D</kbd>
               </button>
+              <p className="basis-full text-xs text-text-tertiary">
+                "For session" also allows {sessionScope} without asking until this agent session
+                ends.
+              </p>
             </>
           )}
           {pending && (
@@ -1981,6 +2029,7 @@ interface MessageActionsProps {
   onBranch?: () => void;
   onRegenerate?: () => void;
   onEdit?: () => void;
+  onRewind?: () => void;
   copied: boolean;
   isUser?: boolean;
 }
@@ -1990,6 +2039,7 @@ function MessageActionsToolbar({
   onBranch,
   onRegenerate,
   onEdit,
+  onRewind,
   copied,
   isUser,
 }: MessageActionsProps) {
@@ -1997,25 +2047,28 @@ function MessageActionsToolbar({
     <div className="message-actions flex items-center gap-0.5 rounded-lg border border-border-subtle bg-bg-secondary px-1 py-0.5 shadow-sm">
       <ActionButton
         onClick={onCopy}
-        title={copied ? 'Copied!' : 'Copy to clipboard'}
+        title={copied ? 'Copied' : 'Copy'}
         icon={copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
       />
-      {onBranch && (
+      {onEdit && isUser && (
+        <ActionButton onClick={onEdit} title="Edit and resend" icon={<Pencil size={12} />} />
+      )}
+      {onRewind && isUser && (
         <ActionButton
-          onClick={onBranch}
-          title="Fork to new thread"
-          icon={<GitBranch size={12} />}
+          onClick={onRewind}
+          title="Rewind files to before this message"
+          icon={<History size={12} />}
         />
       )}
       {onRegenerate && !isUser && (
         <ActionButton
           onClick={onRegenerate}
-          title="Regenerate response"
+          title="Retry this request"
           icon={<RefreshCw size={12} />}
         />
       )}
-      {onEdit && isUser && (
-        <ActionButton onClick={onEdit} title="Reuse in composer" icon={<Pencil size={12} />} />
+      {onBranch && (
+        <ActionButton onClick={onBranch} title="Fork from here" icon={<GitBranch size={12} />} />
       )}
     </div>
   );
@@ -2032,8 +2085,9 @@ function ActionButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className="rounded-md p-1.5 text-text-tertiary transition-colors hover:bg-bg-tertiary hover:text-text-primary"
+      className="rounded-md p-1.5 text-text-tertiary transition-colors hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
       title={title}
       aria-label={title}
     >
@@ -2041,6 +2095,121 @@ function ActionButton({
     </button>
   );
 }
+
+/** Message time; the full timestamp is in the tooltip and `dateTime`. */
+function MessageTime({ timestamp }: { timestamp?: string }) {
+  const label = formatMessageTime(timestamp);
+  if (!label || !timestamp) return null;
+  return (
+    <time
+      dateTime={timestamp}
+      title={new Date(timestamp).toLocaleString()}
+      className="font-normal tabular-nums text-text-tertiary"
+    >
+      {label}
+    </time>
+  );
+}
+
+/** Inline editor that replaces a sent message with a resend in a new branch. */
+function UserMessageEditor({
+  initial,
+  canRestoreFiles,
+  onCancel,
+  onSubmit,
+}: {
+  initial: string;
+  canRestoreFiles: boolean;
+  onCancel: () => void;
+  onSubmit: (text: string, restoreFiles: boolean) => void;
+}) {
+  const [text, setText] = useState(initial);
+  const [restoreFiles, setRestoreFiles] = useState(canRestoreFiles);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const restoreId = useId();
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 360)}px`;
+  }, [text]);
+
+  const submit = () => {
+    if (text.trim()) onSubmit(text, canRestoreFiles && restoreFiles);
+  };
+
+  return (
+    <div className="w-[min(72ch,100%)] rounded-xl border border-border bg-bg-secondary p-2">
+      <label className="sr-only" htmlFor={`${restoreId}-text`}>
+        Edit message
+      </label>
+      <textarea
+        id={`${restoreId}-text`}
+        ref={textareaRef}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            onCancel();
+          } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            submit();
+          }
+        }}
+        rows={2}
+        className="block w-full resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed text-text-primary outline-none"
+      />
+      <div className="mt-1 flex flex-wrap items-center gap-2 border-t border-border-subtle px-1 pt-2">
+        {canRestoreFiles ? (
+          <label
+            htmlFor={restoreId}
+            className="mr-auto inline-flex cursor-pointer items-center gap-2 text-xs text-text-secondary"
+          >
+            <input
+              id={restoreId}
+              type="checkbox"
+              checked={restoreFiles}
+              onChange={(event) => setRestoreFiles(event.target.checked)}
+              className="h-3.5 w-3.5 accent-accent"
+            />
+            Rewind files to before this message
+          </label>
+        ) : (
+          <span className="mr-auto text-xs text-text-tertiary">Sends in a new branch</span>
+        )}
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-md px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!text.trim()}
+          className="rounded-md bg-accent px-2.5 py-1.5 text-xs font-semibold text-accent-foreground hover:bg-accent/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-secondary disabled:opacity-40"
+          title="Sends the edited message in a new branch of this thread"
+        >
+          Resend · {questionShortcutLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const questionShortcutLabel =
+  typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘↵' : 'Ctrl+↵';
 
 export function AssistantMessage({
   content,
@@ -2050,6 +2219,7 @@ export function AssistantMessage({
   label = 'Assistant',
   colour,
   active = false,
+  timestamp,
 }: {
   content: string;
   transformContent?: (c: string) => string;
@@ -2058,6 +2228,7 @@ export function AssistantMessage({
   label?: string;
   colour?: string;
   active?: boolean;
+  timestamp?: string;
 }) {
   const display = transformContent ? transformContent(content) : content;
   const [copied, setCopied] = useState(false);
@@ -2085,7 +2256,11 @@ export function AssistantMessage({
             />
           )}
           <span>{label}</span>
-          {active && <span className="font-normal text-text-tertiary">Responding</span>}
+          {active ? (
+            <span className="font-normal text-text-tertiary">Responding</span>
+          ) : (
+            <MessageTime timestamp={timestamp} />
+          )}
         </ChatAssistantMessageHeader>
         <ChatAssistantMessageBody>
           <MessageStreamingContext.Provider value={active}>
@@ -2113,7 +2288,10 @@ export function UserMessage({
   deliveryError,
   deliveryIntent,
   onEdit,
+  onEditResend,
+  onRewind,
   onBranch,
+  timestamp,
 }: {
   content: string;
   disclosureId?: string;
@@ -2122,9 +2300,16 @@ export function UserMessage({
   delivery?: 'queued' | 'delivered' | 'failed' | 'uncertain';
   deliveryError?: string;
   deliveryIntent?: ChatFollowUpIntent;
+  /** Puts the text back in the composer (fallback when inline resend is unavailable). */
   onEdit?: () => void;
+  /** Inline edit; resends in a new branch, optionally rewinding files first. */
+  onEditResend?: (text: string, restoreFiles: boolean) => void;
+  /** Present when a checkpoint was recorded before this message. */
+  onRewind?: () => void;
   onBranch?: () => void;
+  timestamp?: string;
 }) {
+  const [editing, setEditing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useTranscriptDisclosure(disclosureId);
   const collapsible = shouldCollapseUserMessage(content);
@@ -2136,11 +2321,28 @@ export function UserMessage({
     setTimeout(() => setCopied(false), 2000);
   }, [content]);
 
+  if (editing && onEditResend) {
+    return (
+      <ChatMessageRow align="end">
+        <UserMessageEditor
+          initial={content}
+          canRestoreFiles={Boolean(onRewind)}
+          onCancel={() => setEditing(false)}
+          onSubmit={(text, restoreFiles) => {
+            setEditing(false);
+            onEditResend(text, restoreFiles);
+          }}
+        />
+      </ChatMessageRow>
+    );
+  }
+
   return (
     <ChatMessageRow align="end">
       <ChatUserMessageFrame>
         <ChatUserMessageHeader>
           You
+          <MessageTime timestamp={timestamp} />
           {deliveryIntent && (
             <span className="font-normal">
               · {deliveryIntent === 'guide' ? 'Guidance' : 'Next task'}
@@ -2210,7 +2412,8 @@ export function UserMessage({
         <ChatUserMessageActions>
           <MessageActionsToolbar
             onCopy={handleCopy}
-            onEdit={onEdit}
+            onEdit={onEditResend ? () => setEditing(true) : onEdit}
+            onRewind={onRewind}
             onBranch={onBranch}
             copied={copied}
             isUser

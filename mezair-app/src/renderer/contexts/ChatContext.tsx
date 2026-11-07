@@ -184,7 +184,8 @@ export interface ChatContextValue {
   renameThread: (threadId: string, title: string) => Promise<void>;
   settleThread: (threadId: string, settled: boolean) => Promise<void>;
   deleteThread: (threadId: string) => Promise<void>;
-  forkThread: (messageIndex: number) => Promise<void>;
+  /** Forks history up to and including `messageIndex`; resolves to the new thread id. */
+  forkThread: (messageIndex: number) => Promise<string | null>;
   setCollaborationMode: (mode: ChatCollaborationMode) => void;
   setChatLayout: (layout: ChatLayout) => Promise<void>;
   selectWorkItemThread: (workItem: WorkItem) => Promise<void>;
@@ -2367,6 +2368,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             model: turnModel,
             reasoningEffort: reasoningLevel,
             serviceTier,
+            checkpointKey: isTemporaryChat ? undefined : userEntry.id,
           });
         } catch (err) {
           markUserEntryDelivery(userEntry.id!, 'failed');
@@ -2418,6 +2420,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           model: turnModel,
           reasoningEffort: reasoningLevel,
           serviceTier,
+          checkpointKey: isTemporaryChat ? undefined : userEntry.id,
         });
       } catch (err) {
         markUserEntryDelivery(userEntry.id!, 'failed');
@@ -3545,7 +3548,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const forkThread = useCallback(
     async (messageIndex: number) => {
       navigationRequests.current.invalidate();
-      if (scaffoldModeActive || !activePersona || chatLayout === 'workitems') return;
+      if (scaffoldModeActive || !activePersona || chatLayout === 'workitems') return null;
 
       const sourceId = activeThreadRef.current?.id;
       const selected = entriesRef.current[messageIndex];
@@ -3557,7 +3560,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         historyPageRef.current.cursor
       ) {
         const full = chatMessagesToEntries(await window.mezair.chat.loadHistory(sourceId));
-        if (activeThreadRef.current?.id !== sourceId) return;
+        if (activeThreadRef.current?.id !== sourceId) return null;
         forkEntries = mergeHydratedHistory(
           full,
           historyPageRef.current.entries,
@@ -3573,15 +3576,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               'id' in entry &&
               entry.id === selected.id),
         );
-        if (forkIndex < 0) return;
+        if (forkIndex < 0) return null;
       }
+      // The provider's thread holds everything said so far. Only reuse it when
+      // the fork point is the end of the conversation; an earlier fork point
+      // starts a fresh provider thread seeded from the copied transcript, so the
+      // agent does not remember turns that are not in the branch.
+      const forkAtTail = !forkEntries
+        .slice(forkIndex + 1)
+        .some((entry) => entry.kind === 'user' || entry.kind === 'assistant');
       const ancestorEntries = forkEntries
         .slice(0, forkIndex + 1)
         .filter(
           (entry): entry is Extract<ChatEntry, { kind: 'user' | 'assistant' }> =>
             entry.kind === 'user' || entry.kind === 'assistant',
         );
-      if (ancestorEntries.length === 0) return;
+      if (ancestorEntries.length === 0) return null;
 
       threadLoadVersionRef.current += 1;
       detachLiveSession();
@@ -3594,7 +3604,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           ancestorEntries[ancestorEntries.length - 1]?.content,
         ),
       });
-      if (!forkedThread) return;
+      if (!forkedThread) return null;
       const sourceThreadId = activeThreadRef.current?.id;
 
       const primaryRepo = activeRepoState ?? activeReposState[0] ?? null;
@@ -3631,7 +3641,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      if (sourceThreadId) {
+      if (sourceThreadId && forkAtTail) {
         window.mezair.chat
           .forkProviderThread(sourceThreadId, forkedThread.id)
           .then((providerForkedThread) => {
@@ -3642,6 +3652,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       setEntries(ancestorEntries.map((entry) => ({ ...entry })));
       setSession(null);
+      return forkedThread.id;
     },
     [
       activePersona,

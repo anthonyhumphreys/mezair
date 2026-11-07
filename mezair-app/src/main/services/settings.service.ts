@@ -1,5 +1,6 @@
 import type {
   AppSettings,
+  ChatBusyEnterAction,
   ChatLayout,
   WorkItemProvider,
   DocsProvider,
@@ -60,6 +61,7 @@ interface SettingsRow {
   reasoning_level: string | null;
   codex_mode: string | null;
   chat_layout: string | null;
+  chat_busy_enter: string | null;
   model_picker: string | null;
   ado_org_url: string | null;
   ado_project: string | null;
@@ -176,6 +178,10 @@ function normaliseCodexMode(mode: string | null | undefined): CodexMode {
 
 function normaliseChatLayout(layout: string | null | undefined): ChatLayout {
   return CHAT_LAYOUTS.includes(layout as ChatLayout) ? (layout as ChatLayout) : 'classic';
+}
+
+function normaliseChatBusyEnter(value: string | null | undefined): ChatBusyEnterAction {
+  return value === 'queue' || value === 'newline' ? value : 'guide';
 }
 
 function normaliseLocalLlmMode(mode: string | null | undefined): LocalLlmMode {
@@ -454,6 +460,7 @@ export function getSettings(): AppSettings {
     reasoningLevel: normaliseReasoningEffort(row.reasoning_level),
     codexMode: normaliseCodexMode(row.codex_mode),
     chatLayout: normaliseChatLayout(row.chat_layout),
+    chatBusyEnter: normaliseChatBusyEnter(row.chat_busy_enter),
     modelPicker: normaliseModelPickerPreferences(row.model_picker),
     adoOrganizationUrl: row.ado_org_url ?? '',
     adoProject: row.ado_project ?? '',
@@ -621,6 +628,10 @@ export function updateSettings(partial: Partial<AppSettings>): void {
   if (partial.codexMode !== undefined) {
     setClauses.push('codex_mode = ?');
     values.push(normaliseCodexMode(partial.codexMode));
+  }
+  if (partial.chatBusyEnter !== undefined) {
+    setClauses.push('chat_busy_enter = ?');
+    values.push(normaliseChatBusyEnter(partial.chatBusyEnter));
   }
   if (partial.chatLayout !== undefined) {
     setClauses.push('chat_layout = ?');
@@ -884,6 +895,7 @@ function defaultSettings(): AppSettings {
     reasoningLevel: DEFAULT_CODEX_REASONING_EFFORT,
     codexMode: 'on-request',
     chatLayout: 'classic',
+    chatBusyEnter: 'guide',
     modelPicker: normaliseModelPickerPreferences(undefined),
     workItemProvider: 'ado',
     workItemConnections: [],

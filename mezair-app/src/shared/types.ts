@@ -960,7 +960,42 @@ export interface ChatSendOptions {
   permissionMode?: CodexMode;
   permissionProfile?: import('./agent-access.js').PermissionProfile;
   serviceTier?: string | null;
+  /**
+   * The renderer's id for the user message this send starts. When present,
+   * main records a working-tree checkpoint of the thread's repositories
+   * under this key before the provider sees the message (rewind).
+   */
+  checkpointKey?: string;
 }
+
+/** What restoring a checkpoint does to one file. */
+export interface ChatCheckpointFileChange {
+  path: string;
+  /** remove = created after the checkpoint; recreate = deleted since; restore = edited since. */
+  effect: 'remove' | 'recreate' | 'restore';
+}
+
+export interface ChatCheckpointSummary {
+  messageId: string;
+  repoId: string;
+  createdAt: string;
+  /** `restore` checkpoints are the automatic "undo rewind" snapshots. */
+  kind: 'turn' | 'restore';
+}
+
+export interface ChatCheckpointPreview {
+  messageId: string;
+  repos: Array<{ repoId: string; createdAt: string; changes: ChatCheckpointFileChange[] }>;
+}
+
+export interface ChatCheckpointRestoreResult {
+  filesChanged: number;
+  /** Checkpoint key holding the pre-restore state; restore it to undo. */
+  undoKey: string;
+}
+
+/** What Enter does in the composer while an agent turn is running. */
+export type ChatBusyEnterAction = 'guide' | 'queue' | 'newline';
 
 /** Explicit intent for a composer send made while a chat session is running. */
 export type ChatFollowUpIntent = 'guide' | 'queue';
@@ -2847,6 +2882,8 @@ export interface AppSettings {
   reasoningLevel: ReasoningEffort;
   codexMode: CodexMode;
   chatLayout: ChatLayout;
+  /** What Enter does while an agent turn is running. Local to this device. */
+  chatBusyEnter: ChatBusyEnterAction;
 
   /** Composer control and named provider/model/reasoning presets. */
   modelPicker?: import('./model-picker.js').ModelPickerPreferences;
@@ -3753,6 +3790,8 @@ export interface GitFileChange {
   path: string;
   status: GitFileStatus;
   staged: boolean;
+  /** The working tree differs from the index (unstaged edits or untracked). */
+  workingTreeChanged?: boolean;
   oldPath?: string; // for renames
 }
 

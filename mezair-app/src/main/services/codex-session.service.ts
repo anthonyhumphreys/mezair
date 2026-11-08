@@ -1,3 +1,4 @@
+import { hasCheckpointRestore } from './chat-checkpoint-locks.js';
 import { listDojoPrices, recordDojoExecutionEvent } from './dojo-analytics.service.js';
 import { spawn } from 'node:child_process';
 import type { AgentProcess } from './agent-process.js';
@@ -261,6 +262,7 @@ interface PendingFollowUp {
 }
 
 interface FollowUpReceipt {
+  startedAt?: string;
   fingerprint: string;
   result?: ChatFollowUpResult;
   inFlight?: Promise<ChatFollowUpResult>;
@@ -865,6 +867,24 @@ export async function sendMessage(
     });
   };
 
+  if (followUpTracking) {
+    followUpTracking.receipt.startedAt = new Date().toISOString();
+    const thread = session.appThreadId ? getChatThread(session.appThreadId) : null;
+    if (
+      thread &&
+      !session.temporaryChat &&
+      !thread.temporary &&
+      thread.purpose !== 'side-question'
+    ) {
+      const { captureTurnCheckpoints } = await import('./chat-checkpoint.service.js');
+      await captureTurnCheckpoints(thread.id, followUpTracking.request.requestId, thread.repoIds);
+      assertSessionActive(session);
+    }
+  }
+  if (hasCheckpointRestore()) {
+    const { assertNoCheckpointRestore } = await import('./chat-checkpoint.service.js');
+    assertNoCheckpointRestore(session.repoIds);
+  }
   session.status = 'busy';
   setSessionThreadAttention(session, 'working');
   broadcastEvent(sessionId, { type: 'status', status: 'thinking' });
@@ -1166,19 +1186,21 @@ export async function steerTurn(
   await session.threadReady;
 
   if (isAcpAgentProvider(session.provider)) {
-    if (session.status === 'busy') {
-      const queued = enqueueFollowUp(sessionId, {
-        requestId: randomUUID(),
-        intent: 'queue',
-        message,
-        attachments,
-        tracked: false,
-      });
-      return { disposition: 'queued', queueDepth: queued };
-    }
-    // Idle session: a "steer" is just a normal new prompt.
-    await sendMessage(sessionId, message, attachments);
-    return { disposition: 'sent', queueDepth: queueDepth(sessionId) };
+    const result = await followUpTurn({
+      sessionId,
+      requestId: randomUUID(),
+      intent: 'queue',
+      message,
+      attachments,
+    });
+    if (result.status === 'failed')
+      throw new Error(result.error ?? 'The follow-up could not be delivered.');
+    return {
+      disposition: result.status === 'queued' ? 'queued' : 'sent',
+      queueDepth: result.queueDepth,
+      requestId: result.requestId,
+      startedAt: result.startedAt,
+    };
   }
 
   if (!session.threadId || !session.turnId) {
@@ -1371,6 +1393,7 @@ function setFollowUpResult(
     intent: request.intent,
     status,
     queueDepth: queueDepth(sessionId),
+    ...(receipt.startedAt ? { startedAt: receipt.startedAt } : {}),
     ...(error ? { error } : {}),
   };
   receipt.result = result;
@@ -1379,6 +1402,7 @@ function setFollowUpResult(
     followUpRequestId: request.requestId,
     followUpIntent: request.intent,
     followUpStatus: status,
+    followUpStartedAt: receipt.startedAt,
     followUpQueueDepth: result.queueDepth,
     ...(error ? { followUpError: error } : {}),
   });

@@ -215,7 +215,11 @@ export function ProcessingCard({
             </span>
             <span className="min-w-0 flex-1">
               <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="font-medium text-text-primary">{labels[state]}</span>
+                <span
+                  className={`font-medium ${compact ? 'text-text-secondary' : 'text-text-primary'}`}
+                >
+                  {labels[state]}
+                </span>
                 {actions > 0 && (
                   <span className="text-text-secondary">
                     <span key={actions} className="processing-count tabular-nums">

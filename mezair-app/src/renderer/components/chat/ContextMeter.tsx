@@ -21,7 +21,7 @@ export function contextFill(usage: ChatContextUsage): number {
  */
 export function ContextMeter({ usage }: { usage: ChatContextUsage }) {
   const fill = contextFill(usage);
-  const percent = Math.round(fill * 100);
+  const percent = Math.round(usage.size > 0 ? (usage.used / usage.size) * 100 : 0);
   const tone = fill >= 0.9 ? 'bg-error' : fill >= 0.7 ? 'bg-warning' : 'bg-text-tertiary';
   const text = fill >= 0.9 ? 'text-error' : fill >= 0.7 ? 'text-warning' : 'text-text-tertiary';
   const description = `Context window ${percent}% full after the last turn: ${formatTokens(usage.used)} of ${formatTokens(usage.size)} tokens.${
@@ -40,7 +40,7 @@ export function ContextMeter({ usage }: { usage: ChatContextUsage }) {
       <span className="relative h-1 w-6 overflow-hidden rounded-full bg-border" aria-hidden="true">
         <span
           className={`absolute inset-y-0 left-0 rounded-full ${tone}`}
-          style={{ width: `${Math.max(4, percent)}%` }}
+          style={{ width: `${Math.max(4, Math.min(100, percent))}%` }}
         />
       </span>
       <span className={`tabular-nums ${text}`} aria-hidden="true">

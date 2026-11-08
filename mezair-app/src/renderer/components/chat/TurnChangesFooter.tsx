@@ -363,7 +363,7 @@ export function formatTurnUsage(usage: ChatTurnUsage): { short: string; full: st
   ]
     .filter(Boolean)
     .join(' · ');
-  return { short: short || (usage.model ?? ''), full };
+  return { short: short || usage.model || full, full };
 }
 
 /** Compact usage; the model, token split, context and cost are in the tooltip. */

@@ -10,6 +10,7 @@ import type {
 } from '../../../../../shared/types';
 import type { SurfacesApi } from '../../../../../shared/surfaces/ipc';
 import type { SurfaceComment } from '../../../../../shared/surfaces/types';
+import { ReviewPreview, installReviewPreview } from '../ReviewPreview';
 import { ChatReplayPreview } from '../ChatReplayPreview';
 import { ThemesPreview, THEMES_PREVIEW_CUSTOM_THEME } from '../../../settings/ThemesPreview';
 import { ComposerPreview } from '../ComposerPreview';
@@ -300,10 +301,14 @@ if (skillsPreview) installSkillsRecommendationsPreview();
 if (factoriesPreview) installFactoriesPreviewBridge();
 if (meshPreview) installMeshPreviewBridge();
 
+const reviewPreview = new URLSearchParams(window.location.search).has('review');
+if (reviewPreview) installReviewPreview();
 createRoot(rootElement).render(
   <StrictMode>
     <MemoryRouter>
-      {themesPreview ? (
+      {reviewPreview ? (
+        <ReviewPreview />
+      ) : themesPreview ? (
         <ThemesPreview />
       ) : meshPreview ? (
         <MeshPreview />

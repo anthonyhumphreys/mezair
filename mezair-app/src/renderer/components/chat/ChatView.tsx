@@ -238,21 +238,26 @@ export function ChatView({ userRole }: ChatViewProps) {
       text: string;
       threadId?: string;
       personaId?: string;
+      attachments?: ChatAttachment[];
+      complete?: (success: boolean) => void;
     }>
   >([]);
   const pendingChatAction = pendingChatActions[0] ?? null;
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const actionInFlight = useRef(false);
-  const requestChatAction = useCallback((text: string, threadId?: string, personaId?: string) => {
-    const action = { id: crypto.randomUUID(), text, threadId, personaId };
-    setPendingChatActions((pending) =>
-      pending.some(
-        (item) => item.text === text && item.threadId === threadId && item.personaId === personaId,
-      )
-        ? pending
-        : [...pending, action],
-    );
-  }, []);
+  const requestChatAction = useCallback(
+    (
+      text: string,
+      threadId?: string,
+      personaId?: string,
+      attachments: ChatAttachment[] = [],
+      complete?: (success: boolean) => void,
+    ) => {
+      const action = { id: crypto.randomUUID(), text, threadId, personaId, attachments, complete };
+      setPendingChatActions((pending) => [...pending, action]);
+    },
+    [],
+  );
   const [sendNotice, setSendNotice] = useState<string | null>(null);
   const [designSidebarCollapsed, setDesignSidebarCollapsed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -444,6 +449,7 @@ export function ChatView({ userRole }: ChatViewProps) {
     threadId: string;
     undoKey: string;
     filesChanged: number;
+    warning?: string;
   } | null>(null);
   const [undoingRewind, setUndoingRewind] = useState(false);
 
@@ -453,7 +459,14 @@ export function ChatView({ userRole }: ChatViewProps) {
     if (!rewindUndo) return;
     setUndoingRewind(true);
     try {
-      await window.mezair.chat.restoreCheckpoint(rewindUndo.threadId, rewindUndo.undoKey);
+      const result = await window.mezair.chat.restoreCheckpoint(
+        rewindUndo.threadId,
+        rewindUndo.undoKey,
+      );
+      if (result.warning) {
+        setSendNotice(result.warning);
+        return;
+      }
       setRewindUndo(null);
       setSendNotice('Rewind undone. The files are back to how they were before it.');
     } catch (err) {
@@ -469,8 +482,9 @@ export function ChatView({ userRole }: ChatViewProps) {
       messageId: string | undefined,
       text: string,
       restoreFiles: boolean,
-    ) => {
-      if (busy || !text.trim()) return;
+      attachments: ChatAttachment[] = [],
+    ): Promise<boolean> => {
+      if (busy || !text.trim()) return false;
       const sourceThreadId = activeThreadId;
       try {
         if (restoreFiles && messageId && sourceThreadId) {
@@ -479,19 +493,23 @@ export function ChatView({ userRole }: ChatViewProps) {
         }
         // The edited message replaces this one in a new branch; the original
         // conversation stays as it was.
-        const branchId = sourceIndex > 0 ? await forkThread(sourceIndex - 1) : null;
+        const branchId = await forkThread(sourceIndex, true);
         if (!branchId) await startNewSession();
-        requestChatAction(text, branchId ?? undefined);
+        return await new Promise<boolean>((resolve) =>
+          requestChatAction(text, branchId ?? undefined, undefined, attachments, resolve),
+        );
       } catch (err) {
         setSendNotice(err instanceof Error ? err.message : 'Could not resend the edited message.');
+        return false;
       }
     },
     [activeThreadId, busy, forkThread, requestChatAction, startNewSession],
   );
 
   const handleRetry = useCallback(
-    (content: string) => {
-      if (!busy && content.trim()) requestChatAction(content, activeThreadId ?? undefined);
+    (content: string, attachments: ChatAttachment[] = []) => {
+      if (!busy && (content.trim() || attachments.length))
+        requestChatAction(content, activeThreadId ?? undefined, undefined, attachments);
     },
     [activeThreadId, busy, requestChatAction],
   );
@@ -955,6 +973,12 @@ export function ChatView({ userRole }: ChatViewProps) {
       setPendingChatActions((pending) =>
         pending.filter((action) => action.id !== pendingChatAction.id),
       );
+      pendingChatAction.complete?.(false);
+      setComposerPrefill({
+        id: pendingChatAction.id,
+        text: pendingChatAction.text,
+        attachments: pendingChatAction.attachments,
+      });
       setSendNotice(
         'The requested conversation could not be opened or is no longer active. No prompt was sent. Open it and try the action again.',
       );
@@ -968,17 +992,31 @@ export function ChatView({ userRole }: ChatViewProps) {
           throw new Error('Chat is not ready. The requested prompt is in the composer.');
         }
         if (!runTarget.remote && busy && session?.capabilities?.followUp.queue) {
-          const result = await followUp('queue', pendingChatAction.text, [], pendingChatAction.id);
+          const result = await followUp(
+            'queue',
+            pendingChatAction.text,
+            pendingChatAction.attachments ?? [],
+            pendingChatAction.id,
+          );
           if (result.status === 'failed')
             throw new Error(result.error ?? 'The action could not be queued.');
           setSendNotice(result.status === 'queued' ? 'Queued after the current run.' : null);
         } else {
-          const accepted = await handleChatInputSend(pendingChatAction.text);
+          const accepted = await handleChatInputSend(
+            pendingChatAction.text,
+            pendingChatAction.attachments ?? [],
+          );
           if (!accepted)
             throw new Error('The action was not sent. The requested prompt is in the composer.');
         }
+        pendingChatAction.complete?.(true);
       } catch (error) {
-        setComposerPrefill({ id: pendingChatAction.id, text: pendingChatAction.text });
+        pendingChatAction.complete?.(false);
+        setComposerPrefill({
+          id: pendingChatAction.id,
+          text: pendingChatAction.text,
+          attachments: pendingChatAction.attachments,
+        });
         setSendNotice(error instanceof Error ? error.message : 'The action could not be sent.');
       } finally {
         actionInFlight.current = false;
@@ -1375,8 +1413,8 @@ export function ChatView({ userRole }: ChatViewProps) {
           className="flex items-center justify-between gap-3 rounded-xl border border-border bg-bg-secondary px-4 py-2.5 text-xs text-text-secondary"
         >
           <span className="min-w-0">
-            Rewound {rewindUndo.filesChanged} file{rewindUndo.filesChanged === 1 ? '' : 's'}. The
-            previous versions were saved first.
+            {rewindUndo.warning ??
+              `Rewound ${rewindUndo.filesChanged} file${rewindUndo.filesChanged === 1 ? '' : 's'}. The previous versions were saved first.`}
           </span>
           <span className="flex shrink-0 items-center gap-1">
             <button
@@ -1634,8 +1672,8 @@ export function ChatView({ userRole }: ChatViewProps) {
               onEditResend={
                 isTemporaryChat || isWorkItemLayout || runTarget.remote
                   ? undefined
-                  : (sourceIndex, messageId, text, restoreFiles) =>
-                      void handleEditResend(sourceIndex, messageId, text, restoreFiles)
+                  : (sourceIndex, messageId, text, restoreFiles, attachments) =>
+                      handleEditResend(sourceIndex, messageId, text, restoreFiles, attachments)
               }
               onRetry={runTarget.remote ? undefined : handleRetry}
             />

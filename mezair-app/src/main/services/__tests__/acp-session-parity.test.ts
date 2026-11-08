@@ -313,7 +313,11 @@ describe('ACP session parity (cursor/devin)', () => {
     // now 'busy', which is what routes the steer into the queue.
 
     const result = await steerTurn(session.id, 'also handle this', []);
-    expect(result).toEqual({ disposition: 'queued', queueDepth: 1 });
+    expect(result).toMatchObject({
+      disposition: 'queued',
+      queueDepth: 1,
+      requestId: expect.any(String),
+    });
     expect(
       events.some((e) => e.event.type === 'queue_update' && e.event.queuedSendCount === 1),
     ).toBe(true);
@@ -604,7 +608,12 @@ describe('ACP session parity (cursor/devin)', () => {
     await acknowledgeLastRequest(proc, 'session/set_mode');
     await acknowledgeLastRequest(proc, 'session/set_config_option');
     const result = await sending;
-    expect(result).toEqual({ disposition: 'sent', queueDepth: 0 });
+    expect(result).toMatchObject({
+      disposition: 'sent',
+      queueDepth: 0,
+      requestId: expect.any(String),
+      startedAt: expect.any(String),
+    });
     expect(writtenRequests(proc, 'session/prompt')).toHaveLength(1);
   });
 

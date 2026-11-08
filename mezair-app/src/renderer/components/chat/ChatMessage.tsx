@@ -2121,7 +2121,7 @@ function UserMessageEditor({
   initial: string;
   canRestoreFiles: boolean;
   onCancel: () => void;
-  onSubmit: (text: string, restoreFiles: boolean) => void;
+  onSubmit: (text: string, restoreFiles: boolean) => Promise<boolean>;
 }) {
   const [text, setText] = useState(initial);
   const [restoreFiles, setRestoreFiles] = useState(canRestoreFiles);
@@ -2142,8 +2142,24 @@ function UserMessageEditor({
     el.style.height = `${Math.min(el.scrollHeight, 360)}px`;
   }, [text]);
 
-  const submit = () => {
-    if (text.trim()) onSubmit(text, canRestoreFiles && restoreFiles);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const submit = async () => {
+    if (!text.trim() || submitting) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      if (!(await onSubmit(text, canRestoreFiles && restoreFiles)))
+        setSubmitError(
+          'The message was not resent. Your edit is kept; try again when the thread is ready.',
+        );
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : 'Could not resend. Your edit is kept.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -2169,6 +2185,11 @@ function UserMessageEditor({
         rows={2}
         className="block w-full resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed text-text-primary outline-none"
       />
+      {submitError && (
+        <p role="alert" className="px-2 py-1 text-xs text-error">
+          {submitError}
+        </p>
+      )}
       <div className="mt-1 flex flex-wrap items-center gap-2 border-t border-border-subtle px-1 pt-2">
         {canRestoreFiles ? (
           <label
@@ -2197,7 +2218,7 @@ function UserMessageEditor({
         <button
           type="button"
           onClick={submit}
-          disabled={!text.trim()}
+          disabled={!text.trim() || submitting}
           className="rounded-md bg-accent px-2.5 py-1.5 text-xs font-semibold text-accent-foreground hover:bg-accent/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-secondary disabled:opacity-40"
           title="Sends the edited message in a new branch of this thread"
         >
@@ -2303,7 +2324,7 @@ export function UserMessage({
   /** Puts the text back in the composer (fallback when inline resend is unavailable). */
   onEdit?: () => void;
   /** Inline edit; resends in a new branch, optionally rewinding files first. */
-  onEditResend?: (text: string, restoreFiles: boolean) => void;
+  onEditResend?: (text: string, restoreFiles: boolean) => Promise<boolean>;
   /** Present when a checkpoint was recorded before this message. */
   onRewind?: () => void;
   onBranch?: () => void;
@@ -2328,9 +2349,10 @@ export function UserMessage({
           initial={content}
           canRestoreFiles={Boolean(onRewind)}
           onCancel={() => setEditing(false)}
-          onSubmit={(text, restoreFiles) => {
-            setEditing(false);
-            onEditResend(text, restoreFiles);
+          onSubmit={async (text, restoreFiles) => {
+            const accepted = await onEditResend(text, restoreFiles);
+            if (accepted) setEditing(false);
+            return accepted;
           }}
         />
       </ChatMessageRow>

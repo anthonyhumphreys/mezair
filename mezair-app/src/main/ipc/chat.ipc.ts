@@ -77,6 +77,7 @@ import {
 } from '../services/codex-session.service.js';
 import {
   captureTurnCheckpoints,
+  checkpointRepositoriesOverlap,
   deleteThreadCheckpoints,
   listThreadCheckpoints,
   previewCheckpointRestore,
@@ -495,13 +496,6 @@ export function registerChatHandlers(): void {
         enrichedMessage = `[Work Item ${parsed.workItemId}] ${parsed.command}: ${message}`;
       }
 
-      // Plain messages — and, on macOS 27+, image-only attachments — may be
-      // answerable on-device.
-      if (!parsed.command) {
-        const handledLocally = await tryLocalLlmChatReply(sessionId, enrichedMessage, attachments);
-        if (handledLocally) return;
-      }
-
       const checkpointKey = options?.checkpointKey;
       if (
         typeof checkpointKey === 'string' &&
@@ -520,6 +514,13 @@ export function registerChatHandlers(): void {
         }
       }
 
+      // Plain messages — and, on macOS 27+, image-only attachments — may be
+      // answerable on-device.
+      if (!parsed.command) {
+        const handledLocally = await tryLocalLlmChatReply(sessionId, enrichedMessage, attachments);
+        if (handledLocally) return;
+      }
+
       await sendMessage(sessionId, enrichedMessage, attachments, options);
     },
   );
@@ -536,11 +537,23 @@ export function registerChatHandlers(): void {
   ipcMain.handle('chat:restore-checkpoint', (_event, threadId: string, messageId: string) => {
     if (typeof threadId !== 'string' || !threadId || typeof messageId !== 'string' || !messageId)
       throw new Error('A thread and message are required.');
-    const active = listActiveCodexSessions().some(
-      (session) => session.appThreadId === threadId && session.status === 'busy',
-    );
-    if (active) throw new Error('Stop the running turn before rewinding files.');
-    return restoreCheckpoint(threadId, messageId);
+    const thread = getChatThread(threadId);
+    if (!thread) throw new Error('Thread not found.');
+    const assertCanRestore = () => {
+      const active = listActiveCodexSessions().some(
+        (session) =>
+          session.status === 'busy' &&
+          (session.appThreadId === threadId ||
+            (session.appThreadId &&
+              checkpointRepositoriesOverlap(
+                thread.repoIds,
+                getChatThread(session.appThreadId)?.repoIds ?? [],
+              ))),
+      );
+      if (active)
+        throw new Error('Stop running turns in these repositories before rewinding files.');
+    };
+    return restoreCheckpoint(threadId, messageId, { assertCanRestore });
   });
 
   ipcMain.handle('chat:invalidate-thread-access', (_event, threadId: string) => {

@@ -6,6 +6,7 @@ import { SegmentedControl } from '../ui';
 import { DiffViewer } from './DiffViewer';
 
 type ReviewSide = 'unstaged' | 'staged';
+const EMPTY_FILES: GitFileChange[] = [];
 
 interface LoadedDiff {
   key: string;
@@ -33,20 +34,32 @@ export function ChatReviewPanel({
 }) {
   const [repoId, setRepoId] = useState<string | null>(repos[0]?.id ?? null);
   const [side, setSide] = useState<ReviewSide>('unstaged');
-  const [files, setFiles] = useState<GitFileChange[]>([]);
+  const [status, setStatus] = useState<{
+    repoId: string;
+    revision: number;
+    files: GitFileChange[];
+  } | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [diff, setDiff] = useState<LoadedDiff | null>(null);
+  const [loadedDiff, setDiff] = useState<LoadedDiff | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [pendingHunk, setPendingHunk] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const statusRequest = useRef(0);
   const diffRequest = useRef(0);
 
-  useEffect(() => {
-    if (!repoId || !repos.some((repo) => repo.id === repoId)) setRepoId(repos[0]?.id ?? null);
-  }, [repoId, repos]);
+  const effectiveRepoId = repos.some((repo) => repo.id === repoId)
+    ? repoId
+    : (repos[0]?.id ?? null);
+  const ready = Boolean(
+    effectiveRepoId && status?.repoId === effectiveRepoId && status.revision === revision,
+  );
+  const files = status?.repoId === effectiveRepoId ? status.files : EMPTY_FILES;
+  const contextRef = useRef('');
+  const contextKey = `${effectiveRepoId}:${side}:${revision}`;
+  contextRef.current = contextKey;
 
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
 
@@ -58,25 +71,31 @@ export function ChatReviewPanel({
   }, [busy, refresh]);
 
   useEffect(() => {
-    if (!repoId) return;
+    if (!effectiveRepoId) {
+      setStatus(null);
+      return;
+    }
     const request = ++statusRequest.current;
     setLoading(true);
     setError(null);
     window.mezair.git
-      .status(repoId)
+      .status(effectiveRepoId)
       .then((status) => {
         if (request !== statusRequest.current) return;
-        setFiles(status.files);
+        setStatus({ repoId: effectiveRepoId, revision, files: status.files });
       })
       .catch((err: unknown) => {
         if (request !== statusRequest.current) return;
         setError(err instanceof Error ? err.message : 'Could not read the repository status.');
-        setFiles([]);
+        setStatus(null);
       })
       .finally(() => {
         if (request === statusRequest.current) setLoading(false);
       });
-  }, [repoId, revision]);
+    return () => {
+      statusRequest.current++;
+    };
+  }, [effectiveRepoId, revision]);
 
   const visibleFiles = useMemo(
     () => files.filter((file) => (side === 'staged' ? file.staged : hasUnstagedChanges(file))),
@@ -89,22 +108,24 @@ export function ChatReviewPanel({
   }, [selectedPath, visibleFiles]);
 
   const selectedFile = visibleFiles.find((file) => file.path === selectedPath) ?? null;
+  const diffKey = `${contextKey}:${selectedPath}`;
+  const diff = ready && loadedDiff?.key === diffKey ? loadedDiff : null;
   const untracked = selectedFile?.status === 'untracked';
 
   useEffect(() => {
     setConfirmDiscard(null);
-    if (!repoId || !selectedPath || untracked) {
+    const request = ++diffRequest.current;
+    if (!ready || !effectiveRepoId || !selectedFile || untracked) {
       setDiff(null);
       return;
     }
-    const request = ++diffRequest.current;
     window.mezair.git
-      .diff(repoId, selectedPath, side === 'staged')
+      .diff(effectiveRepoId, selectedFile.path, side === 'staged')
       .then((result) => {
         if (request !== diffRequest.current) return;
         const parsed = parseFileDiff(result.hunks);
         setDiff({
-          key: `${repoId}:${side}:${selectedPath}`,
+          key: diffKey,
           fileHeader: parsed.fileHeader,
           hunks: parsed.hunks,
           binary: parsed.binary,
@@ -115,19 +136,31 @@ export function ChatReviewPanel({
         setError(err instanceof Error ? err.message : 'Could not load the diff.');
         setDiff(null);
       });
-  }, [repoId, selectedPath, side, untracked, revision]);
+    return () => {
+      diffRequest.current++;
+    };
+  }, [effectiveRepoId, selectedPath, side, untracked, revision, ready, diffKey, selectedFile]);
 
   const applyHunk = async (hunk: GitDiffHunk, action: GitHunkAction) => {
-    if (!repoId || !selectedPath) return;
+    if (!ready || !effectiveRepoId || !selectedFile || !diff) return;
+    const startedContext = contextRef.current;
     const id = `${hunk.index}:${hunk.fingerprint}`;
     setPendingHunk(id);
-    setError(null);
+    setActionError(null);
     try {
-      await window.mezair.git.applyHunk(repoId, selectedPath, hunk.index, hunk.fingerprint, action);
+      await window.mezair.git.applyHunk(
+        effectiveRepoId,
+        selectedFile.path,
+        hunk.index,
+        hunk.fingerprint,
+        action,
+      );
+      if (contextRef.current !== startedContext) return;
       setConfirmDiscard(null);
       refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not apply that change.');
+      if (contextRef.current !== startedContext) return;
+      setActionError(err instanceof Error ? err.message : 'Could not apply that change.');
       refresh();
     } finally {
       setPendingHunk(null);
@@ -135,17 +168,24 @@ export function ChatReviewPanel({
   };
 
   const applyFile = async (action: 'stage' | 'unstage' | 'discard') => {
-    if (!repoId || !selectedPath) return;
+    if (!ready || !effectiveRepoId || !selectedFile) return;
+    const startedContext = contextRef.current;
     setPendingHunk('file');
-    setError(null);
+    setActionError(null);
     try {
-      if (action === 'stage') await window.mezair.git.stage(repoId, [selectedPath]);
-      else if (action === 'unstage') await window.mezair.git.unstage(repoId, [selectedPath]);
-      else await window.mezair.git.discard(repoId, [selectedPath]);
+      const paths =
+        action === 'unstage' && selectedFile.oldPath
+          ? [selectedFile.path, selectedFile.oldPath]
+          : [selectedFile.path];
+      if (action === 'stage') await window.mezair.git.stage(effectiveRepoId, paths);
+      else if (action === 'unstage') await window.mezair.git.unstage(effectiveRepoId, paths);
+      else await window.mezair.git.discard(effectiveRepoId, paths);
+      if (contextRef.current !== startedContext) return;
       setConfirmDiscard(null);
       refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not update the file.');
+      if (contextRef.current !== startedContext) return;
+      setActionError(err instanceof Error ? err.message : 'Could not update the file.');
     } finally {
       setPendingHunk(null);
     }
@@ -161,8 +201,12 @@ export function ChatReviewPanel({
         {repos.length > 1 && (
           <select
             aria-label="Repository"
-            value={repoId ?? ''}
-            onChange={(event) => setRepoId(event.target.value)}
+            value={effectiveRepoId ?? ''}
+            onChange={(event) => {
+              setRepoId(event.target.value);
+              setActionError(null);
+              setConfirmDiscard(null);
+            }}
             className="ml-1 max-w-40 truncate rounded-md border border-border bg-bg-secondary px-2 py-1 text-xs text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
           >
             {repos.map((repo) => (
@@ -218,9 +262,9 @@ export function ChatReviewPanel({
         )}
       </div>
 
-      {error && (
+      {(actionError || error) && (
         <p role="alert" className="border-b border-border/60 px-3 py-2 text-xs text-error">
-          {error}
+          {actionError || error}
         </p>
       )}
 
@@ -262,7 +306,7 @@ export function ChatReviewPanel({
               {side === 'unstaged' ? (
                 <>
                   <ReviewButton
-                    disabled={busyAction}
+                    disabled={busyAction || !ready}
                     onClick={() => void applyFile('stage')}
                     icon={<Check size={12} aria-hidden="true" />}
                   >
@@ -271,7 +315,7 @@ export function ChatReviewPanel({
                   {confirmDiscard === 'file' ? (
                     <ReviewButton
                       tone="danger"
-                      disabled={busyAction}
+                      disabled={busyAction || !ready}
                       onClick={() => void applyFile('discard')}
                       icon={<Trash2 size={12} aria-hidden="true" />}
                     >
@@ -279,7 +323,7 @@ export function ChatReviewPanel({
                     </ReviewButton>
                   ) : (
                     <ReviewButton
-                      disabled={busyAction}
+                      disabled={busyAction || !ready}
                       onClick={() => setConfirmDiscard('file')}
                       icon={<Trash2 size={12} aria-hidden="true" />}
                     >
@@ -289,7 +333,7 @@ export function ChatReviewPanel({
                 </>
               ) : (
                 <ReviewButton
-                  disabled={busyAction}
+                  disabled={busyAction || !ready}
                   onClick={() => void applyFile('unstage')}
                   icon={<Undo2 size={12} aria-hidden="true" />}
                 >
@@ -340,7 +384,7 @@ export function ChatReviewPanel({
                     {side === 'unstaged' ? (
                       <>
                         <ReviewButton
-                          disabled={busyAction}
+                          disabled={busyAction || !ready}
                           onClick={() => void applyHunk(hunk, 'stage')}
                           icon={<Check size={12} aria-hidden="true" />}
                         >
@@ -350,7 +394,7 @@ export function ChatReviewPanel({
                           <>
                             <ReviewButton
                               tone="danger"
-                              disabled={busyAction}
+                              disabled={busyAction || !ready}
                               onClick={() => void applyHunk(hunk, 'discard')}
                             >
                               Discard this change
@@ -361,7 +405,7 @@ export function ChatReviewPanel({
                           </>
                         ) : (
                           <ReviewButton
-                            disabled={busyAction}
+                            disabled={busyAction || !ready}
                             onClick={() => setConfirmDiscard(id)}
                             icon={<Trash2 size={12} aria-hidden="true" />}
                           >
@@ -371,7 +415,7 @@ export function ChatReviewPanel({
                       </>
                     ) : (
                       <ReviewButton
-                        disabled={busyAction}
+                        disabled={busyAction || !ready}
                         onClick={() => void applyHunk(hunk, 'unstage')}
                         icon={<Undo2 size={12} aria-hidden="true" />}
                       >

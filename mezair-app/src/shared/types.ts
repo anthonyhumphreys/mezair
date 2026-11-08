@@ -989,6 +989,8 @@ export interface ChatCheckpointPreview {
 }
 
 export interface ChatCheckpointRestoreResult {
+  /** Recovery remains available if a file write fails partway through. */
+  warning?: string;
   filesChanged: number;
   /** Checkpoint key holding the pre-restore state; restore it to undo. */
   undoKey: string;
@@ -1012,6 +1014,8 @@ export interface ChatFollowUpRequest {
 }
 
 export interface ChatFollowUpResult {
+  /** Main-process time when this queued request began delivery. */
+  startedAt?: string;
   requestId: string;
   intent: ChatFollowUpIntent;
   /**
@@ -1345,6 +1349,7 @@ export interface CodexEvent {
   followUpRequestId?: string;
   followUpIntent?: ChatFollowUpIntent;
   followUpStatus?: ChatFollowUpStatus;
+  followUpStartedAt?: string;
   followUpQueueDepth?: number;
   followUpError?: string;
   contextUsage?: { used: number; size: number };
@@ -1484,6 +1489,8 @@ export interface CodexSession {
 
 /** Result of a mid-turn composer send (`chat:steer`). */
 export interface ChatSteerResult {
+  requestId?: string;
+  startedAt?: string;
   /**
    * 'steered' — delivered in-band via Codex turn/steer.
    * 'sent' — session was idle; delivered immediately as a new prompt.

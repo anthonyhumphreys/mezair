@@ -276,8 +276,8 @@ Object.assign(window, {
             streamingLayout.maxScrollDeviation < 2,
           `Streaming must preserve a reader’s scroll offset (start=${startTop.toFixed(2)}px, settled=${streamingLayout.geometry.scrollTop.toFixed(2)}px, maxDeviation=${streamingLayout.maxScrollDeviation.toFixed(2)}px, before=${formatScrollGeometry(expansionLayout.geometry)}, after=${formatScrollGeometry(streamingLayout.geometry)}).`,
         );
-        const latest = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
-          button.textContent?.includes('Jump to live work'),
+        const latest = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+          (button) => button.getAttribute('aria-label') === 'Jump to latest messages',
         );
         check(Boolean(latest), 'An unpinned reader must have a jump-to-live control');
         latest!.click();

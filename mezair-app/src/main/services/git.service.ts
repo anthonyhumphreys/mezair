@@ -291,7 +291,10 @@ export async function stageFiles(repoPath: string, paths: string[]): Promise<voi
 
 export async function unstageFiles(repoPath: string, paths: string[]): Promise<void> {
   const git = gitClient(repoPath);
-  await git.reset(['HEAD', '--', ...paths]);
+  const status = await git.status();
+  const targets = new Set(paths);
+  for (const rename of status.renamed) if (targets.has(rename.to)) targets.add(rename.from);
+  await git.raw(['--literal-pathspecs', 'reset', 'HEAD', '--', ...targets]);
 }
 
 export async function discardFiles(repoPath: string, paths: string[]): Promise<void> {
@@ -439,7 +442,17 @@ export async function getFileDiff(
 ): Promise<GitDiffResult> {
   const git = gitClient(repoPath);
 
-  const args = staged ? ['diff', '--cached', '--', filePath] : ['diff', '--', filePath];
+  const args = [
+    '--literal-pathspecs',
+    'diff',
+    '--no-ext-diff',
+    '--no-textconv',
+    '--src-prefix=a/',
+    '--dst-prefix=b/',
+    ...(staged ? ['--cached'] : []),
+    '--',
+    filePath,
+  ];
   const hunks = await git.raw(args);
 
   // Get old/new content for the diff viewer
@@ -492,9 +505,17 @@ export async function applyFileHunk(
     throw new Error('Invalid hunk action.');
   }
   const git = gitClient(repoPath);
-  const diff = await git.raw(
-    action === 'unstage' ? ['diff', '--cached', '--', filePath] : ['diff', '--', filePath],
-  );
+  const diff = await git.raw([
+    '--literal-pathspecs',
+    'diff',
+    '--no-ext-diff',
+    '--no-textconv',
+    '--src-prefix=a/',
+    '--dst-prefix=b/',
+    ...(action === 'unstage' ? ['--cached'] : []),
+    '--',
+    filePath,
+  ]);
   const parsed = parseFileDiff(diff);
   if (parsed.binary) throw new Error('Binary changes cannot be split into hunks.');
   const hunk = selectHunk(parsed, hunkIndex, fingerprint);

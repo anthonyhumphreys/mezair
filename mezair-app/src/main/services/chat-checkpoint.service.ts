@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { checkpointRestorePaths as restoringRepos } from './chat-checkpoint-locks.js';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -29,7 +30,7 @@ export const MAX_CHECKPOINTS_PER_THREAD = 60;
 async function git(repoPath: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
   const { stdout } = await execFileAsync('git', args, {
     cwd: repoPath,
-    env: env ? { ...process.env, ...env } : process.env,
+    env: { ...process.env, ...env, GIT_LITERAL_PATHSPECS: '1' },
     timeout: GIT_TIMEOUT_MS,
     maxBuffer: 32 * 1024 * 1024,
     encoding: 'utf-8',
@@ -67,26 +68,136 @@ export async function captureWorkingTree(repoPath: string): Promise<string> {
   }
 }
 
+interface SubmoduleCheckpoint {
+  path: string;
+  commit: string;
+  ref: string;
+}
+const SUBMODULE_MARKER = 'Mezair-Submodule-Checkpoints: ';
+
+async function submodulePaths(repoPath: string): Promise<string[]> {
+  const entries = (await git(repoPath, ['ls-files', '--stage', '-z'])).split('\0');
+  const paths = entries
+    .filter((entry) => entry.startsWith('160000 '))
+    .map((entry) => entry.slice(entry.indexOf('\t') + 1));
+  if (paths.length > 64) throw new Error('Too many submodules to checkpoint safely.');
+  for (const relative of paths) {
+    const root = fs.realpathSync(repoPath);
+    const full = path.resolve(root, relative);
+    if (
+      !full.startsWith(`${root}${path.sep}`) ||
+      fs.realpathSync(full) !== full ||
+      !fs.existsSync(path.join(full, '.git'))
+    )
+      throw new Error(`Initialise submodule ${relative} before using file rewind.`);
+  }
+  return paths.sort();
+}
+
+async function checkpointSubmodules(
+  repoPath: string,
+  commit: string,
+): Promise<SubmoduleCheckpoint[]> {
+  const message = await git(repoPath, ['show', '-s', '--format=%B', commit]);
+  const metadata = message.split('\n').findLast((line) => line.startsWith(SUBMODULE_MARKER));
+  if (!metadata) {
+    if ((await submodulePaths(repoPath)).length)
+      throw new Error(
+        'This older checkpoint does not include submodules. Send a new turn to record them.',
+      );
+    return [];
+  }
+  const parsed: unknown = JSON.parse(metadata.slice(SUBMODULE_MARKER.length));
+  if (!Array.isArray(parsed) || parsed.length > 64)
+    throw new Error('Invalid submodule checkpoint.');
+  return parsed.map((item) => {
+    if (
+      !item ||
+      typeof item.path !== 'string' ||
+      !item.path ||
+      path.isAbsolute(item.path) ||
+      item.path.split(/[\\/]/).includes('..') ||
+      !/^[a-f0-9]{40,64}$/.test(item.commit) ||
+      typeof item.ref !== 'string' ||
+      !item.ref.startsWith('refs/mezair/checkpoints/') ||
+      item.ref.includes('..')
+    )
+      throw new Error('Invalid submodule checkpoint.');
+    return item as SubmoduleCheckpoint;
+  });
+}
+
+async function validateSubmodules(
+  repoPath: string,
+  commit: string,
+): Promise<SubmoduleCheckpoint[]> {
+  const children = await checkpointSubmodules(repoPath, commit);
+  if (
+    JSON.stringify(children.map((child) => child.path).sort()) !==
+    JSON.stringify(await submodulePaths(repoPath))
+  )
+    throw new Error(
+      'Submodules were added or removed since this checkpoint. Restore their layout before rewinding.',
+    );
+  return children;
+}
+
+async function removeCheckpointRef(repoPath: string, commit: string, ref: string): Promise<void> {
+  for (const child of await checkpointSubmodules(repoPath, commit)) {
+    await removeCheckpointRef(path.join(repoPath, child.path), child.commit, child.ref);
+  }
+  await git(repoPath, ['update-ref', '-d', ref]);
+}
+
 /** Records the working tree as a commit and pins it with `refName`. */
 export async function createCheckpointCommit(
   repoPath: string,
   refName: string,
   message: string,
+  depth = 0,
+  budget = { remaining: 65 },
 ): Promise<string> {
-  const tree = await captureWorkingTree(repoPath);
-  const head = await resolveHead(repoPath);
-  const args = ['commit-tree', tree, '-m', message];
-  if (head) args.splice(2, 0, '-p', head);
-  const commit = (
-    await git(repoPath, args, {
-      GIT_AUTHOR_NAME: 'Mezair',
-      GIT_AUTHOR_EMAIL: 'checkpoints@mezair.local',
-      GIT_COMMITTER_NAME: 'Mezair',
-      GIT_COMMITTER_EMAIL: 'checkpoints@mezair.local',
-    })
-  ).trim();
-  await git(repoPath, ['update-ref', refName, commit]);
-  return commit;
+  if (--budget.remaining < 0 || depth > 8)
+    throw new Error('Submodule nesting exceeds the checkpoint limit.');
+  const children: SubmoduleCheckpoint[] = [];
+  try {
+    for (const relative of await submodulePaths(repoPath)) {
+      const ref = `${refName}-submodule-${crypto.createHash('sha256').update(relative).digest('hex').slice(0, 16)}`;
+      const commit = await createCheckpointCommit(
+        path.join(repoPath, relative),
+        ref,
+        message,
+        depth + 1,
+        budget,
+      );
+      children.push({ path: relative, ref, commit });
+    }
+    const tree = await captureWorkingTree(repoPath);
+    const head = await resolveHead(repoPath);
+    const args = [
+      'commit-tree',
+      tree,
+      '-m',
+      `${message}\n\n${SUBMODULE_MARKER}${JSON.stringify(children)}`,
+    ];
+    if (head) args.splice(2, 0, '-p', head);
+    const commit = (
+      await git(repoPath, args, {
+        GIT_AUTHOR_NAME: 'Mezair',
+        GIT_AUTHOR_EMAIL: 'checkpoints@mezair.local',
+        GIT_COMMITTER_NAME: 'Mezair',
+        GIT_COMMITTER_EMAIL: 'checkpoints@mezair.local',
+      })
+    ).trim();
+    await git(repoPath, ['update-ref', refName, commit]);
+    return commit;
+  } catch (error) {
+    for (const child of children)
+      await removeCheckpointRef(path.join(repoPath, child.path), child.commit, child.ref).catch(
+        () => undefined,
+      );
+    throw error;
+  }
 }
 
 /**
@@ -97,11 +208,13 @@ export async function diffAgainstCheckpoint(
   repoPath: string,
   commit: string,
 ): Promise<ChatCheckpointFileChange[]> {
+  const children = await validateSubmodules(repoPath, commit);
   const current = await captureWorkingTree(repoPath);
   const output = await git(repoPath, [
     'diff',
     '--name-status',
     '--no-renames',
+    '--ignore-submodules=all',
     '-z',
     `${commit}^{tree}`,
     current,
@@ -118,6 +231,10 @@ export async function diffAgainstCheckpoint(
       effect: status === 'A' ? 'remove' : status === 'D' ? 'recreate' : 'restore',
     });
   }
+  for (const child of children) {
+    const nested = await diffAgainstCheckpoint(path.join(repoPath, child.path), child.commit);
+    changes.push(...nested.map((change) => ({ ...change, path: `${child.path}/${change.path}` })));
+  }
   return changes;
 }
 
@@ -127,6 +244,17 @@ export async function restoreWorkingTree(
   commit: string,
   changes: ChatCheckpointFileChange[],
 ): Promise<void> {
+  const children = await validateSubmodules(repoPath, commit);
+  for (const child of children) {
+    const prefix = `${child.path}/`;
+    const nested = changes
+      .filter((change) => change.path.startsWith(prefix))
+      .map((change) => ({ ...change, path: change.path.slice(prefix.length) }));
+    await restoreWorkingTree(path.join(repoPath, child.path), child.commit, nested);
+  }
+  changes = changes.filter(
+    (change) => !children.some((child) => change.path.startsWith(`${child.path}/`)),
+  );
   const fromCheckpoint = changes.filter((change) => change.effect !== 'remove');
   const toRemove = changes.filter((change) => change.effect === 'remove');
   const root = path.resolve(repoPath);
@@ -182,15 +310,29 @@ export async function captureTurnCheckpoints(
   messageId: string,
   repoIds: string[],
   kind: 'turn' | 'restore' = 'turn',
+  strict = false,
 ): Promise<ChatCheckpointSummary[]> {
   const db = getDb();
   const created: ChatCheckpointSummary[] = [];
   for (const repoId of [...new Set(repoIds)]) {
     const repoPath = repoPathFor(repoId);
-    if (!repoPath || !isGitWorkTree(repoPath)) continue;
+    if (!repoPath || !isGitWorkTree(repoPath)) {
+      if (strict) throw new Error('A repository is unavailable. No files were rewound.');
+      continue;
+    }
+    const existing = db
+      .prepare(
+        'SELECT created_at FROM chat_checkpoints WHERE thread_id = ? AND message_id = ? AND repo_id = ?',
+      )
+      .get(threadId, messageId, repoId) as { created_at: string } | undefined;
+    if (existing && kind === 'turn') {
+      created.push({ messageId, repoId, createdAt: existing.created_at, kind });
+      continue;
+    }
     const refName = checkpointRef(threadId, messageId, repoId);
+    let commit: string | undefined;
     try {
-      const commit = await createCheckpointCommit(
+      commit = await createCheckpointCommit(
         repoPath,
         refName,
         `Mezair checkpoint ${threadId} ${messageId}`,
@@ -204,6 +346,11 @@ export async function captureTurnCheckpoints(
       ).run(crypto.randomUUID(), threadId, messageId, repoId, commit, refName, kind, createdAt);
       created.push({ messageId, repoId, createdAt, kind });
     } catch (error) {
+      if (commit) await removeCheckpointRef(repoPath, commit, refName).catch(() => undefined);
+      if (strict)
+        throw new Error('Could not save the undo checkpoint. No files were rewound.', {
+          cause: error,
+        });
       console.warn('[Checkpoints] capture failed', repoId, error);
     }
   }
@@ -233,7 +380,7 @@ async function deleteCheckpointRows(rows: CheckpointRow[]): Promise<void> {
   for (const row of rows) {
     const repoPath = repoPathFor(row.repo_id);
     if (repoPath && isGitWorkTree(repoPath)) {
-      await git(repoPath, ['update-ref', '-d', row.ref_name]).catch(() => undefined);
+      await removeCheckpointRef(repoPath, row.commit_sha, row.ref_name).catch(() => undefined);
     }
     db.prepare('DELETE FROM chat_checkpoints WHERE id = ?').run(row.id);
   }
@@ -287,6 +434,37 @@ export async function previewCheckpointRestore(
   return { messageId, repos };
 }
 
+function checkpointRepoPaths(repoIds: string[]): string[] {
+  return repoIds.flatMap((id) => {
+    const value = repoPathFor(id);
+    if (!value) return [];
+    try {
+      return [fs.realpathSync(value)];
+    } catch {
+      return [path.resolve(value)];
+    }
+  });
+}
+function pathsOverlap(left: string, right: string): boolean {
+  return (
+    left === right ||
+    left.startsWith(`${right}${path.sep}`) ||
+    right.startsWith(`${left}${path.sep}`)
+  );
+}
+export function checkpointRepositoriesOverlap(left: string[], right: string[]): boolean {
+  const rightPaths = checkpointRepoPaths(right);
+  return checkpointRepoPaths(left).some((a) => rightPaths.some((b) => pathsOverlap(a, b)));
+}
+export function assertNoCheckpointRestore(repoIds: string[]): void {
+  if (
+    checkpointRepoPaths(repoIds).some((value) =>
+      [...restoringRepos].some((locked) => pathsOverlap(value, locked)),
+    )
+  )
+    throw new Error('Wait for file rewind to finish before starting a turn in these repositories.');
+}
+
 /**
  * Restores every repository to its checkpoint. The current state is recorded
  * first under a `restore-…` key so the rewind can be undone.
@@ -294,23 +472,53 @@ export async function previewCheckpointRestore(
 export async function restoreCheckpoint(
   threadId: string,
   messageId: string,
+  options?: { assertCanRestore?: () => void },
 ): Promise<ChatCheckpointRestoreResult> {
   const rows = rowsForMessage(threadId, messageId);
   if (rows.length === 0) throw new Error('No checkpoint was recorded before this message.');
-  const undoKey = `restore-${Date.now().toString(36)}`;
-  await captureTurnCheckpoints(
-    threadId,
-    undoKey,
-    rows.map((row) => row.repo_id),
-    'restore',
-  );
-  let filesChanged = 0;
-  for (const row of rows) {
-    const repoPath = repoPathFor(row.repo_id);
-    if (!repoPath) continue;
-    const changes = await diffAgainstCheckpoint(repoPath, row.commit_sha);
-    await restoreWorkingTree(repoPath, row.commit_sha, changes);
-    filesChanged += changes.length;
+  const repoIds = [...new Set(rows.map((row) => row.repo_id))];
+  assertNoCheckpointRestore(repoIds);
+  options?.assertCanRestore?.();
+  const lockedPaths = checkpointRepoPaths(repoIds);
+  lockedPaths.forEach((value) => restoringRepos.add(value));
+  try {
+    // Validate every target before creating undo snapshots or mutating any files.
+    const prepared = await Promise.all(
+      rows.map(async (row) => {
+        const repoPath = repoPathFor(row.repo_id);
+        if (!repoPath) throw new Error('A repository is unavailable. No files were rewound.');
+        return { row, repoPath, changes: await diffAgainstCheckpoint(repoPath, row.commit_sha) };
+      }),
+    );
+    const undoKey = `restore-${crypto.randomUUID()}`;
+    await captureTurnCheckpoints(
+      threadId,
+      undoKey,
+      rows.map((row) => row.repo_id),
+      'restore',
+      true,
+    );
+    let filesChanged = 0;
+    let started = false;
+    try {
+      for (const { row, repoPath, changes } of prepared) {
+        options?.assertCanRestore?.();
+        started = true;
+        await restoreWorkingTree(repoPath, row.commit_sha, changes);
+        filesChanged += changes.length;
+      }
+      return { filesChanged, undoKey };
+    } catch (error) {
+      if (!started) throw error;
+      console.warn('[Checkpoints] restore stopped; undo retained', error);
+      return {
+        filesChanged,
+        undoKey,
+        warning:
+          'Rewind could not finish. Your previous files are saved; choose Undo rewind to restore them.',
+      };
+    }
+  } finally {
+    lockedPaths.forEach((value) => restoringRepos.delete(value));
   }
-  return { filesChanged, undoKey };
 }

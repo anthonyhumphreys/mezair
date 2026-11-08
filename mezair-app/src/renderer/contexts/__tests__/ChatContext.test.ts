@@ -799,3 +799,25 @@ describe('queued follow-up ordering', () => {
     expect(entries[1]).toMatchObject({ content: 'Built.', phase: 'final' });
   });
 });
+
+describe('queued turn timing', () => {
+  it('retains the authoritative delivery start time when hydrating queued messages', () => {
+    const entries = chatMessagesToEntries([
+      { id: 'queued', role: 'user', content: 'Follow-up', timestamp: '2026-11-07T10:00:00Z' },
+      {
+        id: 'delivered',
+        role: 'system',
+        content: '',
+        timestamp: '2026-11-07T10:02:01Z',
+        event: {
+          type: 'follow_up_delivery',
+          followUpRequestId: 'queued',
+          followUpIntent: 'queue',
+          followUpStatus: 'delivered',
+          followUpStartedAt: '2026-11-07T10:02:00Z',
+        },
+      },
+    ]);
+    expect(entries.find((entry) => entry.kind === 'user')?.timestamp).toBe('2026-11-07T10:02:00Z');
+  });
+});

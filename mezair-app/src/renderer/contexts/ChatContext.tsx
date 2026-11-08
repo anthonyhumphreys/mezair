@@ -185,7 +185,7 @@ export interface ChatContextValue {
   settleThread: (threadId: string, settled: boolean) => Promise<void>;
   deleteThread: (threadId: string) => Promise<void>;
   /** Forks history up to and including `messageIndex`; resolves to the new thread id. */
-  forkThread: (messageIndex: number) => Promise<string | null>;
+  forkThread: (messageIndex: number, before?: boolean) => Promise<string | null>;
   setCollaborationMode: (mode: ChatCollaborationMode) => void;
   setChatLayout: (layout: ChatLayout) => Promise<void>;
   selectWorkItemThread: (workItem: WorkItem) => Promise<void>;
@@ -1965,6 +1965,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (activeThreadRef.current?.id === eventThreadId) {
           setEntries((previous) =>
             updateFollowUpEntry(previous, event.followUpRequestId!, {
+              ...(event.followUpStartedAt ? { timestamp: event.followUpStartedAt } : {}),
               delivery: followUpStatusToEntryDelivery(event.followUpStatus!),
               deliveryIntent: event.followUpIntent,
               deliveryError: event.followUpError,
@@ -2524,7 +2525,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           kind: 'user',
           content,
           attachments,
-          id: generateId(),
+          id: result.requestId ?? generateId(),
+          timestamp: result.startedAt ?? (queued ? undefined : timestamp),
+          ...(result.requestId
+            ? { requestId: result.requestId, deliveryIntent: 'queue' as const }
+            : {}),
           ...(queued ? { delivery: 'queued' as const } : {}),
         };
         setEntries((prev) => [...prev, userEntry]);
@@ -2632,6 +2637,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         attachments: requestAttachments,
         id: requestId,
         requestId,
+        timestamp: attempt.result?.startedAt,
         delivery: attempt.result?.status ?? 'uncertain',
         deliveryIntent: request.intent,
         ...(attempt.result?.error ? { deliveryError: attempt.result.error } : {}),
@@ -2723,6 +2729,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (activeThreadRef.current?.id === threadId) {
           setEntries((previous) =>
             updateFollowUpEntry(previous, requestId, {
+              ...(result.startedAt ? { timestamp: result.startedAt } : {}),
               delivery: queued ? 'queued' : 'delivered',
               deliveryIntent: request.intent,
               deliveryError: undefined,
@@ -3546,7 +3553,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [historyLoadingEarlier]);
 
   const forkThread = useCallback(
-    async (messageIndex: number) => {
+    async (messageIndex: number, before = false) => {
       navigationRequests.current.invalidate();
       if (scaffoldModeActive || !activePersona || chatLayout === 'workitems') return null;
 
@@ -3576,8 +3583,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               'id' in entry &&
               entry.id === selected.id),
         );
-        if (forkIndex < 0) return null;
+        if (forkIndex < 0) {
+          if (before) throw new Error('The original message could not be found in history.');
+          return null;
+        }
       }
+      if (before) forkIndex -= 1;
       // The provider's thread holds everything said so far. Only reuse it when
       // the fork point is the end of the conversation; an earlier fork point
       // starts a fresh provider thread seeded from the copied transcript, so the
@@ -3604,7 +3615,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           ancestorEntries[ancestorEntries.length - 1]?.content,
         ),
       });
-      if (!forkedThread) return null;
+      if (!forkedThread) {
+        if (before) throw new Error('Could not create the edited conversation branch.');
+        return null;
+      }
       const sourceThreadId = activeThreadRef.current?.id;
 
       const primaryRepo = activeRepoState ?? activeReposState[0] ?? null;
@@ -3815,7 +3829,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (!isNavigationCurrent()) return;
         rememberLiveSession(createdThread.id, nextSession);
         setSession(nextSession);
-        setEntries([{ kind: 'user', content: opts.message, id: userEntryId }]);
+        setEntries([{ kind: 'user', content: opts.message, id: userEntryId, timestamp }]);
         setBusy(true);
         setLiveThreadStatus(createdThread.id, 'busy');
         bumpThreadSummary(createdThread.id, opts.message, timestamp);
@@ -3826,6 +3840,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           permissionProfile: preparedAccess.permissionProfile,
           model,
           reasoningEffort: opts.reasoningLevel ?? reasoningLevel,
+          checkpointKey: userEntryId,
         });
         if (!isNavigationCurrent()) return;
         return createdThread.id;
@@ -4368,7 +4383,7 @@ export function chatMessagesToEntries(history: ChatMessage[]): ChatEntry[] {
   const entries: ChatEntry[] = [];
   const followUpDeliveries = new Map<
     string,
-    { status: ChatFollowUpStatus; intent?: ChatFollowUpIntent; error?: string }
+    { status: ChatFollowUpStatus; intent?: ChatFollowUpIntent; error?: string; startedAt?: string }
   >();
 
   const initialDeliveries = new Map<
@@ -4415,10 +4430,13 @@ export function chatMessagesToEntries(history: ChatMessage[]): ChatEntry[] {
       if (event?.type === 'follow_up_delivery' && event.followUpRequestId && event.followUpStatus) {
         followUpDeliveries.set(event.followUpRequestId, {
           status: event.followUpStatus,
+          startedAt:
+            event.followUpStartedAt ?? followUpDeliveries.get(event.followUpRequestId)?.startedAt,
           intent: event.followUpIntent,
           error: event.followUpError,
         });
         const next = updateFollowUpEntry(entries, event.followUpRequestId, {
+          ...(event.followUpStartedAt ? { timestamp: event.followUpStartedAt } : {}),
           delivery: event.followUpStatus,
           deliveryIntent: event.followUpIntent,
           deliveryError: event.followUpError,
@@ -4525,6 +4543,7 @@ export function chatMessagesToEntries(history: ChatMessage[]): ChatEntry[] {
     return {
       ...entry,
       requestId: entry.id,
+      ...(delivery.startedAt ? { timestamp: delivery.startedAt } : {}),
       delivery: followUpStatusToEntryDelivery(delivery.status),
       deliveryIntent: delivery.intent,
       deliveryError: delivery.error,

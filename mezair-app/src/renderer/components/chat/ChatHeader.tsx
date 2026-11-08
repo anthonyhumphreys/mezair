@@ -63,7 +63,11 @@ export function ChatHeader({
   panelsGroupRef?: Ref<HTMLDivElement>;
 }) {
   type PanelSelection = ChatPanelId | 'none';
-  const panelValue: PanelSelection = activePanel ?? 'none';
+  const panelValue: PanelSelection =
+    (activePanel === 'review' && !reviewAvailable) ||
+    (activePanel === 'preview' && !previewAvailable)
+      ? 'none'
+      : (activePanel ?? 'none');
 
   return (
     <div className="relative z-40 flex min-h-14 items-center gap-2 border-b border-border/60 bg-bg-secondary px-3 py-2 lg:px-4">
@@ -236,6 +240,8 @@ function ChatShortcutHelp() {
     };
     const closeOnKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
       setOpen(false);
       triggerRef.current?.focus();
     };

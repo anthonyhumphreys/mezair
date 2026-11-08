@@ -135,8 +135,8 @@ function ChatThreadRailImpl({
     const unread =
       !active &&
       !compact &&
-      Boolean(lastActivity && thread.lastViewedAt) &&
-      Date.parse(lastActivity) > Date.parse(thread.lastViewedAt!);
+      Boolean(thread.lastMessageAt && thread.lastViewedAt) &&
+      Date.parse(thread.lastMessageAt!) > Date.parse(thread.lastViewedAt!);
     const working = displayState === 'working';
     const timeLabel = working
       ? formatShortAgo(thread.activeTurnStartedAt, now)

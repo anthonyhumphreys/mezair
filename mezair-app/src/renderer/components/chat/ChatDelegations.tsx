@@ -1,3 +1,4 @@
+import { useDelegationState } from './DelegationViewState';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, GitFork, Loader2, Square } from 'lucide-react';
 import type {
@@ -46,15 +47,19 @@ export function useThreadDelegations(threadId: string | null) {
   const key = `chat-delegations:${threadId ?? ''}`;
   const subscription = useRef(0);
   useEffect(() => {
-    if (!threadId) return;
+    if (!threadId) {
+      subscription.current++;
+      setSnapshot({ threadId: '', runs: [], error: false });
+      return;
+    }
     const generation = ++subscription.current;
     const unsubscribe = sharedPollingCache.subscribe(
       key,
       () => window.mezair.chat.listDelegations(threadId),
       (value) => {
         if (subscription.current !== generation) return;
-        setSnapshot((previous) => {
-          const runs = value.value ?? (previous.threadId === threadId ? previous.runs : []);
+        setSnapshot(() => {
+          const runs = value.value ?? EMPTY_RUNS;
           return {
             threadId,
             runs,
@@ -91,14 +96,16 @@ export function placeDelegationsInTurns(
 ): { byTurn: Map<string, ChatDelegationRun[]>; unplaced: ChatDelegationRun[] } {
   const byTurn = new Map<string, ChatDelegationRun[]>();
   const unplaced: ChatDelegationRun[] = [];
-  const starts = turns
-    .map((turn) => ({ key: turn.key, at: turn.startedAt ? Date.parse(turn.startedAt) : NaN }))
-    .filter((turn) => !Number.isNaN(turn.at));
+  const starts = turns.map((turn) => ({
+    key: turn.key,
+    at: turn.startedAt ? Date.parse(turn.startedAt) : NaN,
+  }));
   for (const run of runs) {
     const created = Date.parse(run.createdAt);
     let owner: string | null = null;
     for (const turn of starts) {
-      if (turn.at <= created) owner = turn.key;
+      if (Number.isNaN(turn.at)) owner = null;
+      else if (turn.at <= created) owner = turn.key;
       else break;
     }
     if (!owner || Number.isNaN(created)) {
@@ -185,7 +192,7 @@ function DelegationRun({
   onRefresh: () => Promise<void>;
 }) {
   const [detail, setDetail] = useState<ChatDelegationRun | null>(null);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useDelegationState(`${threadId}:${run.id}`, 'open', false);
   const [loading, setLoading] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [acting, setActing] = useState(false);
@@ -448,9 +455,21 @@ function DelegationIntegrationPanel({
     () => mounted.current && identityRef.current === identity,
     [identity],
   );
-  const [plan, setPlan] = useState<ChatDelegationIntegrationPlan | null>(null);
-  const [selections, setSelections] = useState<ChatDelegationVerificationSelection[]>([]);
-  const [customCommands, setCustomCommands] = useState<Record<string, string>>({});
+  const [plan, setPlan] = useDelegationState<ChatDelegationIntegrationPlan | null>(
+    identity,
+    'plan',
+    null,
+  );
+  const [selections, setSelections] = useDelegationState<ChatDelegationVerificationSelection[]>(
+    identity,
+    'selections',
+    [],
+  );
+  const [customCommands, setCustomCommands] = useDelegationState<Record<string, string>>(
+    identity,
+    'commands',
+    {},
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const integrated = integration?.combined ?? run.integrationState === 'integrated';

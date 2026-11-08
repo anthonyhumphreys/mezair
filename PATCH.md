@@ -989,3 +989,34 @@ Verify the Desktop usage-statistics, telemetry, metrics and schema suites, both
 TypeScript projects, lint and build. Verify website `test:analytics`, share URL
 tests, typecheck and build, plus browser requests before consent, after consent,
 after withdrawal and on excluded routes.
+
+
+### C17: Reviewed local chat checkpoints and hunk actions
+
+Status: active
+Owner project: `mezair-app`
+
+Pre-turn checkpoints are best effort and never run a provider or mutate the
+user's index, branches or stash. Normal, prepared and queued turns use their
+stable user-message/request identity; queued captures happen at delivery, after
+the previous turn. Use main-process delivery time when associating delegated
+work with queued turns, including after history hydration.
+
+Rewind validates every target and requires a durable undo checkpoint for every
+repository before overwriting files. Snapshot initialized submodule working
+files recursively, pin their commits in their own Git stores, preserve child
+HEAD/index, and remove retained child refs with the parent. Refuse an unavailable
+or changed submodule layout and legacy snapshots without child evidence rather
+than reporting a false match. Bound nesting and repository count. Capture failures
+must not leave orphaned refs. This is local file recovery, not an agent permission
+grant or a Git branch reset. Fence concurrent rewinds and managed turns by
+canonical checkout paths, including aliases and nested repositories. Recheck
+active turns before mutation; releasing the lease is mandatory on failure.
+
+Review actions use the repository/status/diff snapshot actually displayed.
+Repository switches immediately invalidate actionable files; stale hunk
+fingerprints fail closed. Generate apply-compatible literal-path diffs regardless
+of user prefix settings, and unstage both sides of a rename. Keep a failed edited
+request and its attachments recoverable; resolve a branch point against complete
+history before excluding the edited message. Delegation draft controls belong to
+the transcript's thread/run identity and survive turn-list remounts.

@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>PR 105 review fixes</title>
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+        line-height: 1.6;
+        color-scheme: light dark;
+        background: #f7f8fa;
+        color: #18212f;
+      }
+      body {
+        max-width: 100ch;
+        margin: 3rem auto;
+        padding: 0 1.25rem 3rem;
+      }
+      h1,
+      h2 {
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        margin-top: 2.5rem;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        padding: 0.7rem;
+        border-bottom: 1px solid #b8c1ce;
+      }
+      th {
+        min-width: 13ch;
+      }
+      a {
+        color: #2459ad;
+      }
+      pre {
+        overflow: auto;
+        padding: 1rem;
+        background: #e9edf2;
+      }
+      code {
+        font-size: 0.9em;
+      }
+      .table {
+        overflow: auto;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          background: #101722;
+          color: #e5eaf2;
+        }
+        pre {
+          background: #1b2636;
+        }
+        a {
+          color: #9fc1ff;
+        }
+        th,
+        td {
+          border-color: #435169;
+        }
+      }
+      :focus-visible {
+        outline: 2px solid #5388d9;
+        outline-offset: 3px;
+      }
+      ::selection {
+        background: #305da8;
+        color: white;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>PR #105: review fixes</h1>
+    <p>
+      8 November 2026 ·
+      <a href="https://github.com/anthonyhumphreys/mezair/pull/105">Chat experience PR</a>
+    </p>
+    <p>
+      The changes address all twenty inline review findings, two test-only suggestions, and the
+      independent rewind safety finding. The PR is intentionally left open for the owner to merge.
+    </p>
+    <h2>File recovery and Git safety</h2>
+    <ul>
+      <li>
+        Rewind requires a durable undo snapshot for every affected repository before changing files.
+        Failed snapshot persistence stops the operation and removes its unrecorded refs.
+      </li>
+      <li>
+        Concurrent rewinds and new managed turns are fenced by canonical checkout path, including
+        aliases and nested repositories. Active turns are rechecked before mutation.
+      </li>
+      <li>
+        If a file operation fails after rewind begins, the UI retains a usable Undo action and
+        reports the incomplete operation.
+      </li>
+      <li>
+        Submodule working files have their own pinned snapshots. Rewind preserves the parent and
+        child index, branches and HEAD. Initialization and topology must match; unsupported legacy
+        snapshots fail explicitly. Nesting and snapshot count are bounded.
+      </li>
+      <li>
+        Review actions use the displayed repository snapshot. Stale hunk fingerprints fail closed,
+        mutation errors remain visible, and unstaging a rename includes both paths.
+      </li>
+    </ul>
+    <h2>Review coverage</h2>
+    <div class="table">
+      <table>
+        <thead>
+          <tr>
+            <th>Finding</th>
+            <th>Change</th>
+            <th>Evidence</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>1. Delegation refresh state</th>
+            <td>Clear stopped subscriptions and respect empty/expired cache snapshots.</td>
+            <td>
+              Source review; bounded shared polling cache<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826869"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>2. Queued delegation placement</th>
+            <td>
+              Use the main-process delivery start time in live entries and hydrated history; keep
+              unknown boundaries unplaced.
+            </td>
+            <td>
+              Turn placement and history timing regressions<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826873"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>3. Delegation draft retention</th>
+            <td>
+              Own expanded state, verification selections and command drafts by thread/run outside
+              individual lists.
+            </td>
+            <td>
+              Headless rendered test and Safari<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826875"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>4. Repository-switch safety</th>
+            <td>
+              Scope status and diffs to the selected repository; invalidate actions until matching
+              status is available.
+            </td>
+            <td>
+              Headless rendered test and Safari<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826879"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>5. Unread status</th>
+            <td>
+              Compare lastMessageAt to the last viewed time; renames no longer create unread dots.
+            </td>
+            <td>
+              Source review<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826885"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>6. Context overrun</th>
+            <td>Report the actual percentage while capping the visual bar at 100%.</td>
+            <td>
+              Rendered markup regression<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826895"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>7. Compact processing label</th>
+            <td>Apply the secondary text token directly in compact cards.</td>
+            <td>
+              Source review<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826898"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>8. Context-only usage</th>
+            <td>Fall back to the complete usage label when no token/model summary exists.</td>
+            <td>
+              Usage-format regression<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826903"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>9. Local-reply checkpoints</th>
+            <td>Capture the pre-turn snapshot before the local-model fast path can return.</td>
+            <td>
+              IPC ordering review<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503829970"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>10. Submodule recovery</th>
+            <td>
+              Snapshot initialized submodule working files recursively, retain child refs and
+              preserve child HEAD/index.
+            </td>
+            <td>
+              Real-Git capture, restore and unchanged-index tests<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503829979"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>11. Git prefix compatibility</th>
+            <td>
+              Generate literal-path, apply-compatible patches with explicit a/ and b/ prefixes.
+            </td>
+            <td>
+              Real-Git diff.noprefix regression<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503829985"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>12. Panel keyboard access</th>
+            <td>Select the enabled None option when the active panel is unavailable.</td>
+            <td>
+              Source review<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503829989"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>13. Escape handling</th>
+            <td>Consume Escape before closing shortcut help so it cannot stop the running turn.</td>
+            <td>
+              Event handling review<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503829996"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>14. Failed edited sends</th>
+            <td>
+              Await send acceptance; preserve text on failure and use thread-wide busy gating.
+            </td>
+            <td>
+              Headless rendered test and Safari<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503830003"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>15. Persistent hunk errors</th>
+            <td>Keep mutation errors separate from transient status refresh errors.</td>
+            <td>
+              Headless rendered test and Safari<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503830010"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>16. Rename unstaging</th>
+            <td>Reset both source and destination paths for a staged rename.</td>
+            <td>
+              Real-Git rename regression<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503830014"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>17. Delegation refresh errors</th>
+            <td>Show refresh failure and retry controls even when runs are placed inside turns.</td>
+            <td>
+              Source review<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503830021"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>18. Paginated edit history</th>
+            <td>
+              Resolve the edited message against complete history before excluding it from the fork.
+            </td>
+            <td>
+              Fork/history source review and typechecks<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503830024"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>19. Attachment preservation</th>
+            <td>
+              Carry original attachments through edit/resend, retry, the action queue, provider send
+              and composer recovery.
+            </td>
+            <td>
+              Transport source review and regression suite<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503830029"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>20. Prepared and queued snapshots</th>
+            <td>
+              Use stable user/request IDs for prepared launches and capture queued turns at actual
+              delivery, including legacy ACP steering.
+            </td>
+            <td>
+              Prepared-send review and ACP parity tests<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503830035"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      The two additional test suggestions are also covered: checkpoint tests use different staged
+      and unstaged contents and compare index trees before and after both capture and restore; a
+      real-Git test unstages one hunk while preserving the other staged hunk and all working-tree
+      bytes.
+    </p>
+    <h2>Performance CI repair</h2>
+    <p>
+      The renderer check depended on the old text “Jump to live work”. The control now has a stable
+      accessible label, and the fixture locates that semantic control. The existing assertions for
+      reader position, expanded history and jumping to the bottom remain in place. Performance
+      budgets were not relaxed.
+    </p>
+    <h2>Validation</h2>
+    <p>
+      Full suite: 3,677 tests passed, with 12 existing skips. Both Desktop TypeScript checks and
+      lint passed. Production main/preload/renderer and headless daemon builds passed. The synthetic
+      browser suite passed nine assertions at each of 1280px and 720px (18 assertions total). The
+      local performance harness passed its transcript, dashboard and advanced interaction checks;
+      paired CI remains the authoritative budget comparison. The original Electron native binaries
+      were restored after Node-based testing.
+    </p>
+    <p>
+      A synthetic rendered test exercises stale-file errors, delayed repository switching, retained
+      delegation commands, and rejected resends at wide and narrow widths. This runs in a fresh
+      browser profile without account, provider or repository access and is included in Desktop CI.
+    </p>
+    <p>
+      Safari checks also exercised stale errors, repository-switch invalidation, failed resend text
+      retention, and delegation command retention. These are synthetic state checks, not a
+      live-provider endurance test.
+    </p>
+    <p>
+      Remote results are available on the
+      <a href="https://github.com/anthonyhumphreys/mezair/pull/105/checks">PR checks page</a>; the
+      final handoff records their verified state. No merge or release is performed by this change.
+    </p>
+    <h2>Reproduce the rendered checks</h2>
+    <pre><code># From mezair-app/
+pnpm exec vite build --config scripts/chat-review.vite.config.ts
+node scripts/chat-review-checks.mjs
+
+# Optional visual fixture:
+pnpm exec vite --config scripts/chat-replay.vite.config.ts --port 4189
+# Open http://127.0.0.1:4189/?review</code></pre>
+    <h2>Scope and limits</h2>
+    <p>
+      Checkpoints cover local normal chats, prepared tasks and delivered queued turns. Temporary
+      chats and read-only side questions remain excluded. Repository leases coordinate
+      Mezair-managed operations; they are not operating-system filesystem locks. Submodules must be
+      initialized and retain their recorded layout. No new provider permissions are granted.
+    </p>
+  </body>
+</html>

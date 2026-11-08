@@ -1,6 +1,7 @@
 // Runs only synthetic component state; no user browser profile or repository is opened.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -98,5 +99,6 @@ try {
     browser.kill('SIGKILL');
     await closed;
   }
-  rmSync(profile, { recursive: true, force: true });
+  // Chrome helpers can finish writing after the browser process exits.
+  await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }

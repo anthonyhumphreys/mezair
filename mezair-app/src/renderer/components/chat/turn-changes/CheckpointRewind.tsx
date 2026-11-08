@@ -64,6 +64,7 @@ export function CheckpointRewindDialog({
   repos,
   onClose,
   onRestored,
+  undo = false,
 }: {
   open: boolean;
   threadId: string;
@@ -71,11 +72,15 @@ export function CheckpointRewindDialog({
   repos: RepoInfo[];
   onClose: () => void;
   onRestored: (result: ChatCheckpointRestoreResult) => void;
+  undo?: boolean;
 }) {
   const [preview, setPreview] = useState<ChatCheckpointPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  useEffect(() => setRestoreError(null), [open, threadId, messageId]);
 
   useEffect(() => {
     if (!open) return;
@@ -98,7 +103,7 @@ export function CheckpointRewindDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, threadId, messageId]);
+  }, [open, threadId, messageId, revision]);
 
   const total = useMemo(
     () => preview?.repos.reduce((sum, repo) => sum + repo.changes.length, 0) ?? 0,
@@ -107,14 +112,21 @@ export function CheckpointRewindDialog({
   const repoName = (repoId: string) => repos.find((repo) => repo.id === repoId)?.name ?? repoId;
 
   const restore = async () => {
+    if (!preview || loading) return;
     setRestoring(true);
-    setError(null);
+    setRestoreError(null);
     try {
-      const result = await window.mezair.chat.restoreCheckpoint(threadId, messageId);
+      const result = await window.mezair.chat.restoreCheckpoint(
+        threadId,
+        messageId,
+        preview.fingerprint,
+      );
       onRestored(result);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not rewind the files.');
+      setRestoreError(err instanceof Error ? err.message : 'Could not rewind the files.');
+      setPreview(null);
+      setRevision((value) => value + 1);
     } finally {
       setRestoring(false);
     }
@@ -124,7 +136,7 @@ export function CheckpointRewindDialog({
     <Dialog
       open={open}
       onClose={restoring ? () => undefined : onClose}
-      title="Rewind files to before this message?"
+      title={undo ? 'Undo this file rewind?' : 'Rewind files to before this message?'}
       description="Files go back to how they were when you sent this message. Your Git index, branches and commits are not changed, and the current files are saved first so you can undo the rewind."
       size="md"
       footer={
@@ -138,7 +150,11 @@ export function CheckpointRewindDialog({
             disabled={loading || restoring || total === 0 || Boolean(error && !preview)}
           >
             {restoring && <Loader2 size={13} className="animate-spin motion-reduce:animate-none" />}
-            {total === 0 ? 'Nothing to rewind' : `Rewind ${total} file${total === 1 ? '' : 's'}`}
+            {total === 0
+              ? 'Nothing to rewind'
+              : undo
+                ? `Undo rewind of ${total} file${total === 1 ? '' : 's'}`
+                : `Rewind ${total} file${total === 1 ? '' : 's'}`}
           </Button>
         </>
       }
@@ -180,9 +196,9 @@ export function CheckpointRewindDialog({
               </ul>
             </section>
           ))}
-        {error && (
+        {(restoreError || error) && (
           <p role="alert" className="mt-2 text-xs text-error">
-            {error}
+            {restoreError || error}
           </p>
         )}
       </div>

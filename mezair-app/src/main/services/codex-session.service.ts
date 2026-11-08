@@ -6,7 +6,7 @@ import { ClaudeAgentProcess } from './claude-agent-process.js';
 import { resolveClaudeModel } from '../../shared/claude-models.js';
 
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import {
@@ -143,6 +143,7 @@ interface ManagedSession {
   repoId?: string;
   /** Every repo in the session's scope; the MCP endpoint enforces tool repo arguments against it. */
   repoIds: string[];
+  repoPaths: string[];
   workspaceId?: string;
   appThreadId?: string;
   kind: 'repo' | 'workspace' | 'scaffold';
@@ -554,6 +555,13 @@ export async function startSession(
     id,
     repoId: repoIds[0],
     repoIds: [...repoIds],
+    repoPaths: repoPaths.map((value) => {
+      try {
+        return realpathSync(value);
+      } catch {
+        return path.resolve(value);
+      }
+    }),
     workspaceId: options?.scaffold?.workspaceId ?? options?.workspace?.workspaceId,
     appThreadId: options?.threadId,
     kind: options?.scaffold ? 'scaffold' : repoIds.length > 0 ? 'repo' : 'workspace',
@@ -883,7 +891,7 @@ export async function sendMessage(
   }
   if (hasCheckpointRestore()) {
     const { assertNoCheckpointRestore } = await import('./chat-checkpoint.service.js');
-    assertNoCheckpointRestore(session.repoIds);
+    assertNoCheckpointRestore(session.repoIds, session.repoPaths);
   }
   session.status = 'busy';
   setSessionThreadAttention(session, 'working');
@@ -1747,6 +1755,11 @@ export function listActiveCodexSessions(): CodexSession[] {
 export function getCodexSession(sessionId: string): CodexSession | null {
   const session = sessions.get(sessionId);
   return session ? sessionToPublic(session) : null;
+}
+
+/** Actual checkout paths, including retained repair worktrees. */
+export function getCodexSessionExecutionPaths(sessionId: string): string[] {
+  return [...(sessions.get(sessionId)?.repoPaths ?? [])];
 }
 
 /** Active provider model for durable handoff pinning; absent after the session exits. */

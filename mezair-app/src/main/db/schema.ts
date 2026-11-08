@@ -1,4 +1,14 @@
-export const SCHEMA_VERSION = 120;
+export const SCHEMA_VERSION = 121;
+
+export const CHECKPOINT_CLEANUP_TRIGGER_SQL = `
+CREATE TRIGGER IF NOT EXISTS queue_chat_checkpoint_cleanup BEFORE DELETE ON chat_checkpoints
+BEGIN
+  INSERT OR IGNORE INTO chat_checkpoint_cleanup (id, repo_path, commit_sha, ref_name)
+  SELECT OLD.id, COALESCE(OLD.repo_path, repos.path), OLD.commit_sha, OLD.ref_name
+  FROM (SELECT 1) LEFT JOIN repos ON repos.id = OLD.repo_id
+  WHERE COALESCE(OLD.repo_path, repos.path) IS NOT NULL;
+END;
+`;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS factory_definitions (
@@ -243,11 +253,20 @@ CREATE TABLE IF NOT EXISTS chat_checkpoints (
   repo_id TEXT NOT NULL,
   commit_sha TEXT NOT NULL,
   ref_name TEXT NOT NULL,
+  repo_path TEXT,
   kind TEXT NOT NULL DEFAULT 'turn' CHECK (kind IN ('turn', 'restore')),
   created_at TEXT NOT NULL,
   UNIQUE(thread_id, message_id, repo_id)
 );
 CREATE INDEX IF NOT EXISTS idx_chat_checkpoints_thread ON chat_checkpoints(thread_id, created_at);
+
+CREATE TABLE IF NOT EXISTS chat_checkpoint_cleanup (
+  id TEXT PRIMARY KEY,
+  repo_path TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  ref_name TEXT NOT NULL
+);
+${CHECKPOINT_CLEANUP_TRIGGER_SQL}
 
 CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_timestamp
   ON chat_messages(thread_id, timestamp ASC);
@@ -4214,6 +4233,16 @@ CREATE TABLE IF NOT EXISTS chat_checkpoints (
   UNIQUE(thread_id, message_id, repo_id)
 );
 CREATE INDEX IF NOT EXISTS idx_chat_checkpoints_thread ON chat_checkpoints(thread_id, created_at);
+`,
+  121: `
+ALTER TABLE chat_checkpoints ADD COLUMN repo_path TEXT;
+CREATE TABLE IF NOT EXISTS chat_checkpoint_cleanup (
+  id TEXT PRIMARY KEY,
+  repo_path TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  ref_name TEXT NOT NULL
+);
+
 `,
 };
 

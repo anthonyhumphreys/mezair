@@ -1012,11 +1012,23 @@ must not leave orphaned refs. This is local file recovery, not an agent permissi
 grant or a Git branch reset. Fence concurrent rewinds and managed turns by
 canonical checkout paths, including aliases and nested repositories. Recheck
 active turns before mutation; releasing the lease is mandatory on failure.
+Bind confirmation to the complete current tree, including submodules, and check
+it again after saving undo. A changed preview requires a fresh confirmation for
+rewind, undo and edit/resend. Persist the exact validated execution checkout;
+repair recovery must never fall back to the ordinary checkout. Validate current
+thread/repository/workspace membership before preview and restore. Keep Undo
+scoped to its source workspace. Before cascaded deletion loses checkpoint rows,
+retain local cleanup metadata transactionally and retry unavailable Git-ref
+cleanup in the background, including after restart. Never delete a newer ref
+that reused a checkpoint name.
 
 Review actions use the repository/status/diff snapshot actually displayed.
 Repository switches immediately invalidate actionable files; stale hunk
 fingerprints fail closed. Generate apply-compatible literal-path diffs regardless
-of user prefix settings, and unstage both sides of a rename. Keep a failed edited
+of user prefix settings, leave executable-bit changes out of content-hunk
+patches, and unstage both sides of a rename. Whole-file discard reverses the
+reviewed patch and refuses changed contents; disable it while the agent is
+working. Keep a failed edited
 request and its attachments recoverable; resolve a branch point against complete
 history before excluding the edited message. Delegation draft controls belong to
 the transcript's thread/run identity and survive turn-list remounts.

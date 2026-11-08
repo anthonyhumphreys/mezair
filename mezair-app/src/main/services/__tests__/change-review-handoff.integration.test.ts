@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -34,6 +34,11 @@ import {
   assertReviewRepairForkAllowed,
 } from '../change-review.service.js';
 import { captureReviewSnapshot } from '../review-snapshot.service.js';
+import {
+  captureTurnCheckpoints,
+  previewCheckpointRestore,
+  restoreCheckpoint,
+} from '../chat-checkpoint.service.js';
 let root: string;
 const git = (path: string, ...args: string[]) =>
   execFileSync('git', args, {
@@ -184,6 +189,26 @@ it('resumes a persisted repair in its exact worktree and rejects generic thread 
   expect(resolveReviewRepairPaths('thread', ['repo'])).toEqual([realpathSync(retained)]);
   expect(() => assertReviewRepairForkAllowed('thread')).toThrow('Repair threads cannot be forked');
   expect(() => assertReviewRepairForkAllowed('unrelated-thread')).not.toThrow();
+  db.exec(
+    "UPDATE chat_threads SET repo_ids_json = '[\"repo\"]' WHERE id = 'thread'; INSERT INTO workspace_repos(workspace_id,repo_id,added_at) VALUES('ws','repo','now');",
+  );
+  writeFileSync(join(context.repo, 'file.txt'), 'ordinary checkout edits');
+  writeFileSync(join(retained, 'file.txt'), 'candidate before turn');
+  await captureTurnCheckpoints('thread', 'repair-turn', ['repo']);
+  writeFileSync(join(retained, 'file.txt'), 'candidate after turn');
+  const preview = await previewCheckpointRestore('thread', 'repair-turn');
+  const restored = await restoreCheckpoint('thread', 'repair-turn', {
+    fingerprint: preview.fingerprint,
+  });
+  expect(readFileSync(join(retained, 'file.txt'), 'utf8')).toBe('candidate before turn');
+  expect(readFileSync(join(context.repo, 'file.txt'), 'utf8')).toBe('ordinary checkout edits');
+  const undo = await previewCheckpointRestore('thread', restored.undoKey);
+  await restoreCheckpoint('thread', restored.undoKey, { fingerprint: undo.fingerprint });
+  expect(readFileSync(join(retained, 'file.txt'), 'utf8')).toBe('candidate after turn');
+  db.exec("UPDATE chat_checkpoints SET repo_path = NULL WHERE message_id = 'repair-turn'");
+  await expect(previewCheckpointRestore('thread', 'repair-turn')).rejects.toThrow(
+    'different checkout',
+  );
   rmSync(retained, { recursive: true, force: true });
   expect(() => resolveReviewRepairPaths('thread', ['repo'])).toThrow();
 });

@@ -23,7 +23,9 @@ const frame = () =>
   new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
   );
+let assertions = 0;
 const check = (value: unknown, message: string) => {
+  assertions++;
   if (!value) throw new Error(message);
 };
 const button = (text: string) =>
@@ -97,6 +99,37 @@ Object.assign(window, {
       ),
       'A failed resend must explain that the edit is retained',
     );
-    return { passed: true, assertions: 9 };
+    button('Preview file rewind').click();
+    await frame();
+    await frame();
+    check(button('Rewind 1 file'), 'Rewind must show the original preview before confirmation');
+    const modal = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const bounds = modal.getBoundingClientRect();
+    check(
+      modal.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) &&
+        bounds.top >= 0 &&
+        bounds.bottom <= innerHeight,
+      'The confirmation must be visible and fit inside the viewport',
+    );
+    button('Rewind 1 file').click();
+    await frame();
+    await frame();
+    check(
+      document.querySelector('[role="dialog"]'),
+      'A stale preview must leave confirmation open',
+    );
+    check(
+      button('Rewind 2 files') && document.body.textContent?.includes('new-unreviewed.txt'),
+      'A stale preview must refresh the exact file list without restoring it',
+    );
+    button('Rewind 2 files').click();
+    await frame();
+    await frame();
+    check(
+      !document.querySelector('[role="dialog"]') &&
+        document.body.textContent?.includes('Confirmed updated rewind'),
+      'Only a fresh confirmation may finish the rewind',
+    );
+    return { passed: true, assertions };
   },
 });

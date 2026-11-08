@@ -7,6 +7,30 @@ import { MAIN_V67_SCHEMA_SQL } from './schema-merge-fixtures';
 vi.mock('electron', () => ({ app: {} }));
 
 describe('legacy database startup', () => {
+  it('upgrades v120 checkpoints without losing cleanup metadata on cascaded deletion', () => {
+    const db = new Database(':memory:');
+    try {
+      db.pragma('foreign_keys = ON');
+      db.exec(SCHEMA_SQL);
+      db.exec(`DROP TRIGGER queue_chat_checkpoint_cleanup;
+        ALTER TABLE chat_checkpoints DROP COLUMN repo_path;
+        DROP TABLE chat_checkpoint_cleanup;
+        INSERT OR REPLACE INTO schema_meta VALUES('schema_version','120');
+        INSERT INTO repos(id,name,path) VALUES('r','Repo','/checkout');
+        INSERT INTO chat_threads(id,persona_id,title) VALUES('t','coder','Thread');
+        INSERT INTO chat_checkpoints(id,thread_id,message_id,repo_id,commit_sha,ref_name,created_at)
+          VALUES('c','t','m','r','sha','refs/mezair/checkpoints/t/m','now');`);
+      runMigrations(db, 'dark');
+      runMigrations(db, 'dark');
+      db.exec("DELETE FROM chat_threads WHERE id = 't'");
+      expect(db.prepare('SELECT repo_path, ref_name FROM chat_checkpoint_cleanup').get()).toEqual({
+        repo_path: '/checkout',
+        ref_name: 'refs/mezair/checkpoints/t/m',
+      });
+    } finally {
+      db.close();
+    }
+  });
   it.each([68, 69, 81])('repairs missing sync tables after migration v%i', (throughVersion) => {
     const version = Math.min(throughVersion, 69);
     const db = new Database(':memory:');

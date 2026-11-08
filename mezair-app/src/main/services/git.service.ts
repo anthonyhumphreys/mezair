@@ -435,6 +435,75 @@ export async function removeWorktree(repoPath: string, worktreePath: string): Pr
   }
 }
 
+async function reviewedFilePatch(
+  repoPath: string,
+  filePath: string,
+  staged: boolean,
+): Promise<string> {
+  assertRepoRelativePath(repoPath, filePath);
+  const git = gitClient(repoPath);
+  const tracked = await git
+    .raw(['--literal-pathspecs', 'ls-files', '--error-unmatch', '--', filePath])
+    .then(
+      () => true,
+      () => false,
+    );
+  const args = [
+    '--literal-pathspecs',
+    'diff',
+    '--no-ext-diff',
+    '--no-textconv',
+    '--binary',
+    '--src-prefix=a/',
+    '--dst-prefix=b/',
+    ...(!tracked && !staged ? ['--no-index'] : []),
+    ...(staged ? ['--cached'] : []),
+    '--',
+    ...(!tracked && !staged ? ['/dev/null'] : []),
+    filePath,
+  ];
+  try {
+    return (
+      await execFileAsync('git', args, {
+        cwd: repoPath,
+        encoding: 'utf8',
+        maxBuffer: 32 * 1024 * 1024,
+      })
+    ).stdout;
+  } catch (error) {
+    // A no-index diff uses exit 1 to report a difference.
+    const result = error as { code?: number; stdout?: string };
+    if (!tracked && !staged && result.code === 1 && typeof result.stdout === 'string')
+      return result.stdout;
+    throw error;
+  }
+}
+
+/** Reverse exactly the reviewed patch. Git rejects overlapping concurrent edits. */
+export async function discardReviewedFile(
+  repoPath: string,
+  filePath: string,
+  fingerprint: string,
+): Promise<void> {
+  const patch = await reviewedFilePatch(repoPath, filePath, false);
+  if (!patch || crypto.createHash('sha256').update(patch).digest('hex') !== fingerprint)
+    throw new Error(
+      'This file changed since it was shown. Refresh and review it before discarding.',
+    );
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mezair-discard-'));
+  try {
+    const patchPath = path.join(dir, 'reviewed.patch');
+    fs.writeFileSync(patchPath, patch);
+    await execFileAsync(
+      'git',
+      ['apply', '--reverse', '--binary', '--whitespace=nowarn', patchPath],
+      { cwd: repoPath, timeout: 30000 },
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 export async function getFileDiff(
   repoPath: string,
   filePath: string,
@@ -442,18 +511,7 @@ export async function getFileDiff(
 ): Promise<GitDiffResult> {
   const git = gitClient(repoPath);
 
-  const args = [
-    '--literal-pathspecs',
-    'diff',
-    '--no-ext-diff',
-    '--no-textconv',
-    '--src-prefix=a/',
-    '--dst-prefix=b/',
-    ...(staged ? ['--cached'] : []),
-    '--',
-    filePath,
-  ];
-  const hunks = await git.raw(args);
+  const hunks = await reviewedFilePatch(repoPath, filePath, staged);
 
   // Get old/new content for the diff viewer
   let oldContent = '';
@@ -472,7 +530,13 @@ export async function getFileDiff(
     // New/deleted files won't have both versions
   }
 
-  return { filePath, oldContent, newContent, hunks };
+  return {
+    filePath,
+    oldContent,
+    newContent,
+    hunks,
+    reviewFingerprint: crypto.createHash('sha256').update(hunks).digest('hex'),
+  };
 }
 
 /** Rejects absolute paths and paths that escape the repository root. */

@@ -10,6 +10,7 @@ const EMPTY_FILES: GitFileChange[] = [];
 
 interface LoadedDiff {
   key: string;
+  reviewFingerprint?: string;
   fileHeader: string;
   hunks: GitDiffHunk[];
   binary: boolean;
@@ -115,7 +116,7 @@ export function ChatReviewPanel({
   useEffect(() => {
     setConfirmDiscard(null);
     const request = ++diffRequest.current;
-    if (!ready || !effectiveRepoId || !selectedFile || untracked) {
+    if (!ready || !effectiveRepoId || !selectedFile) {
       setDiff(null);
       return;
     }
@@ -126,6 +127,7 @@ export function ChatReviewPanel({
         const parsed = parseFileDiff(result.hunks);
         setDiff({
           key: diffKey,
+          reviewFingerprint: result.reviewFingerprint,
           fileHeader: parsed.fileHeader,
           hunks: parsed.hunks,
           binary: parsed.binary,
@@ -179,7 +181,14 @@ export function ChatReviewPanel({
           : [selectedFile.path];
       if (action === 'stage') await window.mezair.git.stage(effectiveRepoId, paths);
       else if (action === 'unstage') await window.mezair.git.unstage(effectiveRepoId, paths);
-      else await window.mezair.git.discard(effectiveRepoId, paths);
+      else {
+        if (busy || !diff?.reviewFingerprint) return;
+        await window.mezair.git.discardReviewed(
+          effectiveRepoId,
+          selectedFile.path,
+          diff.reviewFingerprint,
+        );
+      }
       if (contextRef.current !== startedContext) return;
       setConfirmDiscard(null);
       refresh();
@@ -315,7 +324,7 @@ export function ChatReviewPanel({
                   {confirmDiscard === 'file' ? (
                     <ReviewButton
                       tone="danger"
-                      disabled={busyAction || !ready}
+                      disabled={busyAction || !ready || busy || !diff?.reviewFingerprint}
                       onClick={() => void applyFile('discard')}
                       icon={<Trash2 size={12} aria-hidden="true" />}
                     >
@@ -323,7 +332,7 @@ export function ChatReviewPanel({
                     </ReviewButton>
                   ) : (
                     <ReviewButton
-                      disabled={busyAction || !ready}
+                      disabled={busyAction || !ready || busy || !diff?.reviewFingerprint}
                       onClick={() => setConfirmDiscard('file')}
                       icon={<Trash2 size={12} aria-hidden="true" />}
                     >

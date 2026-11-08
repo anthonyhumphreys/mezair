@@ -3,12 +3,42 @@ import type { RepoInfo } from '../../../../shared/types';
 import { ChatReviewPanel } from '../ChatReviewPanel';
 import { UserMessage } from '../ChatMessage';
 import { DelegationViewState, useDelegationState } from '../DelegationViewState';
+import { CheckpointRewindDialog } from '../turn-changes/CheckpointRewind';
 
 const repos = [
   { id: 'a', name: 'Repository A' },
   { id: 'b', name: 'Repository B' },
 ] as RepoInfo[];
 export function installReviewPreview() {
+  let previewRevision = 0;
+  window.mezair.chat = {
+    ...window.mezair.chat,
+    previewCheckpoint: async () => ({
+      messageId: 'message',
+      fingerprint: `preview-${previewRevision}`,
+      repos: [
+        {
+          repoId: 'a',
+          createdAt: 'now',
+          changes: [
+            { path: 'reviewed.txt', effect: 'restore' },
+            ...(previewRevision ? [{ path: 'new-unreviewed.txt', effect: 'remove' } as const] : []),
+          ],
+        },
+      ],
+    }),
+    restoreCheckpoint: async (_threadId, _messageId, fingerprint) => {
+      if (fingerprint !== `preview-${previewRevision}`)
+        throw new Error('The confirmed preview token was not used.');
+      if (!previewRevision) {
+        previewRevision++;
+        throw new Error(
+          'Files changed since the preview. Review the updated file list and confirm again.',
+        );
+      }
+      return { filesChanged: 2, undoKey: 'synthetic-undo' };
+    },
+  };
   const git = window.mezair.git;
   git.status = async (repoId) => {
     if (repoId === 'b') await new Promise((resolve) => setTimeout(resolve, 4000));
@@ -25,6 +55,7 @@ export function installReviewPreview() {
     filePath: 'same-name.txt',
     oldContent: 'old',
     newContent: 'new',
+    reviewFingerprint: 'synthetic-reviewed-file',
     hunks:
       'diff --git a/same-name.txt b/same-name.txt\n--- a/same-name.txt\n+++ b/same-name.txt\n@@ -1 +1 @@\n-old\n+new\n',
   });
@@ -34,6 +65,31 @@ export function installReviewPreview() {
   git.stage = async () => undefined;
   git.unstage = async () => undefined;
   git.discard = async () => undefined;
+  git.discardReviewed = async () => {
+    throw new Error('The file changed since review. Refresh and try again.');
+  };
+}
+function RewindProbe() {
+  const [open, setOpen] = useState(false);
+  const [restored, setRestored] = useState(false);
+  return (
+    <>
+      <button className="rounded border border-border p-2" onClick={() => setOpen(true)}>
+        Preview file rewind
+      </button>
+      {restored && <p role="status">Confirmed updated rewind</p>}
+      {open && (
+        <CheckpointRewindDialog
+          open
+          threadId="synthetic-thread"
+          messageId="message"
+          repos={repos}
+          onClose={() => setOpen(false)}
+          onRestored={() => setRestored(true)}
+        />
+      )}
+    </>
+  );
 }
 function DraftProbe() {
   const [text, setText] = useDelegationState('thread:run', 'commands', 'pnpm test');
@@ -65,6 +121,7 @@ export function ReviewPreview() {
             content="Edit this message; a failed resend must retain your changes."
             onEditResend={async () => false}
           />
+          <RewindProbe />
           <DelegationViewState>
             <button className="rounded border border-border p-2" onClick={() => setMoved(!moved)}>
               Move delegated run

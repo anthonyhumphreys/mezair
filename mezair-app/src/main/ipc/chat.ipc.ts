@@ -63,6 +63,7 @@ import {
   emitLocalAssistantTurnEnd,
   getSessionStatus,
   getCodexSession,
+  getCodexSessionExecutionPaths,
   isTemporaryChatSession,
   stopAllSessions,
   getSessionForRepo,
@@ -77,7 +78,7 @@ import {
 } from '../services/codex-session.service.js';
 import {
   captureTurnCheckpoints,
-  checkpointRepositoriesOverlap,
+  checkpointPathsOverlap,
   deleteThreadCheckpoints,
   listThreadCheckpoints,
   previewCheckpointRestore,
@@ -534,27 +535,28 @@ export function registerChatHandlers(): void {
       throw new Error('A thread and message are required.');
     return previewCheckpointRestore(threadId, messageId);
   });
-  ipcMain.handle('chat:restore-checkpoint', (_event, threadId: string, messageId: string) => {
-    if (typeof threadId !== 'string' || !threadId || typeof messageId !== 'string' || !messageId)
-      throw new Error('A thread and message are required.');
-    const thread = getChatThread(threadId);
-    if (!thread) throw new Error('Thread not found.');
-    const assertCanRestore = () => {
-      const active = listActiveCodexSessions().some(
-        (session) =>
-          session.status === 'busy' &&
-          (session.appThreadId === threadId ||
-            (session.appThreadId &&
-              checkpointRepositoriesOverlap(
-                thread.repoIds,
-                getChatThread(session.appThreadId)?.repoIds ?? [],
-              ))),
-      );
-      if (active)
-        throw new Error('Stop running turns in these repositories before rewinding files.');
-    };
-    return restoreCheckpoint(threadId, messageId, { assertCanRestore });
-  });
+  ipcMain.handle(
+    'chat:restore-checkpoint',
+    (_event, threadId: string, messageId: string, fingerprint: string) => {
+      if (typeof threadId !== 'string' || !threadId || typeof messageId !== 'string' || !messageId)
+        throw new Error('A thread and message are required.');
+      if (typeof fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(fingerprint))
+        throw new Error('Review the current checkpoint preview before rewinding files.');
+      const thread = getChatThread(threadId);
+      if (!thread) throw new Error('Thread not found.');
+      const assertCanRestore = (paths: string[]) => {
+        const active = listActiveCodexSessions().some(
+          (session) =>
+            session.status === 'busy' &&
+            (session.appThreadId === threadId ||
+              checkpointPathsOverlap(paths, getCodexSessionExecutionPaths(session.id))),
+        );
+        if (active)
+          throw new Error('Stop running turns in these repositories before rewinding files.');
+      };
+      return restoreCheckpoint(threadId, messageId, { assertCanRestore, fingerprint });
+    },
+  );
 
   ipcMain.handle('chat:invalidate-thread-access', (_event, threadId: string) => {
     if (typeof threadId !== 'string' || !threadId) throw new Error('A thread is required.');

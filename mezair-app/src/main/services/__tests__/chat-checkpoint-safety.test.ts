@@ -12,6 +12,8 @@ import {
   captureTurnCheckpoints,
   restoreCheckpoint,
   deleteThreadCheckpoints,
+  previewCheckpointRestore,
+  drainCheckpointCleanup,
 } from '../chat-checkpoint.service.js';
 let repo: string;
 const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
@@ -67,19 +69,112 @@ it('fences concurrent rewinds and new turns until recovery finishes', async () =
   await captureTurnCheckpoints('thread', 'message', ['repo']);
   fs.writeFileSync(path.join(repo, 'a.txt'), 'current work\n');
   const pending = restoreCheckpoint('thread', 'message');
+  await vi.waitFor(() =>
+    expect(() => assertNoCheckpointRestore(['repo'])).toThrow('Wait for file rewind'),
+  );
   expect(() => assertNoCheckpointRestore(['repo'])).toThrow('Wait for file rewind');
   await expect(restoreCheckpoint('thread', 'message')).rejects.toThrow('Wait for file rewind');
   await pending;
   expect(() => assertNoCheckpointRestore(['repo'])).not.toThrow();
 });
 
+it('requires a new confirmation when files change after the preview', async () => {
+  await captureTurnCheckpoints('thread', 'message', ['repo']);
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'reviewed current\n');
+  const preview = await previewCheckpointRestore('thread', 'message');
+  fs.writeFileSync(path.join(repo, 'new.txt'), 'unreviewed file\n');
+  await expect(
+    restoreCheckpoint('thread', 'message', { fingerprint: preview.fingerprint }),
+  ).rejects.toThrow('Files changed since the preview');
+  expect(fs.readFileSync(path.join(repo, 'new.txt'), 'utf8')).toBe('unreviewed file\n');
+  expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('reviewed current\n');
+  const refreshed = await previewCheckpointRestore('thread', 'message');
+  expect(refreshed.fingerprint).not.toBe(preview.fingerprint);
+  expect(refreshed.repos[0].changes).toContainEqual({ path: 'new.txt', effect: 'remove' });
+});
+
+it('rechecks contents after saving undo and before the first restore write', async () => {
+  await captureTurnCheckpoints('thread', 'message', ['repo']);
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'reviewed\n');
+  const preview = await previewCheckpointRestore('thread', 'message');
+  state.db.function('external_edit', () => {
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'new edit\n');
+    return 1;
+  });
+  state.db.exec(
+    "CREATE TRIGGER external_edit_during_undo BEFORE INSERT ON chat_checkpoints WHEN NEW.kind = 'restore' BEGIN SELECT external_edit(); END",
+  );
+  await expect(
+    restoreCheckpoint('thread', 'message', { fingerprint: preview.fingerprint }),
+  ).rejects.toThrow('Files changed since the preview');
+  expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('new edit\n');
+});
+
+it('refuses preview and restore after a repository leaves the source workspace', async () => {
+  state.db.exec(
+    "INSERT INTO workspaces(id,name,created_at,updated_at) VALUES('ws','Workspace','now','now'); UPDATE chat_threads SET workspace_id = 'ws'; INSERT INTO workspace_repos(workspace_id,repo_id,added_at) VALUES('ws','repo','now');",
+  );
+  await captureTurnCheckpoints('thread', 'message', ['repo']);
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'private current work\n');
+  const preview = await previewCheckpointRestore('thread', 'message');
+  state.db.exec("DELETE FROM workspace_repos WHERE repo_id = 'repo'");
+  await expect(previewCheckpointRestore('thread', 'message')).rejects.toThrow('no longer');
+  await expect(
+    restoreCheckpoint('thread', 'message', { fingerprint: preview.fingerprint }),
+  ).rejects.toThrow('no longer');
+  expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('private current work\n');
+});
+
+it('retains and drains Git-ref cleanup when threads are deleted indirectly', async () => {
+  await captureTurnCheckpoints('thread', 'message', ['repo']);
+  state.db.exec("DELETE FROM chat_threads WHERE id = 'thread'");
+  expect(state.db.prepare('SELECT COUNT(*) AS count FROM chat_checkpoints').get()).toEqual({
+    count: 0,
+  });
+  expect(state.db.prepare('SELECT COUNT(*) AS count FROM chat_checkpoint_cleanup').get()).toEqual({
+    count: 1,
+  });
+  await drainCheckpointCleanup();
+  expect(git('for-each-ref', '--format=%(refname)', 'refs/mezair/checkpoints').trim()).toBe('');
+  expect(state.db.prepare('SELECT COUNT(*) AS count FROM chat_checkpoint_cleanup').get()).toEqual({
+    count: 0,
+  });
+});
+
+it('can rewind the oldest retained turn without pruning it during undo capture', async () => {
+  await captureTurnCheckpoints('thread', 'message', ['repo']);
+  state.db.prepare("UPDATE chat_checkpoints SET created_at = '2000-01-01T00:00:00Z'").run();
+  for (let index = 0; index < 59; index++) {
+    state.db
+      .prepare(
+        `INSERT INTO chat_checkpoints(id,thread_id,message_id,repo_id,commit_sha,ref_name,kind,created_at,repo_path)
+      SELECT ?,thread_id,?,repo_id,commit_sha,?,'turn',?,repo_path FROM chat_checkpoints WHERE message_id = 'message'`,
+      )
+      .run(
+        `filler-${index}`,
+        `filler-${index}`,
+        `refs/mezair/checkpoints/filler-${index}`,
+        new Date(2026, 0, 1, index).toISOString(),
+      );
+  }
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'current\n');
+  const preview = await previewCheckpointRestore('thread', 'message');
+  const result = await restoreCheckpoint('thread', 'message', { fingerprint: preview.fingerprint });
+  expect(result.warning).toBeUndefined();
+  expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('before\n');
+  const undo = await previewCheckpointRestore('thread', result.undoKey);
+  await restoreCheckpoint('thread', result.undoKey, { fingerprint: undo.fingerprint });
+  expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('current\n');
+});
+
 it('returns a usable undo key when a file operation fails after restore begins', async () => {
   await captureTurnCheckpoints('thread', 'message', ['repo']);
   const extra = path.join(repo, 'extra.txt');
   fs.writeFileSync(extra, 'keep this recoverable\n');
+  const canonicalExtra = fs.realpathSync(extra);
   const remove = fs.rmSync;
   const spy = vi.spyOn(fs, 'rmSync').mockImplementation((target, options) => {
-    if (target === extra) throw new Error('simulated write failure');
+    if (target === canonicalExtra) throw new Error('simulated write failure');
     return remove(target, options);
   });
   let undoKey: string;

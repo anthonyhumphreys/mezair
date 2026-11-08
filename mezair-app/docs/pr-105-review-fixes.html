@@ -86,8 +86,9 @@
       <a href="https://github.com/anthonyhumphreys/mezair/pull/105">Chat experience PR</a>
     </p>
     <p>
-      The changes address all twenty inline review findings, two test-only suggestions, and the
-      independent rewind safety finding. The PR is intentionally left open for the owner to merge.
+      The changes address all twenty inline review findings, the additional findings in the review
+      summary, two test-only suggestions, and the independent rewind safety finding. The PR is
+      intentionally left open for the owner to merge.
     </p>
     <h2>File recovery and Git safety</h2>
     <ul>
@@ -366,14 +367,62 @@
       reader position, expanded history and jumping to the bottom remain in place. Performance
       budgets were not relaxed.
     </p>
+    <h2>Additional findings in the review summary</h2>
+    <ul>
+      <li>
+        Whole-file discard uses a fingerprint of the reviewed patch, reverses that patch through
+        Git, and refuses newer edits. It is disabled while the agent is working. Untracked deletion
+        is protected by the same reviewed-content check.
+      </li>
+      <li>
+        Every repository needs a durable undo snapshot before rewind; partial failures retain a
+        usable recovery key.
+      </li>
+      <li>
+        Undo is associated with its source workspace and cannot appear or run from another
+        workspace. It opens a file preview before applying.
+      </li>
+      <li>
+        Rewind, undo and edit/resend confirm the current file set through a main-process tree
+        fingerprint. Changed files refresh the preview and require another confirmation. The service
+        rechecks all contents after saving undo and before its first write.
+      </li>
+      <li>
+        Recovery leases and active-session checks use canonical execution paths, including shared
+        checkouts, nested repositories and retained repair worktrees.
+      </li>
+      <li>
+        Checkpoints persist the validated execution path. Capture, preview, rewind and undo use the
+        retained repair worktree; unavailable or mismatched bindings fail without falling back to
+        the ordinary checkout.
+      </li>
+      <li>
+        Content-hunk patches exclude executable-bit changes. Current-selection keys prevent stale
+        hunks acting on another file; diffs and checkpoint restore use literal paths.
+      </li>
+      <li>
+        Schema 121 retains Git-ref cleanup metadata transactionally before checkpoint rows cascade
+        away. Cleanup runs at startup and in bounded background batches, retries offline checkouts,
+        and checks the expected ref value before deletion.
+      </li>
+      <li>
+        Current conversation repository scope and workspace membership are validated before preview
+        reads and independently before restore changes files.
+      </li>
+    </ul>
+    <p>
+      Real-Git and SQLite regressions cover stale previews, edits during undo capture, removed
+      workspace membership, indirect deletion, executable-bit preservation, reviewed deletion,
+      repair-worktree recovery, the oldest retained checkpoint, and upgrades from schema 120.
+    </p>
     <h2>Validation</h2>
     <p>
-      Full suite: 3,677 tests passed, with 12 existing skips. Both Desktop TypeScript checks and
+      Full suite: 3,688 tests passed, with 12 existing skips. Both Desktop TypeScript checks and
       lint passed. Production main/preload/renderer and headless daemon builds passed. The synthetic
-      browser suite passed nine assertions at each of 1280px and 720px (18 assertions total). The
-      local performance harness passed its transcript, dashboard and advanced interaction checks;
-      paired CI remains the authoritative budget comparison. The original Electron native binaries
-      were restored after Node-based testing.
+      browser suite passed thirteen assertions at each of 1280px and 720px (26 assertions total).
+      The local performance harness passed its transcript, dashboard and advanced interaction
+      checks; paired CI remains the authoritative budget comparison. The original Electron native
+      binaries were restored after Node-based testing.
     </p>
     <p>
       A synthetic rendered test exercises stale-file errors, delayed repository switching, retained
@@ -383,8 +432,10 @@
     </p>
     <p>
       Safari checks also exercised stale errors, repository-switch invalidation, failed resend text
-      retention, and delegation command retention. These are synthetic state checks, not a
-      live-provider endurance test.
+      retention, delegation command retention and stale-preview reconfirmation. The Mac relocked
+      during the final screenshot check; the isolated browser suite verifies the confirmation's
+      visibility and viewport bounds. These are synthetic state checks, not a live-provider
+      endurance test.
     </p>
     <p>
       Remote results are available on the

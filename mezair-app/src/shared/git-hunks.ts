@@ -108,7 +108,9 @@ export function parseFileDiff(diff: string): ParsedFileDiff {
 /** Rebuilds a patch containing only `hunk`, ready for `git apply`. */
 export function buildSingleHunkPatch(parsed: ParsedFileDiff, hunk: GitDiffHunk): string {
   if (!parsed.fileHeader) throw new Error('The diff has no file header.');
-  return `${parsed.fileHeader}${hunk.text}`;
+  // Content actions must not stage or reverse a separate executable-bit change.
+  const header = parsed.fileHeader.replace(/^(?:old|new) mode \d+\n/gm, '');
+  return `${header}${hunk.text}`;
 }
 
 /** Finds the hunk the renderer asked for and verifies it has not changed since. */

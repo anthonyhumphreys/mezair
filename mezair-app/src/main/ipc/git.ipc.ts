@@ -6,6 +6,7 @@ import {
   stageFiles,
   unstageFiles,
   discardFiles,
+  discardReviewedFile,
   commitChanges,
   pushBranch,
   pullBranch,
@@ -87,6 +88,14 @@ export function registerGitHandlers(): void {
   ipcMain.handle('git:discard', (_e, repoId: string, paths: string[]) => {
     return discardFiles(repoPath(repoId), paths);
   });
+  ipcMain.handle(
+    'git:discard-reviewed',
+    (_e, repoId: string, filePath: string, fingerprint: string) => {
+      if (typeof filePath !== 'string' || typeof fingerprint !== 'string')
+        throw new Error('A reviewed file is required.');
+      return discardReviewedFile(repoPath(repoId), filePath, fingerprint);
+    },
+  );
 
   ipcMain.handle(
     'git:apply-hunk',

@@ -504,6 +504,7 @@ export interface MezairAPI {
     restoreCheckpoint: (
       threadId: string,
       messageId: string,
+      fingerprint: string,
     ) => Promise<import('./types').ChatCheckpointRestoreResult>;
     listWorkItemThreads: (workspaceId: string | null) => Promise<ChatThread[]>;
     createThread: (input: {
@@ -1318,6 +1319,7 @@ export interface MezairAPI {
     stage(repoId: string, paths: string[]): Promise<void>;
     unstage(repoId: string, paths: string[]): Promise<void>;
     discard(repoId: string, paths: string[]): Promise<void>;
+    discardReviewed(repoId: string, filePath: string, fingerprint: string): Promise<void>;
     /** Stage, unstage or discard one hunk of a file's current diff (see shared/git-hunks). */
     applyHunk(
       repoId: string,

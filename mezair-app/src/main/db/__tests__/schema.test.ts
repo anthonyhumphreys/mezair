@@ -1,6 +1,12 @@
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
-import { LEGACY_SCHEMA_REPAIR_SQL, MIGRATIONS, SCHEMA_SQL, SCHEMA_VERSION } from '../schema';
+import {
+  CHECKPOINT_CLEANUP_TRIGGER_SQL,
+  LEGACY_SCHEMA_REPAIR_SQL,
+  MIGRATIONS,
+  SCHEMA_SQL,
+  SCHEMA_VERSION,
+} from '../schema';
 import {
   MAIN_V67_SCHEMA_SQL,
   MERGE_BASE_V66_SCHEMA_SQL,
@@ -572,7 +578,7 @@ describe('fresh database schema', () => {
         ).map((column) => column.name),
       );
 
-      expect(SCHEMA_VERSION).toBe(120);
+      expect(SCHEMA_VERSION).toBe(121);
       for (const column of [
         'local_llm_mode',
         'local_llm_provider',
@@ -1182,6 +1188,8 @@ describe('fresh database schema', () => {
           const migration = MIGRATIONS[version];
           if (migration) applyMigration(db, migration);
         }
+        // Startup installs compound triggers after the column migrations.
+        db.exec(CHECKPOINT_CLEANUP_TRIGGER_SQL);
 
         expect(schemaShape(db)).toEqual(freshShape());
         expect(db.prepare('SELECT id, llm_provider FROM settings WHERE id = 1').get()).toEqual({

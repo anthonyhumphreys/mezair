@@ -12,7 +12,7 @@ import {
   diffAgainstCheckpoint,
   restoreWorkingTree,
 } from '../chat-checkpoint.service.js';
-import { applyFileHunk, getFileDiff, unstageFiles } from '../git.service.js';
+import { applyFileHunk, getFileDiff, unstageFiles, discardReviewedFile } from '../git.service.js';
 import { parseFileDiff } from '../../../shared/git-hunks.js';
 
 let repo: string;
@@ -31,6 +31,46 @@ beforeEach(() => {
 });
 
 afterEach(() => fs.rmSync(repo, { recursive: true, force: true }));
+
+it('discards only the reviewed whole-file patch and refuses newer edits', async () => {
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'reviewed\n');
+  const reviewed = await getFileDiff(repo, 'a.txt', false);
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'newer edit\n');
+  await expect(discardReviewedFile(repo, 'a.txt', reviewed.reviewFingerprint!)).rejects.toThrow(
+    'changed since',
+  );
+  expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('newer edit\n');
+  const fresh = await getFileDiff(repo, 'a.txt', false);
+  await discardReviewedFile(repo, 'a.txt', fresh.reviewFingerprint!);
+  expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('one\ntwo\nthree\n');
+});
+
+it('guards untracked deletion with the reviewed contents', async () => {
+  fs.writeFileSync(path.join(repo, '[new].txt'), 'reviewed\n');
+  const reviewed = await getFileDiff(repo, '[new].txt', false);
+  fs.writeFileSync(path.join(repo, '[new].txt'), 'new content\n');
+  await expect(discardReviewedFile(repo, '[new].txt', reviewed.reviewFingerprint!)).rejects.toThrow(
+    'changed since',
+  );
+  const fresh = await getFileDiff(repo, '[new].txt', false);
+  await discardReviewedFile(repo, '[new].txt', fresh.reviewFingerprint!);
+  expect(fs.existsSync(path.join(repo, '[new].txt'))).toBe(false);
+});
+
+it.skipIf(process.platform === 'win32').each(['stage', 'unstage', 'discard'] as const)(
+  'keeps executable-bit changes separate when applying a content hunk (%s)',
+  async (action) => {
+    git('config', 'core.filemode', 'true');
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'ONE\ntwo\nthree\n');
+    fs.chmodSync(path.join(repo, 'a.txt'), 0o755);
+    if (action === 'unstage') git('add', 'a.txt');
+    const before = git('ls-files', '--stage', 'a.txt').slice(0, 6);
+    const diff = parseFileDiff((await getFileDiff(repo, 'a.txt', action === 'unstage')).hunks);
+    await applyFileHunk(repo, 'a.txt', 0, diff.hunks[0].fingerprint, action);
+    expect(git('ls-files', '--stage', 'a.txt').slice(0, 6)).toBe(before);
+    expect(fs.statSync(path.join(repo, 'a.txt')).mode & 0o111).toBe(0o111);
+  },
+);
 
 describe('turn checkpoints', () => {
   it('captures without touching the index and restores the working tree', async () => {

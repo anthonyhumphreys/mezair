@@ -11,6 +11,7 @@ import type {
   AgentProvider,
   ChatAttachment,
   ChatBusyEnterAction,
+  ChatCheckpointRestoreResult,
   ChatLayout,
   Persona,
   ReasoningEffort,
@@ -444,37 +445,49 @@ export function ChatView({ userRole }: ChatViewProps) {
     isTemporaryChat ? null : activeThreadId,
     busy,
   );
-  const [rewindMessageId, setRewindMessageId] = useState<string | null>(null);
+  const workspaceKey = activeWorkspace?.id ?? null;
+  const [rewindTarget, setRewindTarget] = useState<{
+    threadId: string;
+    messageId: string;
+    workspaceId: string | null;
+    undo?: boolean;
+    complete?: (result: ChatCheckpointRestoreResult | null) => void;
+  } | null>(null);
+  const rewindTargetRef = useRef(rewindTarget);
+  rewindTargetRef.current = rewindTarget;
+  useEffect(() => () => rewindTargetRef.current?.complete?.(null), []);
   const [rewindUndo, setRewindUndo] = useState<{
     threadId: string;
+    workspaceId: string | null;
     undoKey: string;
     filesChanged: number;
     warning?: string;
   } | null>(null);
-  const [undoingRewind, setUndoingRewind] = useState(false);
+  const closeRewind = useCallback(() => {
+    rewindTarget?.complete?.(null);
+    setRewindTarget(null);
+  }, [rewindTarget]);
+  useEffect(() => {
+    if (rewindTarget && rewindTarget.workspaceId !== workspaceKey) closeRewind();
+  }, [workspaceKey, rewindTarget, closeRewind]);
 
-  const handleRewind = useCallback((messageId: string) => setRewindMessageId(messageId), []);
+  const handleRewind = useCallback(
+    (messageId: string) => {
+      if (activeThreadId)
+        setRewindTarget({ threadId: activeThreadId, messageId, workspaceId: workspaceKey });
+    },
+    [activeThreadId, workspaceKey],
+  );
 
-  const undoRewind = useCallback(async () => {
-    if (!rewindUndo) return;
-    setUndoingRewind(true);
-    try {
-      const result = await window.mezair.chat.restoreCheckpoint(
-        rewindUndo.threadId,
-        rewindUndo.undoKey,
-      );
-      if (result.warning) {
-        setSendNotice(result.warning);
-        return;
-      }
-      setRewindUndo(null);
-      setSendNotice('Rewind undone. The files are back to how they were before it.');
-    } catch (err) {
-      setSendNotice(err instanceof Error ? err.message : 'Could not undo the rewind.');
-    } finally {
-      setUndoingRewind(false);
-    }
-  }, [rewindUndo]);
+  const undoRewind = useCallback(() => {
+    if (!rewindUndo || rewindUndo.workspaceId !== workspaceKey) return;
+    setRewindTarget({
+      threadId: rewindUndo.threadId,
+      messageId: rewindUndo.undoKey,
+      workspaceId: workspaceKey,
+      undo: true,
+    });
+  }, [rewindUndo, workspaceKey]);
 
   const handleEditResend = useCallback(
     async (
@@ -488,8 +501,15 @@ export function ChatView({ userRole }: ChatViewProps) {
       const sourceThreadId = activeThreadId;
       try {
         if (restoreFiles && messageId && sourceThreadId) {
-          const result = await window.mezair.chat.restoreCheckpoint(sourceThreadId, messageId);
-          setRewindUndo({ threadId: sourceThreadId, ...result });
+          const result = await new Promise<ChatCheckpointRestoreResult | null>((complete) =>
+            setRewindTarget({
+              threadId: sourceThreadId,
+              messageId,
+              workspaceId: workspaceKey,
+              complete,
+            }),
+          );
+          if (!result || result.warning) return false;
         }
         // The edited message replaces this one in a new branch; the original
         // conversation stays as it was.
@@ -503,7 +523,7 @@ export function ChatView({ userRole }: ChatViewProps) {
         return false;
       }
     },
-    [activeThreadId, busy, forkThread, requestChatAction, startNewSession],
+    [activeThreadId, busy, forkThread, requestChatAction, startNewSession, workspaceKey],
   );
 
   const handleRetry = useCallback(
@@ -1403,7 +1423,7 @@ export function ChatView({ userRole }: ChatViewProps) {
     });
   }
 
-  if (rewindUndo) {
+  if (rewindUndo && rewindUndo.workspaceId === workspaceKey) {
     attentionItems.push({
       id: 'rewind-undo',
       label: 'Rewind',
@@ -1419,11 +1439,10 @@ export function ChatView({ userRole }: ChatViewProps) {
           <span className="flex shrink-0 items-center gap-1">
             <button
               type="button"
-              disabled={undoingRewind}
-              onClick={() => void undoRewind()}
+              onClick={undoRewind}
               className="rounded-md px-2 py-1 font-medium text-text-primary hover:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-50"
             >
-              {undoingRewind ? 'Undoing…' : 'Undo rewind'}
+              Undo rewind
             </button>
             <button
               type="button"
@@ -1678,15 +1697,28 @@ export function ChatView({ userRole }: ChatViewProps) {
               onRetry={runTarget.remote ? undefined : handleRetry}
             />
           )}
-          {activeThreadId && rewindMessageId && (
+          {rewindTarget && rewindTarget.workspaceId === workspaceKey && (
             <CheckpointRewindDialog
               open
-              threadId={activeThreadId}
-              messageId={rewindMessageId}
+              threadId={rewindTarget.threadId}
+              messageId={rewindTarget.messageId}
+              undo={rewindTarget.undo}
               repos={repos}
-              onClose={() => setRewindMessageId(null)}
+              onClose={closeRewind}
               onRestored={(result) => {
-                setRewindUndo({ threadId: activeThreadId, ...result });
+                if (rewindTarget.undo) {
+                  if (result.warning) setSendNotice(result.warning);
+                  else {
+                    setRewindUndo(null);
+                    setSendNotice('Rewind undone. The files are back to how they were before it.');
+                  }
+                } else
+                  setRewindUndo({
+                    threadId: rewindTarget.threadId,
+                    workspaceId: rewindTarget.workspaceId,
+                    ...result,
+                  });
+                rewindTarget.complete?.(result);
                 refreshCheckpoints();
               }}
             />

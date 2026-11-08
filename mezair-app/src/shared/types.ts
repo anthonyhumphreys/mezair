@@ -985,6 +985,8 @@ export interface ChatCheckpointSummary {
 
 export interface ChatCheckpointPreview {
   messageId: string;
+  /** Binds confirmation to the exact current working-tree contents and target paths. */
+  fingerprint: string;
   repos: Array<{ repoId: string; createdAt: string; changes: ChatCheckpointFileChange[] }>;
 }
 
@@ -3855,6 +3857,8 @@ export interface GitDiffResult {
   oldContent: string;
   newContent: string;
   hunks: string; // raw unified diff
+  /** Main-process fingerprint of the entire reviewed patch, including binary/mode changes. */
+  reviewFingerprint?: string;
 }
 
 export type {

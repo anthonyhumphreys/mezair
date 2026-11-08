@@ -357,8 +357,8 @@ const api: MezairAPI = {
     listCheckpoints: (threadId: string) => ipcRenderer.invoke('chat:list-checkpoints', threadId),
     previewCheckpoint: (threadId: string, messageId: string) =>
       ipcRenderer.invoke('chat:preview-checkpoint', threadId, messageId),
-    restoreCheckpoint: (threadId: string, messageId: string) =>
-      ipcRenderer.invoke('chat:restore-checkpoint', threadId, messageId),
+    restoreCheckpoint: (threadId: string, messageId: string, fingerprint: string) =>
+      ipcRenderer.invoke('chat:restore-checkpoint', threadId, messageId, fingerprint),
     listWorkItemThreads: (workspaceId: string | null) =>
       ipcRenderer.invoke('chat:list-work-item-threads', workspaceId),
     createThread: (input: {
@@ -1428,6 +1428,8 @@ const api: MezairAPI = {
     stage: (repoId: string, paths: string[]) => ipcRenderer.invoke('git:stage', repoId, paths),
     unstage: (repoId: string, paths: string[]) => ipcRenderer.invoke('git:unstage', repoId, paths),
     discard: (repoId: string, paths: string[]) => ipcRenderer.invoke('git:discard', repoId, paths),
+    discardReviewed: (repoId: string, filePath: string, fingerprint: string) =>
+      ipcRenderer.invoke('git:discard-reviewed', repoId, filePath, fingerprint),
     applyHunk: (
       repoId: string,
       filePath: string,

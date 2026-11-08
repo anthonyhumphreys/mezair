@@ -1,5 +1,8 @@
 import fs from 'node:fs';
-import { checkpointRestorePaths as restoringRepos } from './chat-checkpoint-locks.js';
+import {
+  acquireCheckpointPaths,
+  checkpointRestorePaths as restoringRepos,
+} from './chat-checkpoint-locks.js';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -145,7 +148,13 @@ async function validateSubmodules(
 async function removeCheckpointRef(repoPath: string, commit: string, ref: string): Promise<void> {
   if (!ref.startsWith('refs/mezair/checkpoints/') || ref.includes('..'))
     throw new Error('Invalid checkpoint ref.');
-  const current = await git(repoPath, ['rev-parse', '--verify', '-q', ref]).catch(() => '');
+  if (!isGitWorkTree(repoPath))
+    throw new Error('Checkpoint checkout is unavailable; cleanup will retry.');
+  const current = await git(repoPath, ['rev-parse', '--verify', '-q', ref]).catch((error) => {
+    // A missing ref is harmless; an inaccessible/corrupt checkout must remain retryable.
+    if (error.code === 1) return '';
+    throw error;
+  });
   // A delayed cleanup must never delete a newer checkpoint reusing the same ref.
   if (current.trim() !== commit) return;
   for (const child of await checkpointSubmodules(repoPath, commit)) {
@@ -395,58 +404,66 @@ export async function captureTurnCheckpoints(
   const db = getDb();
   const created: ChatCheckpointSummary[] = [];
   const paths = executionPaths ?? (await targetPaths(threadId, repoIds));
-  for (const repoId of [...new Set(repoIds)]) {
-    const repoPath = paths.get(repoId);
-    if (!repoPath || !isGitWorkTree(repoPath)) {
-      if (strict) throw new Error('A repository is unavailable. No files were rewound.');
-      continue;
-    }
-    const existing = db
-      .prepare(
-        'SELECT created_at FROM chat_checkpoints WHERE thread_id = ? AND message_id = ? AND repo_id = ?',
-      )
-      .get(threadId, messageId, repoId) as { created_at: string } | undefined;
-    if (existing && kind === 'turn') {
-      created.push({ messageId, repoId, createdAt: existing.created_at, kind });
-      continue;
-    }
-    const refName = checkpointRef(threadId, messageId, repoId);
-    let commit: string | undefined;
-    try {
-      commit = await createCheckpointCommit(
-        repoPath,
-        refName,
-        `Mezair checkpoint ${threadId} ${messageId}`,
-      );
-      const createdAt = new Date().toISOString();
-      db.prepare(
-        `INSERT INTO chat_checkpoints (id, thread_id, message_id, repo_id, commit_sha, ref_name, kind, created_at, repo_path)
+  const release =
+    kind === 'restore' && strict && executionPaths
+      ? () => undefined
+      : acquireCheckpointPaths([...paths.values()]);
+  try {
+    for (const repoId of [...new Set(repoIds)]) {
+      const repoPath = paths.get(repoId);
+      if (!repoPath || !isGitWorkTree(repoPath)) {
+        if (strict) throw new Error('A repository is unavailable. No files were rewound.');
+        continue;
+      }
+      const existing = db
+        .prepare(
+          'SELECT created_at FROM chat_checkpoints WHERE thread_id = ? AND message_id = ? AND repo_id = ?',
+        )
+        .get(threadId, messageId, repoId) as { created_at: string } | undefined;
+      if (existing && kind === 'turn') {
+        created.push({ messageId, repoId, createdAt: existing.created_at, kind });
+        continue;
+      }
+      const refName = checkpointRef(threadId, messageId, repoId);
+      let commit: string | undefined;
+      try {
+        commit = await createCheckpointCommit(
+          repoPath,
+          refName,
+          `Mezair checkpoint ${threadId} ${messageId}`,
+        );
+        const createdAt = new Date().toISOString();
+        db.prepare(
+          `INSERT INTO chat_checkpoints (id, thread_id, message_id, repo_id, commit_sha, ref_name, kind, created_at, repo_path)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(thread_id, message_id, repo_id)
          DO UPDATE SET commit_sha = excluded.commit_sha, ref_name = excluded.ref_name, created_at = excluded.created_at, repo_path = excluded.repo_path`,
-      ).run(
-        crypto.randomUUID(),
-        threadId,
-        messageId,
-        repoId,
-        commit,
-        refName,
-        kind,
-        createdAt,
-        repoPath,
-      );
-      created.push({ messageId, repoId, createdAt, kind });
-    } catch (error) {
-      if (commit) await removeCheckpointRef(repoPath, commit, refName).catch(() => undefined);
-      if (strict)
-        throw new Error('Could not save the undo checkpoint. No files were rewound.', {
-          cause: error,
-        });
-      console.warn('[Checkpoints] capture failed', repoId, error);
+        ).run(
+          crypto.randomUUID(),
+          threadId,
+          messageId,
+          repoId,
+          commit,
+          refName,
+          kind,
+          createdAt,
+          repoPath,
+        );
+        created.push({ messageId, repoId, createdAt, kind });
+      } catch (error) {
+        if (commit) await removeCheckpointRef(repoPath, commit, refName).catch(() => undefined);
+        if (strict)
+          throw new Error('Could not save the undo checkpoint. No files were rewound.', {
+            cause: error,
+          });
+        console.warn('[Checkpoints] capture failed', repoId, error);
+      }
     }
+    if (kind === 'turn') await pruneThreadCheckpoints(threadId);
+    return created;
+  } finally {
+    release();
   }
-  if (kind === 'turn') await pruneThreadCheckpoints(threadId);
-  return created;
 }
 
 async function pruneThreadCheckpoints(threadId: string): Promise<void> {
@@ -613,7 +630,7 @@ export async function restoreCheckpoint(
   const lockedPaths = targets.map(({ repoPath }) => repoPath);
   assertNoCheckpointRestore([], lockedPaths);
   options?.assertCanRestore?.(lockedPaths);
-  lockedPaths.forEach((value) => restoringRepos.add(value));
+  const release = acquireCheckpointPaths(lockedPaths);
   try {
     // Validate every target before creating undo snapshots or mutating any files.
     const prepared = await Promise.all(
@@ -670,7 +687,7 @@ export async function restoreCheckpoint(
       };
     }
   } finally {
-    lockedPaths.forEach((value) => restoringRepos.delete(value));
+    release();
     await pruneThreadCheckpoints(threadId).catch((error) =>
       console.warn('[Checkpoints] pruning deferred', error),
     );

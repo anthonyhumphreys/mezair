@@ -2117,11 +2117,15 @@ function UserMessageEditor({
   canRestoreFiles,
   onCancel,
   onSubmit,
+  hasAttachments,
+  disabled,
 }: {
   initial: string;
   canRestoreFiles: boolean;
   onCancel: () => void;
   onSubmit: (text: string, restoreFiles: boolean) => Promise<boolean>;
+  hasAttachments: boolean;
+  disabled: boolean;
 }) {
   const [text, setText] = useState(initial);
   const [restoreFiles, setRestoreFiles] = useState(canRestoreFiles);
@@ -2145,7 +2149,7 @@ function UserMessageEditor({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const submit = async () => {
-    if (!text.trim() || submitting) return;
+    if ((!text.trim() && !hasAttachments) || submitting || disabled) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -2218,7 +2222,7 @@ function UserMessageEditor({
         <button
           type="button"
           onClick={submit}
-          disabled={!text.trim() || submitting}
+          disabled={(!text.trim() && !hasAttachments) || submitting || disabled}
           className="rounded-md bg-accent px-2.5 py-1.5 text-xs font-semibold text-accent-foreground hover:bg-accent/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-secondary disabled:opacity-40"
           title="Sends the edited message in a new branch of this thread"
         >
@@ -2310,6 +2314,7 @@ export function UserMessage({
   deliveryIntent,
   onEdit,
   onEditResend,
+  editResendDisabled = false,
   onRewind,
   onBranch,
   timestamp,
@@ -2325,6 +2330,7 @@ export function UserMessage({
   onEdit?: () => void;
   /** Inline edit; resends in a new branch, optionally rewinding files first. */
   onEditResend?: (text: string, restoreFiles: boolean) => Promise<boolean>;
+  editResendDisabled?: boolean;
   /** Present when a checkpoint was recorded before this message. */
   onRewind?: () => void;
   onBranch?: () => void;
@@ -2347,6 +2353,8 @@ export function UserMessage({
       <ChatMessageRow align="end">
         <UserMessageEditor
           initial={content}
+          hasAttachments={Boolean(attachments?.length)}
+          disabled={editResendDisabled}
           canRestoreFiles={Boolean(onRewind)}
           onCancel={() => setEditing(false)}
           onSubmit={async (text, restoreFiles) => {
@@ -2434,7 +2442,7 @@ export function UserMessage({
         <ChatUserMessageActions>
           <MessageActionsToolbar
             onCopy={handleCopy}
-            onEdit={onEditResend ? () => setEditing(true) : onEdit}
+            onEdit={editResendDisabled ? undefined : onEditResend ? () => setEditing(true) : onEdit}
             onRewind={onRewind}
             onBranch={onBranch}
             copied={copied}

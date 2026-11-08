@@ -4,15 +4,39 @@ import { ChatReviewPanel } from '../ChatReviewPanel';
 import { UserMessage } from '../ChatMessage';
 import { DelegationViewState, useDelegationState } from '../DelegationViewState';
 import { CheckpointRewindDialog } from '../turn-changes/CheckpointRewind';
+import { DelegationIntegrationPanel } from '../ChatDelegations';
+import type { ChatDelegationRun } from '../../../../shared/chat-delegation';
 
 const repos = [
   { id: 'a', name: 'Repository A' },
   { id: 'b', name: 'Repository B' },
 ] as RepoInfo[];
 export function installReviewPreview() {
+  let finishIntegration: (() => void) | undefined;
+  let integrationCalls = 0;
+  let statusReads = 0;
+  let finishStage: (() => void) | undefined;
   let previewRevision = 0;
   window.mezair.chat = {
     ...window.mezair.chat,
+    prepareDelegationIntegration: async () => ({
+      permissionMode: 'workspace-auto',
+      permissionExplanation: 'Synthetic checks only.',
+      repositories: [
+        {
+          repositoryId: 'a',
+          name: 'Repository A',
+          candidates: [{ command: 'pnpm test', label: 'Test', source: 'detected' }],
+          recommendedCommands: ['pnpm test'],
+        },
+      ],
+    }),
+    integrateDelegation: async () => {
+      integrationCalls++;
+      return new Promise((resolve) => {
+        finishIntegration = () => resolve(integrationRun);
+      });
+    },
     previewCheckpoint: async () => ({
       messageId: 'message',
       fingerprint: `preview-${previewRevision}`,
@@ -39,8 +63,13 @@ export function installReviewPreview() {
       return { filesChanged: 2, undoKey: 'synthetic-undo' };
     },
   };
+  Object.assign(window, {
+    finishIntegrationProbe: () => finishIntegration?.(),
+    integrationProbeCalls: () => integrationCalls,
+  });
   const git = window.mezair.git;
   git.status = async (repoId) => {
+    statusReads++;
     if (repoId === 'b') await new Promise((resolve) => setTimeout(resolve, 4000));
     return {
       branch: 'main',
@@ -62,12 +91,61 @@ export function installReviewPreview() {
   git.applyHunk = async () => {
     throw new Error('The file changed since review. Refresh and try again.');
   };
-  git.stage = async () => undefined;
+  git.stage = async () =>
+    new Promise<void>((resolve) => {
+      finishStage = resolve;
+    });
+  Object.assign(window, {
+    finishStageProbe: () => finishStage?.(),
+    reviewStatusReads: () => statusReads,
+  });
   git.unstage = async () => undefined;
   git.discard = async () => undefined;
   git.discardReviewed = async () => {
     throw new Error('The file changed since review. Refresh and try again.');
   };
+}
+const integrationRun: ChatDelegationRun = {
+  id: 'verification-run',
+  title: 'Verify',
+  reason: 'Synthetic test',
+  status: 'completed',
+  createdAt: 'now',
+  tasks: [],
+  hasRemoteChanges: false,
+  integrationState: 'integrated',
+  integration: {
+    integrationId: 'integration',
+    mergeState: 'integrated',
+    combined: true,
+    verificationState: 'not-run',
+    verificationAttempt: 0,
+    verificationSelections: [],
+    verification: [],
+    appliedAt: null,
+    applyAllowed: true,
+    repositories: [],
+  },
+};
+function IntegrationProbe() {
+  const [moved, setMoved] = useState(false);
+  const panel = (
+    <DelegationIntegrationPanel
+      threadId="verification-thread"
+      run={integrationRun}
+      integration={integrationRun.integration}
+      onIntegrationUpdate={() => undefined}
+      onRefresh={async () => undefined}
+    />
+  );
+  return (
+    <DelegationViewState>
+      <button className="rounded border border-border p-2" onClick={() => setMoved(!moved)}>
+        Move verification panel
+      </button>
+      {moved ? <section>{panel}</section> : <div>{panel}</div>}
+    </DelegationViewState>
+  );
 }
 function RewindProbe() {
   const [open, setOpen] = useState(false);
@@ -122,6 +200,7 @@ export function ReviewPreview() {
             onEditResend={async () => false}
           />
           <RewindProbe />
+          <IntegrationProbe />
           <DelegationViewState>
             <button className="rounded border border-border p-2" onClick={() => setMoved(!moved)}>
               Move delegated run

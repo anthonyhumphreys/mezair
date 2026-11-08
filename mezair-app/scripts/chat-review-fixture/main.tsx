@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
+import { MemoryRouter } from 'react-router-dom';
 import type { MezairAPI } from '../../src/shared/ipc-api';
 import {
   ReviewPreview,
@@ -11,14 +12,24 @@ window.mezair = { git: {} } as unknown as MezairAPI;
 installReviewPreview();
 const readStatus = window.mezair.git.status;
 let releaseRepository: (() => void) | undefined;
+let delayRepository = true;
 window.mezair.git.status = (repoId) =>
-  repoId === 'b'
+  repoId === 'b' && delayRepository
     ? new Promise((resolve) => {
-        releaseRepository = async () => resolve(await readStatus('a'));
+        releaseRepository = async () => {
+          delayRepository = false;
+          resolve(await readStatus('a'));
+        };
       })
-    : readStatus(repoId);
+    : readStatus('a');
 const root = createRoot(document.getElementById('root')!);
-flushSync(() => root.render(<ReviewPreview />));
+flushSync(() =>
+  root.render(
+    <MemoryRouter>
+      <ReviewPreview />
+    </MemoryRouter>,
+  ),
+);
 const frame = () =>
   new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
@@ -65,6 +76,21 @@ Object.assign(window, {
     check(
       button('Stage file'),
       'The new repository must become actionable only after its status loads',
+    );
+    button('Stage file').click();
+    await frame();
+    document.querySelector<HTMLButtonElement>('button[aria-label="Refresh changes"]')!.click();
+    await frame();
+    await frame();
+    const statusReads = (
+      window as unknown as { reviewStatusReads: () => number }
+    ).reviewStatusReads();
+    (window as unknown as { finishStageProbe: () => void }).finishStageProbe();
+    await frame();
+    await frame();
+    check(
+      (window as unknown as { reviewStatusReads: () => number }).reviewStatusReads() > statusReads,
+      'A successful mutation must refresh its repository even if Refresh raced its completion',
     );
     const command = document.querySelector<HTMLInputElement>(
       'input[aria-label="Unsaved integration command"]',
@@ -129,6 +155,29 @@ Object.assign(window, {
       !document.querySelector('[role="dialog"]') &&
         document.body.textContent?.includes('Confirmed updated rewind'),
       'Only a fresh confirmation may finish the rewind',
+    );
+    button('Review or edit checks').click();
+    await frame();
+    await frame();
+    button('Run selected checks').click();
+    await frame();
+    button('Move verification panel').click();
+    await frame();
+    check(
+      button('Running checks…')?.disabled,
+      'A remounted verification panel must retain its in-flight submission',
+    );
+    button('Running checks…').click();
+    check(
+      (window as unknown as { integrationProbeCalls: () => number }).integrationProbeCalls() === 1,
+      'A remount must not submit verification commands twice',
+    );
+    (window as unknown as { finishIntegrationProbe: () => void }).finishIntegrationProbe();
+    await frame();
+    await frame();
+    check(
+      button('Review or edit checks') && !button('Running checks…'),
+      'Completion must reconcile the remounted verification panel',
     );
     return { passed: true, assertions };
   },

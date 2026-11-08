@@ -378,7 +378,12 @@ const ChatTranscriptTurn = memo(function ChatTranscriptTurn({
   );
   const userEntry = turn.user;
   const userMessageId = userEntry?.id;
-  const canRetry = Boolean(onRetry && isLastTurn && turnComplete && userEntry?.content.trim());
+  const canRetry = Boolean(
+    onRetry &&
+    isLastTurn &&
+    turnComplete &&
+    (userEntry?.content.trim() || userEntry?.attachments?.length),
+  );
 
   return (
     <section
@@ -398,7 +403,7 @@ const ChatTranscriptTurn = memo(function ChatTranscriptTurn({
           timestamp={userEntry.timestamp}
           onEdit={() => onReuseMessage(userEntry.sourceIndex, userEntry.content)}
           onEditResend={
-            onEditResend && !threadBusy && userEntry.delivery !== 'failed'
+            onEditResend && userEntry.delivery !== 'failed'
               ? (text, restoreFiles) =>
                   onEditResend(
                     userEntry.sourceIndex,
@@ -409,6 +414,7 @@ const ChatTranscriptTurn = memo(function ChatTranscriptTurn({
                   )
               : undefined
           }
+          editResendDisabled={threadBusy}
           onRewind={
             onRewind && hasCheckpoint && userMessageId && !threadBusy
               ? () => onRewind(userMessageId)

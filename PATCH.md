@@ -1012,6 +1012,10 @@ must not leave orphaned refs. This is local file recovery, not an agent permissi
 grant or a Git branch reset. Fence concurrent rewinds and managed turns by
 canonical checkout paths, including aliases and nested repositories. Recheck
 active turns before mutation; releasing the lease is mandatory on failure.
+Capture and destructive Git review share the checkout lease with rewind.
+Reserve each provider session before asynchronous send preparation so concurrent
+idle follow-ups queue in order; release preparation on failure and retain the
+authoritative delivery timestamp across retries and later events.
 Bind confirmation to the complete current tree, including submodules, and check
 it again after saving undo. A changed preview requires a fresh confirmation for
 rewind, undo and edit/resend. Persist the exact validated execution checkout;
@@ -1032,3 +1036,10 @@ working. Keep a failed edited
 request and its attachments recoverable; resolve a branch point against complete
 history before excluding the edited message. Delegation draft controls belong to
 the transcript's thread/run identity and survive turn-list remounts.
+Verification operations remain in flight across those remounts and reconcile
+their completion through the same shared state. Keep inline edits mounted while
+a thread is busy, allow retained attachments without text, and scope failed
+composer recovery to its original workspace, thread and persona. Refresh the
+current repository after mutations even if a manual refresh raced completion.
+Disable Git color for machine-parsed diffs and require whole-file unstaging for
+renames. Panel controls always retain one enabled keyboard tab stop.

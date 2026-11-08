@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SCHEMA_SQL } from '../../db/schema.js';
+import { acquireCheckpointPaths } from '../chat-checkpoint-locks.js';
 const state = vi.hoisted(() => ({ db: undefined as unknown as Database.Database }));
 vi.mock('../../db/database.js', () => ({ getDb: () => state.db }));
 import {
@@ -39,6 +40,19 @@ afterEach(() => {
   fs.rmSync(repo, { recursive: true, force: true });
 });
 describe('checkpoint restore safety', () => {
+  it('does not persist a turn snapshot while destructive review or rewind holds the checkout', async () => {
+    const release = acquireCheckpointPaths([repo]);
+    try {
+      await expect(captureTurnCheckpoints('thread', 'message', ['repo'])).rejects.toThrow(
+        'Wait for file rewind',
+      );
+    } finally {
+      release();
+    }
+    expect(state.db.prepare('SELECT COUNT(*) AS count FROM chat_checkpoints').get()).toEqual({
+      count: 0,
+    });
+  });
   it('refuses to touch files when the undo checkpoint cannot be persisted', async () => {
     await captureTurnCheckpoints('thread', 'message', ['repo']);
     fs.writeFileSync(path.join(repo, 'a.txt'), 'current work\n');
@@ -141,6 +155,48 @@ it('retains and drains Git-ref cleanup when threads are deleted indirectly', asy
   });
 });
 
+it('retains parent and child cleanup when a submodule checkout is temporarily unavailable', async () => {
+  const source = fs.mkdtempSync(path.join(os.tmpdir(), 'mezair-cleanup-child-'));
+  const childGit = (...args: string[]) =>
+    execFileSync('git', args, { cwd: source, encoding: 'utf8' });
+  try {
+    childGit('init', '-q');
+    childGit('config', 'user.name', 'Test');
+    childGit('config', 'user.email', 't@example.test');
+    fs.writeFileSync(path.join(source, 'child.txt'), 'child\n');
+    childGit('add', '.');
+    childGit('commit', '-qm', 'child');
+    git('-c', 'protocol.file.allow=always', 'submodule', 'add', source, 'nested');
+    git('commit', '-qm', 'submodule');
+    await captureTurnCheckpoints('thread', 'message', ['repo']);
+    const nested = path.join(repo, 'nested'),
+      offline = path.join(repo, 'offline-nested');
+    fs.renameSync(nested, offline);
+    await deleteThreadCheckpoints('thread');
+    await drainCheckpointCleanup();
+    expect(state.db.prepare('SELECT COUNT(*) AS count FROM chat_checkpoint_cleanup').get()).toEqual(
+      { count: 1 },
+    );
+    expect(git('for-each-ref', '--format=%(refname)', 'refs/mezair/checkpoints')).toContain(
+      'refs/mezair/checkpoints',
+    );
+    fs.renameSync(offline, nested);
+    await drainCheckpointCleanup();
+    expect(state.db.prepare('SELECT COUNT(*) AS count FROM chat_checkpoint_cleanup').get()).toEqual(
+      { count: 0 },
+    );
+    expect(git('for-each-ref', '--format=%(refname)', 'refs/mezair/checkpoints').trim()).toBe('');
+    expect(
+      execFileSync('git', ['for-each-ref', '--format=%(refname)', 'refs/mezair/checkpoints'], {
+        cwd: nested,
+        encoding: 'utf8',
+      }).trim(),
+    ).toBe('');
+  } finally {
+    fs.rmSync(source, { recursive: true, force: true });
+  }
+}, 30000);
+
 it('can rewind the oldest retained turn without pruning it during undo capture', async () => {
   await captureTurnCheckpoints('thread', 'message', ['repo']);
   state.db.prepare("UPDATE chat_checkpoints SET created_at = '2000-01-01T00:00:00Z'").run();
@@ -169,8 +225,10 @@ it('can rewind the oldest retained turn without pruning it during undo capture',
 
 it('returns a usable undo key when a file operation fails after restore begins', async () => {
   await captureTurnCheckpoints('thread', 'message', ['repo']);
-  const extra = path.join(repo, 'extra.txt');
-  fs.writeFileSync(extra, 'keep this recoverable\n');
+  const first = path.join(repo, 'a-extra.txt');
+  const extra = path.join(repo, 'z-extra.txt');
+  fs.writeFileSync(first, 'first recoverable file\n');
+  fs.writeFileSync(extra, 'second recoverable file\n');
   const canonicalExtra = fs.realpathSync(extra);
   const remove = fs.rmSync;
   const spy = vi.spyOn(fs, 'rmSync').mockImplementation((target, options) => {
@@ -181,10 +239,13 @@ it('returns a usable undo key when a file operation fails after restore begins',
   try {
     const result = await restoreCheckpoint('thread', 'message');
     expect(result.warning).toContain('Undo rewind');
+    expect(fs.existsSync(first)).toBe(false);
+    expect(fs.readFileSync(extra, 'utf8')).toBe('second recoverable file\n');
     undoKey = result.undoKey;
   } finally {
     spy.mockRestore();
   }
   expect((await restoreCheckpoint('thread', undoKey!)).warning).toBeUndefined();
-  expect(fs.readFileSync(extra, 'utf8')).toBe('keep this recoverable\n');
+  expect(fs.readFileSync(first, 'utf8')).toBe('first recoverable file\n');
+  expect(fs.readFileSync(extra, 'utf8')).toBe('second recoverable file\n');
 });

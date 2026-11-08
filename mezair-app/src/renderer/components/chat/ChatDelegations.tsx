@@ -433,7 +433,7 @@ function DelegationRun({
   );
 }
 
-function DelegationIntegrationPanel({
+export function DelegationIntegrationPanel({
   threadId,
   run,
   integration,
@@ -470,8 +470,8 @@ function DelegationIntegrationPanel({
     'commands',
     {},
   );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useDelegationState(identity, 'operation-busy', false);
+  const [error, setError] = useDelegationState<string | null>(identity, 'operation-error', null);
   const integrated = integration?.combined ?? run.integrationState === 'integrated';
   const canCombine = run.status === 'completed' && !integrated;
 
@@ -479,7 +479,6 @@ function DelegationIntegrationPanel({
     mounted.current = true;
     return () => {
       mounted.current = false;
-      operation.current += 1;
     };
   }, []);
 
@@ -494,12 +493,13 @@ function DelegationIntegrationPanel({
   };
 
   const openPlan = async () => {
+    if (busy) return;
     const id = ++operation.current;
     setBusy(true);
     setError(null);
     try {
       const value = await window.mezair.chat.prepareDelegationIntegration(threadId, run.id);
-      if (!isCurrent() || id !== operation.current) return;
+      if (id !== operation.current) return;
       const stored = integration?.verificationSelections ?? [];
       setPlan(value);
       setSelections(
@@ -515,51 +515,54 @@ function DelegationIntegrationPanel({
       );
       setCustomCommands({});
     } catch (cause) {
-      if (isCurrent() && id === operation.current)
+      if (id === operation.current)
         setError(
           cause instanceof Error ? cause.message : 'Could not prepare the integration review.',
         );
     } finally {
-      if (isCurrent() && id === operation.current) setBusy(false);
+      if (id === operation.current) setBusy(false);
     }
   };
 
   const submitSelections = async (selectedChecks: ChatDelegationVerificationSelection[]) => {
+    if (busy) return;
     const id = ++operation.current;
     setBusy(true);
     setError(null);
     try {
       const value = await window.mezair.chat.integrateDelegation(threadId, run.id, selectedChecks);
-      if (!isCurrent() || id !== operation.current) return;
-      onIntegrationUpdate(value);
+      if (id !== operation.current) return;
+      if (isCurrent()) onIntegrationUpdate(value);
       setPlan(null);
-      await onRefresh();
+      if (isCurrent()) await onRefresh();
     } catch (cause) {
-      if (isCurrent() && id === operation.current)
+      if (id === operation.current)
         setError(cause instanceof Error ? cause.message : 'Could not integrate these results.');
     } finally {
-      if (isCurrent() && id === operation.current) setBusy(false);
+      if (id === operation.current) setBusy(false);
     }
   };
 
   const retryVerification = async () => {
+    if (busy) return;
     const id = ++operation.current;
     setBusy(true);
     setError(null);
     try {
       const value = await window.mezair.chat.retryDelegationVerification(threadId, run.id);
-      if (!isCurrent() || id !== operation.current) return;
-      onIntegrationUpdate(value);
-      await onRefresh();
+      if (id !== operation.current) return;
+      if (isCurrent()) onIntegrationUpdate(value);
+      if (isCurrent()) await onRefresh();
     } catch (cause) {
-      if (isCurrent() && id === operation.current)
+      if (id === operation.current)
         setError(cause instanceof Error ? cause.message : 'Could not retry verification.');
     } finally {
-      if (isCurrent() && id === operation.current) setBusy(false);
+      if (id === operation.current) setBusy(false);
     }
   };
 
   const applyRepository = async (repositoryId: string) => {
+    if (busy) return;
     const id = ++operation.current;
     setBusy(true);
     setError(null);
@@ -569,14 +572,14 @@ function DelegationIntegrationPanel({
         run.id,
         repositoryId,
       );
-      if (!isCurrent() || id !== operation.current) return;
-      onIntegrationUpdate(value);
-      await onRefresh();
+      if (id !== operation.current) return;
+      if (isCurrent()) onIntegrationUpdate(value);
+      if (isCurrent()) await onRefresh();
     } catch (cause) {
-      if (isCurrent() && id === operation.current)
+      if (id === operation.current)
         setError(cause instanceof Error ? cause.message : 'Could not apply verified changes.');
     } finally {
-      if (isCurrent() && id === operation.current) setBusy(false);
+      if (id === operation.current) setBusy(false);
     }
   };
 

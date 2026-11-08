@@ -227,6 +227,7 @@ describe('ACP session parity (cursor/devin)', () => {
     unsubscribe();
     stopAllSessions();
     vi.clearAllMocks();
+    vi.useRealTimers();
   });
 
   it('reports truthful capabilities: ACP mid-turn sends queue, goals are unsupported', async () => {
@@ -342,6 +343,7 @@ describe('ACP session parity (cursor/devin)', () => {
     const proc = createFakeAcpProcess();
     const session = await startAcpSession(proc);
     await sendConfiguredMessage(proc, session.id, 'active work');
+    vi.setSystemTime(new Date('2026-11-08T10:00:00.000Z'));
 
     const request = {
       sessionId: session.id,
@@ -358,6 +360,8 @@ describe('ACP session parity (cursor/devin)', () => {
     });
     expect(writtenRequests(proc, 'session/prompt')).toHaveLength(1);
 
+    const deliveredAt = '2026-11-08T10:02:00.000Z';
+    vi.setSystemTime(new Date(deliveredAt));
     emit(proc, { jsonrpc: '2.0', id: 't-follow-up', result: { stopReason: 'end_turn' } });
     await acknowledgeLastRequest(proc, 'session/set_mode');
     await acknowledgeLastRequest(proc, 'session/set_config_option');
@@ -373,8 +377,51 @@ describe('ACP session parity (cursor/devin)', () => {
         .map((item) => item.event.followUpStatus),
     ).toEqual(['queued', 'delivered']);
 
-    expect(await followUpTurn(request)).toMatchObject({ status: 'delivered', queueDepth: 0 });
+    expect(await followUpTurn(request)).toMatchObject({
+      status: 'delivered',
+      queueDepth: 0,
+      startedAt: deliveredAt,
+    });
+    expect(
+      events.findLast((item) => item.event.type === 'follow_up_delivery')?.event.followUpStartedAt,
+    ).toBe(deliveredAt);
     expect(writtenRequests(proc, 'session/prompt')).toHaveLength(2);
+  });
+
+  it('queues a simultaneous idle follow-up while the first send is preparing', async () => {
+    const proc = createFakeAcpProcess();
+    const session = await startAcpSession(proc);
+    const first = followUpTurn({
+      sessionId: session.id,
+      requestId: 'first-idle',
+      intent: 'queue',
+      message: 'first',
+    });
+    const second = followUpTurn({
+      sessionId: session.id,
+      requestId: 'second-idle',
+      intent: 'queue',
+      message: 'second',
+    });
+    expect(await second).toMatchObject({ status: 'queued', queueDepth: 1 });
+    expect(getCodexSession(session.id)?.status).toBe('busy');
+    await acknowledgeLastRequest(proc, 'session/set_mode');
+    await acknowledgeLastRequest(proc, 'session/set_config_option');
+    expect(await first).toMatchObject({ status: 'delivered' });
+    expect(writtenRequests(proc, 'session/prompt')).toHaveLength(1);
+    emit(proc, { jsonrpc: '2.0', id: 'first-complete', result: { stopReason: 'end_turn' } });
+    await acknowledgeLastRequest(proc, 'session/set_mode');
+    await acknowledgeLastRequest(proc, 'session/set_config_option');
+    await tick();
+    expect(writtenRequests(proc, 'session/prompt')).toHaveLength(2);
+    expect(
+      await followUpTurn({
+        sessionId: session.id,
+        requestId: 'second-idle',
+        intent: 'queue',
+        message: 'second',
+      }),
+    ).toMatchObject({ status: 'delivered' });
   });
 
   it('fails queued work on interruption and does not start it automatically', async () => {

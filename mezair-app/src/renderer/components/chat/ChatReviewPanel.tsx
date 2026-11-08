@@ -58,9 +58,9 @@ export function ChatReviewPanel({
     effectiveRepoId && status?.repoId === effectiveRepoId && status.revision === revision,
   );
   const files = status?.repoId === effectiveRepoId ? status.files : EMPTY_FILES;
-  const contextRef = useRef('');
   const contextKey = `${effectiveRepoId}:${side}:${revision}`;
-  contextRef.current = contextKey;
+  const repoRef = useRef(effectiveRepoId);
+  repoRef.current = effectiveRepoId;
 
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
 
@@ -145,7 +145,7 @@ export function ChatReviewPanel({
 
   const applyHunk = async (hunk: GitDiffHunk, action: GitHunkAction) => {
     if (!ready || !effectiveRepoId || !selectedFile || !diff) return;
-    const startedContext = contextRef.current;
+    if (action === 'unstage' && (selectedFile.oldPath || selectedFile.status === 'renamed')) return;
     const id = `${hunk.index}:${hunk.fingerprint}`;
     setPendingHunk(id);
     setActionError(null);
@@ -157,11 +157,11 @@ export function ChatReviewPanel({
         hunk.fingerprint,
         action,
       );
-      if (contextRef.current !== startedContext) return;
+      if (repoRef.current !== effectiveRepoId) return;
       setConfirmDiscard(null);
       refresh();
     } catch (err) {
-      if (contextRef.current !== startedContext) return;
+      if (repoRef.current !== effectiveRepoId) return;
       setActionError(err instanceof Error ? err.message : 'Could not apply that change.');
       refresh();
     } finally {
@@ -171,7 +171,6 @@ export function ChatReviewPanel({
 
   const applyFile = async (action: 'stage' | 'unstage' | 'discard') => {
     if (!ready || !effectiveRepoId || !selectedFile) return;
-    const startedContext = contextRef.current;
     setPendingHunk('file');
     setActionError(null);
     try {
@@ -189,11 +188,11 @@ export function ChatReviewPanel({
           diff.reviewFingerprint,
         );
       }
-      if (contextRef.current !== startedContext) return;
+      if (repoRef.current !== effectiveRepoId) return;
       setConfirmDiscard(null);
       refresh();
     } catch (err) {
-      if (contextRef.current !== startedContext) return;
+      if (repoRef.current !== effectiveRepoId) return;
       setActionError(err instanceof Error ? err.message : 'Could not update the file.');
     } finally {
       setPendingHunk(null);
@@ -363,6 +362,11 @@ export function ChatReviewPanel({
               Binary change. Stage or discard the whole file.
             </p>
           )}
+          {side === 'staged' && (selectedFile?.oldPath || selectedFile?.status === 'renamed') && (
+            <p className="px-3 py-2 text-xs text-text-secondary">
+              Use Unstage file for a rename so both paths stay together.
+            </p>
+          )}
           {diff && !diff.binary && diff.hunks.length === 0 && selectedFile && !untracked && (
             <p className="px-3 py-3 text-xs text-text-tertiary">No line changes to show.</p>
           )}
@@ -424,7 +428,12 @@ export function ChatReviewPanel({
                       </>
                     ) : (
                       <ReviewButton
-                        disabled={busyAction || !ready}
+                        disabled={
+                          busyAction ||
+                          !ready ||
+                          Boolean(selectedFile?.oldPath) ||
+                          selectedFile?.status === 'renamed'
+                        }
                         onClick={() => void applyHunk(hunk, 'unstage')}
                         icon={<Undo2 size={12} aria-hidden="true" />}
                       >

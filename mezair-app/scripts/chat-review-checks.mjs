@@ -45,50 +45,76 @@ try {
   }
   const [port, endpoint] = readFileSync(portFile, 'utf8').trim().split('\n');
   cdp = await connectCdp(`ws://127.0.0.1:${port}${endpoint}`);
+  let browserErrors = 0;
+  cdp.onEvent((event) => {
+    if (event.method === 'Runtime.exceptionThrown' && browserErrors++ < 10)
+      console.error(
+        'Fixture exception:',
+        (
+          event.params.exceptionDetails.exception?.description ??
+          JSON.stringify(event.params.exceptionDetails)
+        ).slice(0, 1800),
+      );
+    if (
+      event.method === 'Runtime.consoleAPICalled' &&
+      event.params.type === 'error' &&
+      browserErrors++ < 10
+    )
+      console.error(
+        'Fixture console:',
+        event.params.args
+          .map((value) => value.value ?? value.description)
+          .join(' ')
+          .slice(0, 1200),
+      );
+  });
   const results = [];
   for (const width of [1280, 720]) {
-    const { targetId } = await cdp.command('Target.createTarget', { url: 'about:blank' });
-    const { sessionId } = await cdp.command('Target.attachToTarget', { targetId, flatten: true });
-    await cdp.command('Page.enable', {}, sessionId);
-    await cdp.command('Runtime.enable', {}, sessionId);
-    await cdp.command(
-      'Emulation.setDeviceMetricsOverride',
-      { width, height: 900, deviceScaleFactor: 1, mobile: false },
-      sessionId,
-    );
-    await cdp.command('Target.activateTarget', { targetId });
-    let loadTimeout;
-    let unsubscribe;
-    const loaded = new Promise((resolve, reject) => {
-      loadTimeout = setTimeout(() => reject(new Error('Review page did not load')), 30000);
-      unsubscribe = cdp.onEvent((event) => {
-        if (event.method === 'Page.loadEventFired' && event.sessionId === sessionId) resolve();
-      });
-    });
-    try {
+    for (const [page, check] of [
+      ['index.html', 'checkReview'],
+      ['chat-view.html', 'checkChatView'],
+    ]) {
+      console.log(`Checking ${page} at ${width}px`);
+      const { targetId } = await cdp.command('Target.createTarget', { url: 'about:blank' });
+      const { sessionId } = await cdp.command('Target.attachToTarget', { targetId, flatten: true });
+      await cdp.command('Page.enable', {}, sessionId);
+      await cdp.command('Runtime.enable', {}, sessionId);
       await cdp.command(
-        'Page.navigate',
-        {
-          url: pathToFileURL(
-            resolve(
-              process.env.REVIEW_FIXTURE_OUT ?? '/tmp/mezair-chat-review-fixture',
-              'index.html',
-            ),
-          ).href,
-        },
+        'Emulation.setDeviceMetricsOverride',
+        { width, height: 900, deviceScaleFactor: 1, mobile: false },
         sessionId,
       );
-      await loaded;
-    } finally {
-      clearTimeout(loadTimeout);
-      unsubscribe?.();
+      await cdp.command('Target.activateTarget', { targetId });
+      let loadTimeout;
+      let unsubscribe;
+      const loaded = new Promise((resolve, reject) => {
+        loadTimeout = setTimeout(() => reject(new Error('Review page did not load')), 30000);
+        unsubscribe = cdp.onEvent((event) => {
+          if (event.method === 'Page.loadEventFired' && event.sessionId === sessionId) resolve();
+        });
+      });
+      try {
+        await cdp.command(
+          'Page.navigate',
+          {
+            url: pathToFileURL(
+              resolve(process.env.REVIEW_FIXTURE_OUT ?? '/tmp/mezair-chat-review-fixture', page),
+            ).href,
+          },
+          sessionId,
+        );
+        await loaded;
+      } finally {
+        clearTimeout(loadTimeout);
+        unsubscribe?.();
+      }
+      await cdp.evaluate(
+        sessionId,
+        `new Promise((resolve,reject)=>{const deadline=Date.now()+30000;const poll=()=>typeof window.${check}==='function'?resolve(true):Date.now()>deadline?reject(new Error('Review fixture failed to load')):setTimeout(poll,25);poll()})`,
+      );
+      results.push({ width, page, ...(await cdp.evaluate(sessionId, `window.${check}()`)) });
+      await cdp.command('Target.closeTarget', { targetId });
     }
-    await cdp.evaluate(
-      sessionId,
-      `new Promise((resolve,reject)=>{const deadline=Date.now()+30000;const poll=()=>typeof window.checkReview==='function'?resolve(true):Date.now()>deadline?reject(new Error('Review fixture failed to load')):setTimeout(poll,25);poll()})`,
-    );
-    results.push({ width, ...(await cdp.evaluate(sessionId, 'window.checkReview()')) });
-    await cdp.command('Target.closeTarget', { targetId });
   }
   console.log(JSON.stringify({ viewports: results }));
 } finally {

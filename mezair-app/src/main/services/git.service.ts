@@ -23,6 +23,7 @@ import {
 } from '../../shared/git-hunks.js';
 import { parseAdoRemoteUrl, parseGitHubRemoteUrl } from './code-review-pr.service.js';
 import { getSettings } from './settings.service.js';
+import { acquireCheckpointPaths } from './chat-checkpoint-locks.js';
 import { callLlm } from './llm.service.js';
 
 const execFileAsync = promisify(execFile);
@@ -286,7 +287,8 @@ export async function createPullRequestFromChanges(
 
 export async function stageFiles(repoPath: string, paths: string[]): Promise<void> {
   const git = gitClient(repoPath);
-  await git.add(paths);
+  paths.forEach((value) => assertRepoRelativePath(repoPath, value));
+  await git.raw(['--literal-pathspecs', 'add', '--', ...paths]);
 }
 
 export async function unstageFiles(repoPath: string, paths: string[]): Promise<void> {
@@ -298,20 +300,26 @@ export async function unstageFiles(repoPath: string, paths: string[]): Promise<v
 }
 
 export async function discardFiles(repoPath: string, paths: string[]): Promise<void> {
-  const git = gitClient(repoPath);
-  // Separate untracked from tracked
-  const status = await git.status();
-  const untracked = new Set(status.not_added);
+  paths.forEach((value) => assertRepoRelativePath(repoPath, value));
+  const release = acquireCheckpointPaths([repoPath]);
+  try {
+    const git = gitClient(repoPath);
+    // Separate untracked from tracked
+    const status = await git.status();
+    const untracked = new Set(status.not_added);
 
-  const tracked = paths.filter((p) => !untracked.has(p));
-  const untrackedToRemove = paths.filter((p) => untracked.has(p));
+    const tracked = paths.filter((p) => !untracked.has(p));
+    const untrackedToRemove = paths.filter((p) => untracked.has(p));
 
-  if (tracked.length > 0) {
-    await git.checkout(['--', ...tracked]);
-  }
-  for (const f of untrackedToRemove) {
-    const fullPath = path.join(repoPath, f);
-    if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    if (tracked.length > 0) {
+      await git.raw(['--literal-pathspecs', 'checkout', '--', ...tracked]);
+    }
+    for (const f of untrackedToRemove) {
+      const fullPath = path.join(repoPath, f);
+      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    }
+  } finally {
+    release();
   }
 }
 
@@ -451,6 +459,7 @@ async function reviewedFilePatch(
   const args = [
     '--literal-pathspecs',
     'diff',
+    '--no-color',
     '--no-ext-diff',
     '--no-textconv',
     '--binary',
@@ -485,22 +494,27 @@ export async function discardReviewedFile(
   filePath: string,
   fingerprint: string,
 ): Promise<void> {
-  const patch = await reviewedFilePatch(repoPath, filePath, false);
-  if (!patch || crypto.createHash('sha256').update(patch).digest('hex') !== fingerprint)
-    throw new Error(
-      'This file changed since it was shown. Refresh and review it before discarding.',
-    );
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mezair-discard-'));
+  const release = acquireCheckpointPaths([repoPath]);
   try {
-    const patchPath = path.join(dir, 'reviewed.patch');
-    fs.writeFileSync(patchPath, patch);
-    await execFileAsync(
-      'git',
-      ['apply', '--reverse', '--binary', '--whitespace=nowarn', patchPath],
-      { cwd: repoPath, timeout: 30000 },
-    );
+    const patch = await reviewedFilePatch(repoPath, filePath, false);
+    if (!patch || crypto.createHash('sha256').update(patch).digest('hex') !== fingerprint)
+      throw new Error(
+        'This file changed since it was shown. Refresh and review it before discarding.',
+      );
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mezair-discard-'));
+    try {
+      const patchPath = path.join(dir, 'reviewed.patch');
+      fs.writeFileSync(patchPath, patch);
+      await execFileAsync(
+        'git',
+        ['apply', '--reverse', '--binary', '--whitespace=nowarn', patchPath],
+        { cwd: repoPath, timeout: 30000 },
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    release();
   }
 }
 
@@ -563,41 +577,54 @@ export async function applyFileHunk(
   fingerprint: string,
   action: GitHunkAction,
 ): Promise<void> {
-  assertRepoRelativePath(repoPath, filePath);
-  if (!Number.isInteger(hunkIndex) || hunkIndex < 0) throw new Error('Invalid hunk.');
-  if (action !== 'stage' && action !== 'unstage' && action !== 'discard') {
-    throw new Error('Invalid hunk action.');
-  }
-  const git = gitClient(repoPath);
-  const diff = await git.raw([
-    '--literal-pathspecs',
-    'diff',
-    '--no-ext-diff',
-    '--no-textconv',
-    '--src-prefix=a/',
-    '--dst-prefix=b/',
-    ...(action === 'unstage' ? ['--cached'] : []),
-    '--',
-    filePath,
-  ]);
-  const parsed = parseFileDiff(diff);
-  if (parsed.binary) throw new Error('Binary changes cannot be split into hunks.');
-  const hunk = selectHunk(parsed, hunkIndex, fingerprint);
-  const patch = buildSingleHunkPatch(parsed, hunk);
-
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mezair-hunk-'));
-  const patchFile = path.join(dir, 'hunk.patch');
+  const release = action === 'discard' ? acquireCheckpointPaths([repoPath]) : () => undefined;
   try {
-    fs.writeFileSync(patchFile, patch, 'utf-8');
-    const args =
-      action === 'stage'
-        ? ['apply', '--cached', '--whitespace=nowarn', patchFile]
-        : action === 'unstage'
-          ? ['apply', '--cached', '-R', '--whitespace=nowarn', patchFile]
-          : ['apply', '-R', '--whitespace=nowarn', patchFile];
-    await execFileAsync('git', args, { cwd: repoPath, timeout: 30_000 });
+    assertRepoRelativePath(repoPath, filePath);
+    if (!Number.isInteger(hunkIndex) || hunkIndex < 0) throw new Error('Invalid hunk.');
+    if (action !== 'stage' && action !== 'unstage' && action !== 'discard') {
+      throw new Error('Invalid hunk action.');
+    }
+    const git = gitClient(repoPath);
+    if (
+      action === 'unstage' &&
+      (await git.status()).renamed.some(
+        (rename) => rename.to === filePath || rename.from === filePath,
+      )
+    )
+      throw new Error('Unstage renamed files as a whole file to preserve both paths.');
+    const diff = await git.raw([
+      '--literal-pathspecs',
+      'diff',
+      '--no-color',
+      '--no-ext-diff',
+      '--no-textconv',
+      '--src-prefix=a/',
+      '--dst-prefix=b/',
+      ...(action === 'unstage' ? ['--cached'] : []),
+      '--',
+      filePath,
+    ]);
+    const parsed = parseFileDiff(diff);
+    if (parsed.binary) throw new Error('Binary changes cannot be split into hunks.');
+    const hunk = selectHunk(parsed, hunkIndex, fingerprint);
+    const patch = buildSingleHunkPatch(parsed, hunk);
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mezair-hunk-'));
+    const patchFile = path.join(dir, 'hunk.patch');
+    try {
+      fs.writeFileSync(patchFile, patch, 'utf-8');
+      const args =
+        action === 'stage'
+          ? ['apply', '--cached', '--whitespace=nowarn', patchFile]
+          : action === 'unstage'
+            ? ['apply', '--cached', '-R', '--whitespace=nowarn', patchFile]
+            : ['apply', '-R', '--whitespace=nowarn', patchFile];
+      await execFileAsync('git', args, { cwd: repoPath, timeout: 30_000 });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    release();
   }
 }
 

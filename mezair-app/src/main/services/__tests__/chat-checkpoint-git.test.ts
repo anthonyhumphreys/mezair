@@ -12,7 +12,14 @@ import {
   diffAgainstCheckpoint,
   restoreWorkingTree,
 } from '../chat-checkpoint.service.js';
-import { applyFileHunk, getFileDiff, unstageFiles, discardReviewedFile } from '../git.service.js';
+import {
+  applyFileHunk,
+  getFileDiff,
+  unstageFiles,
+  discardReviewedFile,
+  discardFiles,
+} from '../git.service.js';
+import { acquireCheckpointPaths } from '../chat-checkpoint-locks.js';
 import { parseFileDiff } from '../../../shared/git-hunks.js';
 
 let repo: string;
@@ -31,6 +38,58 @@ beforeEach(() => {
 });
 
 afterEach(() => fs.rmSync(repo, { recursive: true, force: true }));
+
+it('treats glob characters literally in legacy whole-file discard', async () => {
+  fs.writeFileSync(path.join(repo, '[ab].txt'), 'original\n');
+  git('add', '.');
+  git('commit', '-qm', 'literal path');
+  fs.writeFileSync(path.join(repo, '[ab].txt'), 'changed\n');
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'keep newer content\n');
+  await discardFiles(repo, ['[ab].txt']);
+  expect(fs.readFileSync(path.join(repo, '[ab].txt'), 'utf8')).toBe('original\n');
+  expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('keep newer content\n');
+});
+
+it('ignores forced Git color for rendered and applied hunks', async () => {
+  git('config', 'color.ui', 'always');
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'ONE\ntwo\nthree\n');
+  const diff = await getFileDiff(repo, 'a.txt', false);
+  expect(diff.hunks).not.toContain('\u001b');
+  const parsed = parseFileDiff(diff.hunks);
+  await applyFileHunk(repo, 'a.txt', 0, parsed.hunks[0].fingerprint, 'stage');
+  expect(git('show', ':a.txt')).toBe('ONE\ntwo\nthree\n');
+});
+
+it('refuses hunk unstaging of a staged rename without changing either index path', async () => {
+  git('mv', 'a.txt', 'renamed.txt');
+  fs.writeFileSync(path.join(repo, 'renamed.txt'), 'one\nTWO\nthree\n');
+  git('add', '.');
+  const before = git('write-tree');
+  const diff = parseFileDiff((await getFileDiff(repo, 'renamed.txt', true)).hunks);
+  await expect(
+    applyFileHunk(repo, 'renamed.txt', 0, diff.hunks[0].fingerprint, 'unstage'),
+  ).rejects.toThrow('as a whole file');
+  expect(git('write-tree')).toBe(before);
+});
+
+it('fences destructive review behind the shared recovery lease', async () => {
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'ONE\ntwo\nthree\n');
+  const reviewed = await getFileDiff(repo, 'a.txt', false);
+  const parsed = parseFileDiff(reviewed.hunks);
+  const release = acquireCheckpointPaths([repo]);
+  try {
+    await expect(
+      applyFileHunk(repo, 'a.txt', 0, parsed.hunks[0].fingerprint, 'discard'),
+    ).rejects.toThrow('Wait for file rewind');
+    await expect(discardReviewedFile(repo, 'a.txt', reviewed.reviewFingerprint!)).rejects.toThrow(
+      'Wait for file rewind',
+    );
+    await expect(discardFiles(repo, ['a.txt'])).rejects.toThrow('Wait for file rewind');
+  } finally {
+    release();
+  }
+  expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('ONE\ntwo\nthree\n');
+});
 
 it('discards only the reviewed whole-file patch and refuses newer edits', async () => {
   fs.writeFileSync(path.join(repo, 'a.txt'), 'reviewed\n');

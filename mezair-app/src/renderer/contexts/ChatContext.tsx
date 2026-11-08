@@ -1709,6 +1709,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             intent: event.followUpIntent ?? attempt.request.intent,
             status: event.followUpStatus,
             queueDepth: event.followUpQueueDepth ?? 0,
+            startedAt: event.followUpStartedAt ?? attempt.result?.startedAt,
             error: event.followUpError,
           };
         }

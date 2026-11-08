@@ -86,9 +86,9 @@
       <a href="https://github.com/anthonyhumphreys/mezair/pull/105">Chat experience PR</a>
     </p>
     <p>
-      The changes address all twenty inline review findings, the additional findings in the review
-      summary, two test-only suggestions, and the independent rewind safety finding. The PR is
-      intentionally left open for the owner to merge.
+      The changes address the original twenty inline findings, fifteen delayed follow-up findings,
+      the additional findings in the review summary, six test suggestions, and the independent
+      rewind safety finding. The PR is intentionally left open for the owner to merge.
     </p>
     <h2>File recovery and Git safety</h2>
     <ul>
@@ -114,7 +114,7 @@
         mutation errors remain visible, and unstaging a rename includes both paths.
       </li>
     </ul>
-    <h2>Review coverage</h2>
+    <h2>Original inline review coverage</h2>
     <div class="table">
       <table>
         <thead>
@@ -367,6 +367,48 @@
       reader position, expanded history and jumping to the bottom remain in place. Performance
       budgets were not relaxed.
     </p>
+    <h2>Delayed follow-up review</h2>
+    <ul>
+      <li>
+        Checkpoint capture, rewind, whole-file discard and hunk discard share canonical checkout
+        leases. A capture cannot retain partially restored files.
+      </li>
+      <li>
+        Provider send preparation reserves its session before awaiting work. Simultaneous idle
+        follow-ups queue in order; failed preparation releases the reservation.
+      </li>
+      <li>
+        Git whole-file actions use literal paths, parsed diffs disable forced color, and staged
+        renames require whole-file unstaging so their source deletion cannot be left behind.
+      </li>
+      <li>
+        Verification busy state and completion belong to the transcript store and survive panel
+        remounts. A remount cannot resubmit in-flight verification commands.
+      </li>
+      <li>
+        Inline edits stay mounted while the thread is busy. Retained attachments make a request
+        sendable even with empty text, including through the real ChatView action queue.
+      </li>
+      <li>
+        A successful mutation refreshes the displayed repository even when manual Refresh races its
+        completion. Closed panel controls retain an enabled keyboard tab stop.
+      </li>
+      <li>Delivery timestamps survive uncertain retries and subsequent status events.</li>
+      <li>
+        Failed actions recover only into their original workspace, thread and persona composer. A
+        browser regression exercises the real ChatView editor, fork, send failure, thread switch,
+        attachment recovery and the other conversation's persisted draft.
+      </li>
+      <li>
+        The earlier durable cleanup queue and stop-on-incomplete-rewind behavior also address the
+        follow-up review's cleanup and partial-rewind findings.
+      </li>
+    </ul>
+    <p>
+      The four additional test suggestions cover distinct enqueue/delivery timestamps, empty and
+      model-only usage, a zero-sized context meter, failed resend through ChatView, and undo after a
+      successful file removal followed by a second operation failure.
+    </p>
     <h2>Additional findings in the review summary</h2>
     <ul>
       <li>
@@ -417,9 +459,9 @@
     </p>
     <h2>Validation</h2>
     <p>
-      Full suite: 3,688 tests passed, with 12 existing skips. Both Desktop TypeScript checks and
+      Initial full local suite before the delayed review: 3,688 tests passed, with 12 existing skips. Both Desktop TypeScript checks and
       lint passed. Production main/preload/renderer and headless daemon builds passed. The synthetic
-      browser suite passed thirteen assertions at each of 1280px and 720px (26 assertions total).
+      initial browser suite passed thirteen assertions at each of 1280px and 720px (26 assertions total).
       The local performance harness passed its transcript, dashboard and advanced interaction
       checks; paired CI remains the authoritative budget comparison. The original Electron native
       binaries were restored after Node-based testing.
@@ -442,6 +484,10 @@
       <a href="https://github.com/anthonyhumphreys/mezair/pull/105/checks">PR checks page</a>; the
       final handoff records their verified state. No merge or release is performed by this change.
     </p>
+    <p>The extended suite adds the real ChatView and in-flight verification remount scenarios.
+      The final handoff records results on the latest commit. Later full local runs encountered
+      host stalls and worker/browser startup timeouts; stable CI runners provide final full-suite,
+      browser, packaging and soak verification.</p>
     <h2>Reproduce the rendered checks</h2>
     <pre><code># From mezair-app/
 pnpm exec vite build --config scripts/chat-review.vite.config.ts

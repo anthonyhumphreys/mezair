@@ -84,6 +84,7 @@ import { isAcpAgentProvider } from '../../../shared/agent-providers';
 import { agentProviderLabel } from '../../utils/agent-display';
 import { buildMessageReusePrefill, shouldFocusChatComposerFromKey } from './chat-view-utils';
 import { WORKSPACE_REPOSITORIES_PATH } from '../../utils/sidebar-navigation';
+import { composerRecoveryScope, useScopedComposerRecovery } from './useScopedComposerRecovery';
 
 // Re-exported for the existing `../ChatView` import path used by tests.
 export {
@@ -224,11 +225,16 @@ export function ChatView({ userRole }: ChatViewProps) {
 
   const [showFindings, setShowFindings] = useState(true);
   const [dismissedFindings, setDismissedFindings] = useState<Set<number>>(new Set());
-  const [composerPrefill, setComposerPrefill] = useState<{
-    id: string;
-    text: string;
-    attachments?: ChatAttachment[];
-  } | null>(null);
+  const recoveryPersona =
+    !isTemporaryChat && chatLayout === 'workitems'
+      ? 'workitem-layout'
+      : (activePersona?.id ?? 'no-persona');
+  const composerScope = composerRecoveryScope(activeWorkspace?.id, activeThreadId, recoveryPersona);
+  const {
+    prefill: composerPrefill,
+    setPrefill: setComposerPrefill,
+    recover: recoverComposer,
+  } = useScopedComposerRecovery(composerScope);
   const [executionStrategy, setExecutionStrategy] = useState<ExecutionStrategy>('auto');
   const [fastMode, setFastMode] = useState(false);
   const [composerFocusRequest, setComposerFocusRequest] = useState(0);
@@ -241,6 +247,7 @@ export function ChatView({ userRole }: ChatViewProps) {
       personaId?: string;
       attachments?: ChatAttachment[];
       complete?: (success: boolean) => void;
+      scope: string;
     }>
   >([]);
   const pendingChatAction = pendingChatActions[0] ?? null;
@@ -254,10 +261,22 @@ export function ChatView({ userRole }: ChatViewProps) {
       attachments: ChatAttachment[] = [],
       complete?: (success: boolean) => void,
     ) => {
-      const action = { id: crypto.randomUUID(), text, threadId, personaId, attachments, complete };
+      const action = {
+        id: crypto.randomUUID(),
+        text,
+        threadId,
+        personaId,
+        attachments,
+        complete,
+        scope: composerRecoveryScope(
+          activeWorkspace?.id,
+          threadId ?? activeThreadId,
+          personaId ?? recoveryPersona,
+        ),
+      };
       setPendingChatActions((pending) => [...pending, action]);
     },
-    [],
+    [activeWorkspace?.id, activeThreadId, recoveryPersona],
   );
   const [sendNotice, setSendNotice] = useState<string | null>(null);
   const [designSidebarCollapsed, setDesignSidebarCollapsed] = useState(false);
@@ -497,7 +516,7 @@ export function ChatView({ userRole }: ChatViewProps) {
       restoreFiles: boolean,
       attachments: ChatAttachment[] = [],
     ): Promise<boolean> => {
-      if (busy || !text.trim()) return false;
+      if (busy || (!text.trim() && !attachments.length)) return false;
       const sourceThreadId = activeThreadId;
       try {
         if (restoreFiles && messageId && sourceThreadId) {
@@ -987,14 +1006,14 @@ export function ChatView({ userRole }: ChatViewProps) {
   useEffect(() => {
     if (!pendingChatAction || actionInFlight.current || !historyReady) return;
     if (
-      (pendingChatAction.threadId && pendingChatAction.threadId !== activeThreadId) ||
+      pendingChatAction.scope !== composerScope ||
       (pendingChatAction.personaId && pendingChatAction.personaId !== activePersona?.id)
     ) {
       setPendingChatActions((pending) =>
         pending.filter((action) => action.id !== pendingChatAction.id),
       );
       pendingChatAction.complete?.(false);
-      setComposerPrefill({
+      recoverComposer(pendingChatAction.scope, {
         id: pendingChatAction.id,
         text: pendingChatAction.text,
         attachments: pendingChatAction.attachments,
@@ -1032,7 +1051,7 @@ export function ChatView({ userRole }: ChatViewProps) {
         pendingChatAction.complete?.(true);
       } catch (error) {
         pendingChatAction.complete?.(false);
-        setComposerPrefill({
+        recoverComposer(pendingChatAction.scope, {
           id: pendingChatAction.id,
           text: pendingChatAction.text,
           attachments: pendingChatAction.attachments,
@@ -1061,6 +1080,8 @@ export function ChatView({ userRole }: ChatViewProps) {
     session?.capabilities?.followUp.queue,
     followUp,
     handleChatInputSend,
+    composerScope,
+    recoverComposer,
   ]);
 
   const composerDraftKey = [

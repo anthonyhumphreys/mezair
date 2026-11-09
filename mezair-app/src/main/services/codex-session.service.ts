@@ -2368,7 +2368,7 @@ function handleServerMessage(session: ManagedSession, line: string): void {
             requestId: event.inputRequestId,
             kind,
             ...(event.inputRequest?.kind === 'user_input'
-              ? { questionIds: event.inputRequest.questions.map((question) => question.id) }
+              ? { questionIds: event.inputRequest.questions?.map((question) => question.id) ?? [] }
               : {}),
           });
         }

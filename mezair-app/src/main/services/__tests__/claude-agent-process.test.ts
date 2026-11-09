@@ -100,6 +100,49 @@ afterEach(() => {
 });
 
 describe('Claude Code provider', () => {
+  it('rechecks scope after CLI detection before creating the SDK query', async () => {
+    let allowed = true;
+    const guard = () => {
+      if (!allowed) throw new Error('Scope removed');
+    };
+    proc.kill();
+    proc = new ClaudeAgentProcess({}, 'auto', guard);
+    proc.stdout.on('data', (chunk) => output.push(JSON.parse(chunk.toString())));
+    let finish!: (status: { installed: boolean; path: string }) => void;
+    mocks.detect.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    send('session/new', { cwd: '/tmp/fixture' });
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    allowed = false;
+    finish({ installed: true, path: '/bin/claude' });
+    await vi.waitFor(() =>
+      expect(output.some((line) => JSON.stringify(line).includes('Scope removed'))).toBe(true),
+    );
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
+
+  it('rechecks scope at the actual SDK child spawn boundary', async () => {
+    let allowed = true;
+    proc.kill();
+    proc = new ClaudeAgentProcess({}, 'auto', () => {
+      if (!allowed) throw new Error('Scope removed');
+    });
+    proc.stdout.on('data', (chunk) => output.push(JSON.parse(chunk.toString())));
+    await start();
+    allowed = false;
+    expect(() =>
+      options.spawnClaudeCodeProcess!({
+        command: '/never-spawn',
+        args: [],
+        cwd: '/tmp',
+        env: {},
+      } as never),
+    ).toThrow('Scope removed');
+  });
+
   it('parses only credential-free login status', () => {
     expect(parseClaudeAuthStatus('{"loggedIn":true,"email":"private@example.test"}')).toBe(true);
     expect(parseClaudeAuthStatus('{"loggedIn":false}')).toBe(false);

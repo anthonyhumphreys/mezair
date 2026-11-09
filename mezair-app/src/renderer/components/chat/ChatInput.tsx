@@ -270,7 +270,9 @@ function ChatInputImpl({
   const [attachments, setAttachments] = useState<ChatAttachment[]>(() =>
     loadAttachmentDraft(draftKey),
   );
+  const completedPrefillRef = useRef<string | null>(null);
   const recoveryBlocked = Boolean(
+    completedPrefillRef.current !== prefill?.id &&
     prefill?.attachments?.some(
       (item) =>
         !attachments.some((entry) => getAttachmentDedupKey(entry) === getAttachmentDedupKey(item)),
@@ -1137,7 +1139,9 @@ function ChatInputImpl({
     const nextDraft = loadDraft(draftKey);
     setValue(nextDraft);
     valueRef.current = nextDraft;
-    setAttachments(loadAttachmentDraft(draftKey));
+    const nextAttachments = loadAttachmentDraft(draftKey);
+    attachmentsRef.current = nextAttachments;
+    setAttachments(nextAttachments);
     setAttachmentPreviews({});
     setAttachmentError(null);
     setStandardFeedback(null);
@@ -1159,9 +1163,11 @@ function ChatInputImpl({
 
   useEffect(() => {
     if (!prefill) {
+      completedPrefillRef.current = null;
       prefillAppliedRef.current = null;
       return;
     }
+    if (completedPrefillRef.current === prefill.id) return;
     if (!prefill.textApplied && prefillAppliedRef.current !== prefill.id) {
       prefillAppliedRef.current = prefill.id;
       markDraftChanged();
@@ -1199,6 +1205,7 @@ function ChatInputImpl({
         return;
     }
 
+    completedPrefillRef.current = prefill.id;
     setAttachmentError(null);
     onPrefillApplied?.(prefill.id);
     composerAutosize.schedule(() => {

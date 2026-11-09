@@ -496,6 +496,7 @@ export interface MezairAPI {
     ) => Promise<ChatArtifactAnnotation>;
     deleteArtifactAnnotation: (id: string) => Promise<boolean>;
     listThreads: (workspaceId: string | null) => Promise<ChatThread[]>;
+    threadExists: (threadId: string, workspaceId: string | null) => Promise<boolean>;
     listCheckpoints: (threadId: string) => Promise<import('./types').ChatCheckpointSummary[]>;
     previewCheckpoint: (
       threadId: string,

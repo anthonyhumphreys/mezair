@@ -249,6 +249,7 @@ interface LiveAssistantSegment {
   content: string;
   persistedContent?: string;
   persistedPhase?: ChatAssistantPhase;
+  mainOwned?: boolean;
   createdAt: string;
 }
 
@@ -964,6 +965,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const changedSegments = resolvedSegments.filter((segment) => {
         const content = segment.content.trim();
         return (
+          (!segment.mainOwned || options?.final) &&
           content &&
           (segment.persistedContent !== content || segment.persistedPhase !== segment.phase)
         );
@@ -992,25 +994,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           for (const segment of changedSegments) {
             const content = segment.content.trim();
             const phase = segment.phase ?? 'progress';
-            await window.mezair.chat.saveEntry(
-              threadId,
-              currentSession.repoId ?? null,
-              currentSession.id,
-              {
-                id: segment.id,
-                role: phase === 'final' ? 'assistant' : 'system',
-                content,
-                timestamp: segment.createdAt,
-                personaId: currentSession.personaId,
+            if (!segment.mainOwned)
+              await window.mezair.chat.saveEntry(
                 threadId,
-                event: {
-                  type: 'text',
-                  text: content,
-                  itemId: segment.itemId,
-                  assistantPhase: phase,
+                currentSession.repoId ?? null,
+                currentSession.id,
+                {
+                  id: segment.id,
+                  role: phase === 'final' ? 'assistant' : 'system',
+                  content,
+                  timestamp: segment.createdAt,
+                  personaId: currentSession.personaId,
+                  threadId,
+                  event: {
+                    type: 'text',
+                    text: content,
+                    itemId: segment.itemId,
+                    assistantPhase: phase,
+                  },
                 },
-              },
-            );
+              );
 
             if (phase === 'final') {
               await persistArtifactsForAssistantMessage(
@@ -2395,6 +2398,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             reasoningEffort: reasoningLevel,
             serviceTier,
             checkpointKey: isTemporaryChat ? undefined : userEntry.id,
+            visibleUserMessage: { id: userEntry.id!, content: displayMessage, timestamp },
           });
         } catch (err) {
           markUserEntryDelivery(userEntry.id!, 'failed');
@@ -2447,6 +2451,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           reasoningEffort: reasoningLevel,
           serviceTier,
           checkpointKey: isTemporaryChat ? undefined : userEntry.id,
+          visibleUserMessage: { id: userEntry.id!, content: displayMessage, timestamp },
         });
       } catch (err) {
         markUserEntryDelivery(userEntry.id!, 'failed');
@@ -3306,6 +3311,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [activePersona, chatLayout, createThreadRecord, detachLiveSession, scaffoldModeActive]);
 
   const startTemporaryChat = useCallback(async () => {
+    const isNavigationCurrent = navigationRequests.current.begin();
     if (temporaryThread) {
       threadLoadVersionRef.current += 1;
       setIsTemporaryChat(true);
@@ -3326,6 +3332,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     detachLiveSession();
     const created = await window.mezair.chat.createTemporaryThread(persona.id);
+    if (!isNavigationCurrent()) {
+      await window.mezair.chat.endTemporaryThread(created.id);
+      return;
+    }
     threadLoadVersionRef.current += 1;
     setIsTemporaryChat(true);
     setTemporaryThread(created);
@@ -3345,6 +3355,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [activePersona, detachLiveSession, loadThreadIntoState, personas, temporaryThread]);
 
   const resumeTemporaryChat = useCallback(async () => {
+    navigationRequests.current.invalidate();
     if (!temporaryThread) {
       if (!activePersona && personas.length === 0) return;
       await startTemporaryChat();
@@ -3363,6 +3374,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [activePersona, loadThreadIntoState, personas, startTemporaryChat, temporaryThread]);
 
   const showWorkspaceChat = useCallback(() => {
+    navigationRequests.current.invalidate();
     if (!isTemporaryChat) return;
     threadLoadVersionRef.current += 1;
     setIsTemporaryChat(false);
@@ -4635,7 +4647,8 @@ function appendLiveAssistantSegment(
   }
 
   const segment: LiveAssistantSegment = {
-    id: generateId(),
+    id: event.persistedBy === 'main' && itemId ? itemId : generateId(),
+    mainOwned: event.persistedBy === 'main',
     itemId,
     phase: event.assistantPhase,
     content: event.text ?? '',

@@ -68,6 +68,7 @@ const mocks = vi.hoisted(() => ({
   threadRepoIds: ['r1'] as string[],
   workspaceId: undefined as string | undefined,
   membershipAllowed: true,
+  continuation: '',
   questionRecords: new Map<
     string,
     {
@@ -133,10 +134,11 @@ vi.mock('../chat-persistence.service.js', () => ({
   }),
   isTemporaryChatThread: () => false,
   updateChatThreadAttention: () => undefined,
+  setChatThreadProviderThreadId: () => undefined,
 }));
 vi.mock('../chat-continuation.service.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../chat-continuation.service.js')>()),
-  captureThreadContinuation: () => ({ context: '' }),
+  captureThreadContinuation: () => ({ context: mocks.continuation }),
 }));
 vi.mock('../chat-evidence.service.js', () => ({
   saveChatEvent: vi.fn((_threadId, _repoId, _sessionId, event) => {
@@ -187,6 +189,7 @@ import {
   getCodexSessionCheckpointBindings,
   steerTurn,
   sendMessage,
+  emitLocalAssistantTurnEnd,
   followUpTurn,
   interruptTurn,
   stopSession,
@@ -402,7 +405,7 @@ describe('ACP session parity (cursor/devin)', () => {
     'keeps follow-ups queued through ordinary send preparation (local=%s)',
     async (local) => {
       const proc = createFakeAcpProcess();
-      const session = await startAcpSession(proc);
+      const session = await startAcpSession(proc, { threadId: 'local-history' });
       let finish: ((handled: boolean) => void) | undefined;
       const sending = sendMessage(
         session.id,
@@ -423,6 +426,10 @@ describe('ACP session parity (cursor/devin)', () => {
         message: 'Next',
       };
       expect(await followUpTurn(request)).toMatchObject({ status: 'queued' });
+      if (local) {
+        mocks.continuation = 'Visible local request: First\nVisible local answer: Local answer';
+        emitLocalAssistantTurnEnd(session.id);
+      }
       finish!(local);
       await acknowledgeLastRequest(proc, 'session/set_mode');
       await acknowledgeLastRequest(proc, 'session/set_config_option');
@@ -440,6 +447,13 @@ describe('ACP session parity (cursor/devin)', () => {
         expect(await followUpTurn(request)).toMatchObject({ status: 'delivered' }),
       );
       expect(writtenRequests(proc, 'session/prompt')).toHaveLength(local ? 1 : 2);
+      if (local) {
+        const payload = JSON.stringify(writtenRequests(proc, 'session/prompt').at(-1));
+        expect(payload).toContain('Visible local request: First');
+        expect(payload).toContain('Visible local answer: Local answer');
+        expect(payload).toContain('Next');
+      }
+      mocks.continuation = '';
     },
   );
 

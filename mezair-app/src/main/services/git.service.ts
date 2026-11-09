@@ -24,7 +24,7 @@ import {
 import { parseAdoRemoteUrl, parseGitHubRemoteUrl } from './code-review-pr.service.js';
 import { getSettings } from './settings.service.js';
 import { acquireCheckpointPaths } from './chat-checkpoint-locks.js';
-import { runReviewedGit } from './git-reviewed-command.js';
+import { runReviewedGit, type ReviewedGitOptions } from './git-reviewed-command.js';
 import { callLlm } from './llm.service.js';
 
 const execFileAsync = promisify(execFile);
@@ -300,7 +300,11 @@ export async function unstageFiles(repoPath: string, paths: string[]): Promise<v
   await git.raw(['--literal-pathspecs', 'reset', 'HEAD', '--', ...targets]);
 }
 
-export async function discardFiles(repoPath: string, paths: string[], assertCanDiscard?: () => void): Promise<void> {
+export async function discardFiles(
+  repoPath: string,
+  paths: string[],
+  assertCanDiscard?: () => void,
+): Promise<void> {
   paths.forEach((value) => assertRepoRelativePath(repoPath, value));
   const release = acquireCheckpointPaths([repoPath]);
   try {
@@ -348,8 +352,12 @@ export async function pushBranch(
   return result?.pushed?.[0]?.local ?? branch ?? 'pushed';
 }
 
-async function runCheckoutCommand(repoPath: string, args: string[]): Promise<string> {
-  const result = await runReviewedGit(repoPath, args);
+async function runCheckoutCommand(
+  repoPath: string,
+  args: string[],
+  options?: ReviewedGitOptions,
+): Promise<string> {
+  const result = await runReviewedGit(repoPath, args, options);
   if (result.code !== 0)
     throw new Error(
       result.stderr.trim() || result.stdout.trim() || 'Git checkout operation failed.',
@@ -364,8 +372,12 @@ export async function pullBranch(
 ): Promise<string> {
   const release = acquireCheckpointPaths([repoPath]);
   try {
-    const args = ['pull', remote, ...(branch ? [branch] : [])];
-    return await runCheckoutCommand(repoPath, args);
+    const args = ['pull', '--progress', remote, ...(branch ? [branch] : [])];
+    return await runCheckoutCommand(repoPath, args, {
+      timeoutMs: 30 * 60_000,
+      idleTimeoutMs: 5 * 60_000,
+      label: 'Git pull',
+    });
   } finally {
     release();
   }

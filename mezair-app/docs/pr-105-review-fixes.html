@@ -86,8 +86,8 @@
       <a href="https://github.com/anthonyhumphreys/mezair/pull/105">Chat experience PR</a>
     </p>
     <p>
-      The changes address 67 inline review threads (one contains two findings), additional
-      review-summary findings, thirteen test suggestions and independently verified recovery and
+      The changes address 79 inline review threads (one contains two findings), additional
+      review-summary findings, fifteen test suggestions and independently verified recovery and
       streaming issues. The PR remains open for the owner to merge.
     </p>
     <h2>File recovery and Git safety</h2>
@@ -537,6 +537,64 @@
         entry points preserve Undo while leased.
       </li>
     </ul>
+    <h2>Latest review: startup, recovery and process lifetimes</h2>
+    <ul>
+      <li>
+        Delegated workers register their canonical execution paths before asynchronous startup.
+        Discard and rewind reject overlapping workers, even when their coordinator is idle;
+        native-process ownership continues through close.
+      </li>
+      <li>
+        On-device replies atomically save the visible user/assistant exchange before completion and
+        queued continuation capture. Stable assistant IDs avoid duplicate or late partial renderer
+        writes. Temporary conversation history stays in memory.
+      </li>
+      <li>
+        Codex start, resume and fork requests and deferred ACP new/load/retry requests revalidate
+        current scope. Rejected late ACP dispatch fails the startup promise and cleans up the
+        process/token. Claude checks again after asynchronous SDK setup and at child spawn.
+        Threadless Design, BA and persona restarts pin their originating active workspace rather
+        than skipping membership checks.
+      </li>
+      <li>
+        POSIX Git timeouts wait for the child and live process-group descendants before releasing
+        the checkout lease. Pulls use a 30-minute hard limit and a five-minute idle limit, with
+        progress resetting the idle timer. Other reviewed operations keep the short deadline.
+      </li>
+      <li>
+        Sync session retirement invalidates deferred quarantine retries, preserving the sealed
+        update without projecting it after sign-out.
+      </li>
+      <li>
+        Completed attachment prefills no longer reinsert removed files or block sending when their
+        callback is omitted. Capacity overflow remains retryable. A scope switch loads its
+        attachment state before applying recovery.
+      </li>
+      <li>
+        Composer draft keys include workspace, thread and persona/layout. Legacy keys without an
+        attributable workspace are left inert rather than adopting another workspace's files.
+      </li>
+      <li>
+        A narrow thread-existence bridge checks the local catalogue across normal and work-item
+        conversations. Recovery queues and lookups survive ChatView unmounts until their scoped
+        composer acknowledges each payload; confirmed deletion releases retained data.
+      </li>
+      <li>
+        Opening, resuming or leaving temporary chat invalidates earlier navigation requests. A
+        superseded temporary creation is ended instead of replacing the active conversation.
+      </li>
+      <li>
+        Permission cancellation is classified by the actual selected option; data-free denials
+        remain possible after scope removal.
+      </li>
+    </ul>
+    <p>
+      The focused service set passed 170 regressions. The browser suite passed
+      <strong>98 rendered assertions</strong> at 1280px and 720px, including real ChatView remounts,
+      work-item lookup recovery, workspace draft isolation and optional-prefill removal/send. The
+      complete local suite passed 3,744 tests with 12 existing skips; both TypeScript projects, lint
+      and the production build passed. Final CI results are recorded in the handoff.
+    </p>
     <h2>Security finding: current workspace membership</h2>
     <p>
       <strong>Outcome: implementation complete; final CI verification pending.</strong> A ready
@@ -582,18 +640,19 @@ pnpm exec vitest run</code></pre>
       OS permissions mid-turn.
     </p>
     <h2>Validation</h2>
+    <p><strong>Latest local candidate: 3,744 tests passed, 12 existing skips; 400 test files passed and four skipped. Both TypeScript projects, ESLint and production main/preload/renderer builds passed. The threadless startup regression failed before the fix and passed afterward, alongside 103 startup/scope/Mesh/checkpoint controls. The independent candidate review is complete; its confirmed threadless bypass was addressed.</strong></p>
     <p>
       A complete earlier local suite passed 3,712 tests with 12 existing skips. The final
       Unicode-stream regression also passed in the 24-test Git suite. Both Desktop TypeScript
       projects, lint and the production main/preload/renderer build passed.
     </p>
     <p>
-      The extended rendered suite includes the original 70 assertions plus overflow recovery,
-      remount, navigation and blocked-command regressions at 1280px and 720px; final totals are
-      recorded in the handoff. It exercises repository switches, exact mutation destinations, stale
-      errors and confirmation, busy controls, keyboard navigation, verification remounts, and the
-      real ChatView's editor, explicit first-message branch and scoped multi-action recovery. It
-      uses synthetic state in disposable browser profiles, without account, provider or repository
+      The extended rendered suite includes 98 assertions covering overflow recovery, remount,
+      navigation and blocked-command regressions at 1280px and 720px; final totals are recorded in
+      the handoff. It exercises repository switches, exact mutation destinations, stale errors and
+      confirmation, busy controls, keyboard navigation, verification remounts, and the real
+      ChatView's editor, explicit first-message branch and scoped multi-action recovery. It uses
+      synthetic state in disposable browser profiles, without account, provider or repository
       access; uncaught browser exceptions fail the run.
     </p>
     <p>

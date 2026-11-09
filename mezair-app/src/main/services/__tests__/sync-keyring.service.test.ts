@@ -1,3 +1,4 @@
+import { retireDeferredSyncWork } from '../sync-deferred-work.js';
 import { CheckpointLeaseBusyError } from '../chat-checkpoint-locks.js';
 import Database from 'better-sqlite3';
 import {
@@ -235,66 +236,86 @@ describe('entity seal/unseal', () => {
     }
   });
 
-  it('reopens a sealed binding after key delivery and records its remote revision', () => {
-    activateEnrollment();
-    markPullCompleted();
-    const key = randomBytes(32);
-    installAccountKey(SCOPE, 1, key, 'pairing');
-    const envelope = sealEntityPayload(
-      SCOPE,
-      {
-        entityType: 'workflow-template',
-        entityId: 'w-retry',
-        operation: 'create',
-        schemaVersion: 1,
-      },
-      { id: 'w-retry', name: 'Recovered', nodes: [], edges: [] },
-    );
-    db.prepare('DELETE FROM sync_keyring').run();
-    upsertBinding(SCOPE, 'workflow-template', 'w-retry', {
-      baseRevision: null,
-      basePayloadJson: null,
-      quarantineJson: JSON.stringify({ envelope, revision: 7 }),
-    });
-    installAccountKey(SCOPE, 1, key, 'pairing');
-    const deferred = db
-      .prepare("SELECT base_revision, quarantine_json FROM sync_bindings WHERE entity_id='w-retry'")
-      .get();
-    vi.useFakeTimers();
-    applyRemoteEntityPayload.mockImplementationOnce(() => {
-      throw new CheckpointLeaseBusyError('Wait for file rewind');
-    });
-    retryQuarantinedEntities(SCOPE);
-    expect(
-      db
+  it.each([false, true])(
+    'fences retired quarantine retries (retired=%s) while retaining normal retries',
+    (retired) => {
+      activateEnrollment();
+      markPullCompleted();
+      const key = randomBytes(32);
+      installAccountKey(SCOPE, 1, key, 'pairing');
+      const envelope = sealEntityPayload(
+        SCOPE,
+        {
+          entityType: 'workflow-template',
+          entityId: 'w-retry',
+          operation: 'create',
+          schemaVersion: 1,
+        },
+        { id: 'w-retry', name: 'Recovered', nodes: [], edges: [] },
+      );
+      db.prepare('DELETE FROM sync_keyring').run();
+      upsertBinding(SCOPE, 'workflow-template', 'w-retry', {
+        baseRevision: null,
+        basePayloadJson: null,
+        quarantineJson: JSON.stringify({ envelope, revision: 7 }),
+      });
+      installAccountKey(SCOPE, 1, key, 'pairing');
+      const deferred = db
         .prepare(
           "SELECT base_revision, quarantine_json FROM sync_bindings WHERE entity_id='w-retry'",
         )
-        .get(),
-    ).toEqual(deferred);
+        .get();
+      vi.useFakeTimers();
+      applyRemoteEntityPayload.mockImplementationOnce(() => {
+        throw new CheckpointLeaseBusyError('Wait for file rewind');
+      });
+      retryQuarantinedEntities(SCOPE);
+      expect(
+        db
+          .prepare(
+            "SELECT base_revision, quarantine_json FROM sync_bindings WHERE entity_id='w-retry'",
+          )
+          .get(),
+      ).toEqual(deferred);
 
-    vi.advanceTimersByTime(3000);
-    vi.useRealTimers();
+      if (retired) {
+        retireDeferredSyncWork();
+        applyRemoteEntityPayload.mockClear();
+      }
+      vi.advanceTimersByTime(3000);
+      vi.useRealTimers();
 
-    const binding = db
-      .prepare(
-        `SELECT base_revision, quarantine_json FROM sync_bindings
+      if (retired) {
+        expect(applyRemoteEntityPayload).not.toHaveBeenCalled();
+        expect(
+          db
+            .prepare(
+              "SELECT base_revision, quarantine_json FROM sync_bindings WHERE entity_id='w-retry'",
+            )
+            .get(),
+        ).toEqual(deferred);
+        return;
+      }
+      const binding = db
+        .prepare(
+          `SELECT base_revision, quarantine_json FROM sync_bindings
          WHERE backend_id = ? AND account_id = ? AND dataset_epoch = ?
            AND entity_type = 'workflow-template' AND entity_id = 'w-retry'`,
-      )
-      .get(SCOPE.backendId, SCOPE.accountId, SCOPE.datasetEpoch) as {
-      base_revision: number | null;
-      quarantine_json: string | null;
-    };
-    expect(binding.base_revision).toBe(7);
-    expect(binding.quarantine_json).toBeNull();
-    expect(applyRemoteEntityPayload).toHaveBeenCalledWith('workflow-template', 'w-retry', {
-      id: 'w-retry',
-      name: 'Recovered',
-      nodes: [],
-      edges: [],
-    });
-  });
+        )
+        .get(SCOPE.backendId, SCOPE.accountId, SCOPE.datasetEpoch) as {
+        base_revision: number | null;
+        quarantine_json: string | null;
+      };
+      expect(binding.base_revision).toBe(7);
+      expect(binding.quarantine_json).toBeNull();
+      expect(applyRemoteEntityPayload).toHaveBeenCalledWith('workflow-template', 'w-retry', {
+        id: 'w-retry',
+        name: 'Recovered',
+        nodes: [],
+        edges: [],
+      });
+    },
+  );
 });
 
 describe('provisioning gate', () => {

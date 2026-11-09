@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { assertNoManagedWorkerWrites } from '../services/managed-worker-paths.js';
 import { guardLocalChatStream } from '../services/local-chat-stream.js';
 import {
   createThreadWithPullRequest,
@@ -109,6 +111,7 @@ import {
   listChatThreads,
   listWorkItemChatThreads,
   saveChatEntry,
+  saveLocalChatExchange,
   saveChatThreadGoal,
   saveChatThreadPlan,
   setChatThreadProviderThreadId,
@@ -216,9 +219,25 @@ async function tryLocalLlmChatReply(
   sessionId: string,
   message: string,
   attachments?: ChatAttachment[],
+  options?: ChatSendOptions,
 ): Promise<boolean> {
   const settings = getSettings();
   if (settings.localLlmMode !== 'prefer-simple') return false;
+  const user = options?.visibleUserMessage;
+  const session = getCodexSession(sessionId);
+  if (
+    !session?.appThreadId ||
+    !user ||
+    typeof user.id !== 'string' ||
+    !user.id ||
+    user.id.length > 120 ||
+    typeof user.content !== 'string' ||
+    typeof user.timestamp !== 'string' ||
+    !Number.isFinite(Date.parse(user.timestamp)) ||
+    (options?.checkpointKey && user.id !== options.checkpointKey)
+  )
+    return false;
+  const assistantId = `local:${randomUUID()}`;
   if (message.length > LOCAL_LLM_CHAT_MAX_PROMPT_CHARS) return false;
 
   let imagePaths: string[] | undefined;
@@ -234,9 +253,7 @@ async function tryLocalLlmChatReply(
 
   const route = await classifyPromptForLocalModel(message, (imagePaths?.length ?? 0) > 0);
   if (route !== 'local') return false;
-  const threadId = isTemporaryChatSession(sessionId)
-    ? undefined
-    : getCodexSession(sessionId)?.appThreadId;
+  const threadId = session.appThreadId;
   assertCodexSessionScope(sessionId);
   const localPrompt = prependThreadContinuation(
     threadId ? captureThreadContinuation(threadId).context : undefined,
@@ -262,7 +279,7 @@ async function tryLocalLlmChatReply(
       if (isLikelyLocalModelRefusal(pending)) return;
       if (pending.length > LOCAL_LLM_STREAM_HOLDBACK_CHARS) {
         start();
-        emitLocalAssistantText(sessionId, pending);
+        emitLocalAssistantText(sessionId, pending, assistantId);
         emittedChars += pending.length;
         pending = '';
       }
@@ -288,11 +305,37 @@ async function tryLocalLlmChatReply(
 
   assertCodexSessionScope(sessionId);
   console.log(`[Chat] Answered via local model (${content.length} chars)`);
+  try {
+    saveLocalChatExchange(
+      threadId,
+      session.repoId ?? null,
+      sessionId,
+      { ...user, role: 'user', personaId: session.personaId, threadId, attachments },
+      {
+        id: assistantId,
+        role: 'assistant',
+        content: emittedChars > 0 ? full : content,
+        timestamp: new Date().toISOString(),
+        personaId: session.personaId,
+        threadId,
+        event: {
+          type: 'text',
+          text: content,
+          itemId: assistantId,
+          assistantPhase: 'final',
+          persistedBy: 'main',
+        },
+      },
+    );
+  } catch (error) {
+    if (started) emitLocalAssistantTurnEnd(sessionId, 'interrupted');
+    throw error;
+  }
   start();
   // Streamed text is already on screen; emit only the unstreamed remainder (or
   // the trimmed body when the backend didn't stream at all).
   const remainder = emittedChars > 0 ? full.slice(emittedChars) : content;
-  if (remainder) emitLocalAssistantText(sessionId, remainder);
+  if (remainder) emitLocalAssistantText(sessionId, remainder, assistantId);
   emitLocalAssistantTurnEnd(sessionId);
   return true;
 }
@@ -364,6 +407,15 @@ export function registerChatHandlers(): void {
       personaId: string,
       options?: ChatStartOptions,
     ): Promise<CodexSession> => {
+      const originWorkspaceId =
+        repoIds.length && !options?.threadId
+          ? (options?.workspace?.workspaceId ?? getSettings().activeWorkspaceId)
+          : undefined;
+      if (originWorkspaceId)
+        options = {
+          ...options,
+          workspace: { ...options?.workspace, workspaceId: originWorkspaceId },
+        };
       const assertStartAccess = captureThreadAccessFence(options?.threadId);
       const provider = options?.provider ?? getSettings().llmProvider;
       await assertChatProviderAvailable(provider);
@@ -543,12 +595,23 @@ export function registerChatHandlers(): void {
             sessionId,
             enrichedMessage,
             attachments,
+            options,
           );
           if (handledLocally) return true;
         }
 
         return false;
       });
+    },
+  );
+
+  ipcMain.handle(
+    'chat:thread-exists',
+    (_event, threadId: string, workspaceId: string | null): boolean => {
+      if (typeof threadId !== 'string' || (workspaceId !== null && typeof workspaceId !== 'string'))
+        throw new Error('Invalid conversation scope.');
+      const thread = getChatThread(threadId);
+      return Boolean(thread && (thread.workspaceId ?? null) === workspaceId);
     },
   );
 
@@ -571,6 +634,7 @@ export function registerChatHandlers(): void {
       const thread = getChatThread(threadId);
       if (!thread) throw new Error('Thread not found.');
       const assertCanRestore = (paths: string[]) => {
+        assertNoManagedWorkerWrites(paths);
         const active = listActiveCodexSessions().some(
           (session) =>
             session.status === 'busy' &&

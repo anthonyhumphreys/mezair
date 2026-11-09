@@ -1115,11 +1115,7 @@ export function ChatView({ userRole }: ChatViewProps) {
     recoverComposer,
   ]);
 
-  const composerDraftKey = [
-    'mezair:chat-draft',
-    activeThreadId ?? 'no-thread',
-    isWorkItemLayout ? 'workitem-layout' : (activePersona?.id ?? 'no-persona'),
-  ].join(':');
+  const composerDraftKey = `mezair:chat-draft:${composerScope}`;
 
   const isEmpty = entries.length === 0 && !error;
   const pendingQuestions = useMemo(

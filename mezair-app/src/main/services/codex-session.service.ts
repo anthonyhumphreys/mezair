@@ -410,6 +410,18 @@ export async function startSession(
   const settings = getSettings();
   const agentProvider = runtime?.provider ?? options?.provider ?? settings.llmProvider;
   const appThread = options?.threadId ? getChatThread(options.threadId) : null;
+  const workspaceScopeId = appThread
+    ? (appThread.workspaceId ?? null)
+    : repoIds.length > 0
+      ? (options?.workspace?.workspaceId ?? settings.activeWorkspaceId ?? null)
+      : (options?.workspace?.workspaceId ?? options?.scaffold?.workspaceId ?? null);
+  const startupScope = {
+    appThreadId: options?.threadId,
+    temporaryChat: options?.temporaryChat === true,
+    repoIds: [...repoIds],
+    workspaceScopeId,
+  };
+  const assertStartupScope = () => assertSessionRepositoryScope(startupScope);
   if ((options?.temporaryChat === true) !== Boolean(appThread?.temporary)) {
     throw new Error('Temporary chat session state does not match its thread.');
   }
@@ -533,9 +545,10 @@ export async function startSession(
   let proc: AgentProcess;
   try {
     assertStartAccess();
+    assertStartupScope();
     proc =
       provider === 'claude'
-        ? new ClaudeAgentProcess(env, model)
+        ? new ClaudeAgentProcess(env, model, assertStartupScope)
         : spawn(command, args, {
             cwd,
             env,
@@ -556,14 +569,19 @@ export async function startSession(
     resolveThreadReady = resolve;
     rejectThreadReady = reject;
   });
+  void threadReady.catch(() => undefined);
 
   const session: ManagedSession = {
     id,
     repoId: repoIds[0],
     repoIds: [...repoIds],
     repoPaths: repoPaths.map(canonicalCheckpointPath),
-    workspaceScopeId: appThread?.workspaceId ?? null,
-    workspaceId: options?.scaffold?.workspaceId ?? options?.workspace?.workspaceId,
+    workspaceScopeId,
+    workspaceId:
+      options?.scaffold?.workspaceId ??
+      options?.workspace?.workspaceId ??
+      workspaceScopeId ??
+      undefined,
     appThreadId: options?.threadId,
     kind: options?.scaffold ? 'scaffold' : repoIds.length > 0 ? 'repo' : 'workspace',
     personaId,
@@ -670,81 +688,81 @@ export async function startSession(
     });
   });
 
-  if (isAcpAgentProvider(provider)) {
-    sendCodexJsonRpc(proc, 'initialize', {
-      protocolVersion: 1,
-      clientCapabilities: buildAcpClientCapabilities(),
-      clientInfo: { name: 'mezair', version: app.getVersion() },
-    });
-    // Cursor requires an explicit authenticate call; Devin reads stored
-    // `devin auth login` credentials, so authenticate is only sent after an
-    // auth-related failure (see onRequestError) — never eagerly, since
-    // devin-browser opens a browser window.
-    if (provider === 'cursor') {
-      sendCodexJsonRpc(proc, 'authenticate', { methodId: ACP_AUTH_METHODS.cursor });
-    }
-    if (options?.providerThreadId) {
-      // Resume goes through ACP session/load, but only when the agent
-      // advertises agentCapabilities.loadSession — known once the initialize
-      // result arrives, so the session call is deferred to
-      // observeAcpInitializeResult (which falls back to session/new).
-      session.acpPendingSessionStart = { resumeSessionId: options.providerThreadId };
-      session.continuity = 'resumed';
-    } else {
-      // session/new also waits for the initialize result: the advertised
-      // mcpCapabilities decide how the Mezair MCP server is attached.
-      session.acpPendingSessionStart = {};
-      // ACP cannot fork a provider thread: a "fork" is a new session the
-      // renderer seeds from the transcript — record that honestly.
-      session.continuity = options?.forkFromProviderThreadId ? 'transcript-seeded' : 'new';
-    }
-  } else {
-    // Step 1: Send initialize
-    sendCodexJsonRpc(proc, 'initialize', {
-      clientInfo: { name: 'mezair', version: app.getVersion() },
-      capabilities: {
-        experimentalApi: true,
-        mcpServerOpenaiFormElicitation: true,
-      },
-    });
-    sendCodexJsonRpcNotification(proc, 'initialized', {});
-
-    // Step 2: Start, resume, or fork a thread with system prompt and cwd.
-    const threadParams = {
-      model,
-      cwd,
-      developerInstructions: systemPrompt,
-      approvalPolicy: codexPolicy.approvalPolicy,
-      approvalsReviewer: selectedProfile === 'auto-review' ? 'auto_review' : 'user',
-      sandbox: codexPolicy.sandbox,
-      ...(options?.temporaryChat ? { ephemeral: true } : {}),
-    };
-    session.appliedMode =
-      codexPolicy.sandbox === 'read-only'
-        ? 'read-only'
-        : selectedProfile === 'auto-review'
-          ? 'auto-review'
-          : mode;
-    if (options?.forkFromProviderThreadId) {
-      sendCodexJsonRpc(proc, 'thread/fork', {
-        threadId: options.forkFromProviderThreadId,
-        ...threadParams,
-      });
-      session.continuity = 'forked';
-    } else if (options?.providerThreadId) {
-      sendCodexJsonRpc(proc, 'thread/resume', {
-        threadId: options.providerThreadId,
-        ...threadParams,
-      });
-      session.continuity = 'resumed';
-    } else {
-      sendCodexJsonRpc(proc, 'thread/start', threadParams);
-      session.continuity = 'new';
-    }
-  }
-
-  // Wait for thread/started before marking ready
   try {
+    if (isAcpAgentProvider(provider)) {
+      sendCodexJsonRpc(proc, 'initialize', {
+        protocolVersion: 1,
+        clientCapabilities: buildAcpClientCapabilities(),
+        clientInfo: { name: 'mezair', version: app.getVersion() },
+      });
+      // Cursor requires an explicit authenticate call; Devin reads stored
+      // `devin auth login` credentials, so authenticate is only sent after an
+      // auth-related failure (see onRequestError) — never eagerly, since
+      // devin-browser opens a browser window.
+      if (provider === 'cursor') {
+        sendCodexJsonRpc(proc, 'authenticate', { methodId: ACP_AUTH_METHODS.cursor });
+      }
+      if (options?.providerThreadId) {
+        // Resume goes through ACP session/load, but only when the agent
+        // advertises agentCapabilities.loadSession — known once the initialize
+        // result arrives, so the session call is deferred to
+        // observeAcpInitializeResult (which falls back to session/new).
+        session.acpPendingSessionStart = { resumeSessionId: options.providerThreadId };
+        session.continuity = 'resumed';
+      } else {
+        // session/new also waits for the initialize result: the advertised
+        // mcpCapabilities decide how the Mezair MCP server is attached.
+        session.acpPendingSessionStart = {};
+        // ACP cannot fork a provider thread: a "fork" is a new session the
+        // renderer seeds from the transcript — record that honestly.
+        session.continuity = options?.forkFromProviderThreadId ? 'transcript-seeded' : 'new';
+      }
+    } else {
+      // Step 1: Send initialize
+      sendCodexJsonRpc(proc, 'initialize', {
+        clientInfo: { name: 'mezair', version: app.getVersion() },
+        capabilities: {
+          experimentalApi: true,
+          mcpServerOpenaiFormElicitation: true,
+        },
+      });
+      sendCodexJsonRpcNotification(proc, 'initialized', {});
+
+      // Step 2: Start, resume, or fork a thread with system prompt and cwd.
+      const threadParams = {
+        model,
+        cwd,
+        developerInstructions: systemPrompt,
+        approvalPolicy: codexPolicy.approvalPolicy,
+        approvalsReviewer: selectedProfile === 'auto-review' ? 'auto_review' : 'user',
+        sandbox: codexPolicy.sandbox,
+        ...(options?.temporaryChat ? { ephemeral: true } : {}),
+      };
+      session.appliedMode =
+        codexPolicy.sandbox === 'read-only'
+          ? 'read-only'
+          : selectedProfile === 'auto-review'
+            ? 'auto-review'
+            : mode;
+      if (options?.forkFromProviderThreadId) {
+        sendProviderRequest(session, 'thread/fork', {
+          threadId: options.forkFromProviderThreadId,
+          ...threadParams,
+        });
+        session.continuity = 'forked';
+      } else if (options?.providerThreadId) {
+        sendProviderRequest(session, 'thread/resume', {
+          threadId: options.providerThreadId,
+          ...threadParams,
+        });
+        session.continuity = 'resumed';
+      } else {
+        sendProviderRequest(session, 'thread/start', threadParams);
+        session.continuity = 'new';
+      }
+    }
+
+    // Wait for thread/started before marking ready
     await waitForThreadReady(threadReady, id);
   } catch (error) {
     if (session.headless) await stopHeadlessSession(id);
@@ -846,7 +864,7 @@ export async function sendMessage(
         : 'default';
     if (!supportsPermissionProfile(session.agentProvider, profile))
       throw new Error(`${session.agentProvider} does not support this permission profile.`);
-    if (session.continuationNeedsRefresh && session.appThreadId && !session.temporaryChat)
+    if (session.continuationNeedsRefresh && session.appThreadId)
       session.continuationContext =
         captureThreadContinuation(session.appThreadId).context || undefined;
     const providerMessage = prependThreadContinuation(session.continuationContext, message);
@@ -1039,7 +1057,18 @@ function assertSessionActive(session: ManagedSession): void {
 }
 
 function assertProviderContentScope(session: ManagedSession, method: string): void {
-  if (method === 'turn/start' || method === 'turn/steer' || method === 'session/prompt')
+  if (
+    [
+      'turn/start',
+      'turn/steer',
+      'session/prompt',
+      'thread/start',
+      'thread/resume',
+      'thread/fork',
+      'session/new',
+      'session/load',
+    ].includes(method)
+  )
     assertSessionRepositoryScope(session);
 }
 
@@ -1493,8 +1522,25 @@ function acpMcpServers(session: ManagedSession) {
   });
 }
 
+function failProviderStartup(session: ManagedSession, cause: unknown): void {
+  session.rejectThreadReady?.(
+    cause instanceof Error ? cause : new Error('Provider scope changed.', { cause }),
+  );
+  session.rejectThreadReady = null;
+}
+function sendAcpStartupRequest(
+  session: ManagedSession,
+  method: string,
+  params: Record<string, unknown>,
+): void {
+  try {
+    sendProviderRequest(session, method, params);
+  } catch (error) {
+    failProviderStartup(session, error);
+  }
+}
 function sendAcpSessionNew(session: ManagedSession): void {
-  sendCodexJsonRpc(session.process, 'session/new', {
+  sendAcpStartupRequest(session, 'session/new', {
     cwd: session.cwd,
     mcpServers: acpMcpServers(session),
     _meta: { systemPrompt: session.systemPrompt },
@@ -1582,11 +1628,15 @@ export function emitLocalAssistantTurnStart(sessionId: string): void {
 }
 
 /** Append text to an in-progress local assistant turn (streaming deltas). */
-export function emitLocalAssistantText(sessionId: string, text: string): void {
+export function emitLocalAssistantText(sessionId: string, text: string, itemId?: string): void {
   const session = sessions.get(sessionId);
   if (!session) return;
   assertSessionRepositoryScope(session);
-  broadcastEvent(sessionId, { type: 'text', text });
+  broadcastEvent(sessionId, {
+    type: 'text',
+    text,
+    ...(itemId ? { itemId, persistedBy: 'main' as const, assistantPhase: 'final' as const } : {}),
+  });
 }
 
 /** Close a local assistant turn; use 'interrupted' when it aborted mid-stream. */
@@ -1597,7 +1647,7 @@ export function emitLocalAssistantTurnEnd(
   const session = sessions.get(sessionId);
   if (!session) return;
   // The provider did not see this on-device turn. Refresh from saved visible
-  // history on its next accepted turn, after renderer persistence has flushed.
+  // history on its next accepted turn. Main commits local exchanges before completion.
   session.continuationNeedsRefresh = true;
   if (session.appThreadId && !session.temporaryChat)
     setChatThreadProviderThreadId(session.appThreadId, null, session.provider);
@@ -1804,8 +1854,15 @@ export function getCodexSessionExecutionPaths(sessionId: string): string[] {
   return session ? [...new Set([...session.repoPaths, canonicalCheckpointPath(session.cwd)])] : [];
 }
 
-function assertSessionRepositoryScope(session: ManagedSession): void {
-  if (!session.appThreadId || session.temporaryChat) return;
+function assertSessionRepositoryScope(
+  session: Pick<ManagedSession, 'appThreadId' | 'temporaryChat' | 'repoIds' | 'workspaceScopeId'>,
+): void {
+  if (session.temporaryChat) return;
+  if (!session.appThreadId) {
+    if (session.workspaceScopeId)
+      assertWorkspaceRepositoryMembership(session.workspaceScopeId, session.repoIds);
+    return;
+  }
   const thread = getChatThread(session.appThreadId);
   if (thread && (thread.workspaceId ?? null) !== session.workspaceScopeId)
     throw new Error('The conversation workspace changed. Start a new session before sending.');
@@ -2227,7 +2284,7 @@ function observeAcpInitializeResult(session: ManagedSession, line: string): void
   if (pending.resumeSessionId && session.acpLoadSession) {
     session.acpResumeAttempted = true;
     session.continuity = 'resumed';
-    sendCodexJsonRpc(session.process, 'session/load', {
+    sendAcpStartupRequest(session, 'session/load', {
       sessionId: pending.resumeSessionId,
       cwd: session.cwd,
       mcpServers: acpMcpServers(session),
@@ -2433,6 +2490,14 @@ function handleServerMessage(session: ManagedSession, line: string): void {
       console.log(`[Codex:${session.id.slice(0, 8)}] ${message}`);
     },
     onRequestError: (error) => {
+      if (!session.threadId) {
+        try {
+          assertSessionRepositoryScope(session);
+        } catch (scopeError) {
+          failProviderStartup(session, scopeError);
+          return true;
+        }
+      }
       if (rejectPendingProviderResponse(session.id, error.requestId, error.message)) return true;
       if (failPendingProviderFollowUp(session, error)) return true;
       if (failPendingUserTurnRequest(session, error)) return true;

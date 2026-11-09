@@ -1045,6 +1045,33 @@ export function saveChatEntry(
   }
 }
 
+/** Commit the visible on-device exchange before any queued provider turn can start. */
+export function saveLocalChatExchange(
+  threadId: string,
+  repoId: string | null,
+  sessionId: string,
+  user: ChatMessage,
+  assistant: ChatMessage,
+): void {
+  if (isTemporaryChatThread(threadId)) {
+    saveChatEntry(threadId, repoId, sessionId, user);
+    saveChatEntry(threadId, repoId, sessionId, assistant);
+    return;
+  }
+  const db = getDb();
+  db.transaction(() => {
+    for (const entry of [user, assistant]) {
+      const existing = db
+        .prepare('SELECT thread_id FROM chat_messages WHERE id = ?')
+        .get(entry.id) as { thread_id: string } | undefined;
+      if (existing && existing.thread_id !== threadId)
+        throw new Error('Message belongs to another conversation.');
+    }
+    saveChatEntry(threadId, repoId, sessionId, user);
+    saveChatEntry(threadId, repoId, sessionId, assistant);
+  })();
+}
+
 export function loadChatHistory(threadId: string): ChatMessage[] {
   const temporary = temporaryChats.get(threadId);
   if (temporary) return [...temporary.history];

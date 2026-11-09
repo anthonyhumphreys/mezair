@@ -17,6 +17,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         review: fileURLToPath(new URL('./chat-review-fixture/index.html', import.meta.url)),
+        recovery: fileURLToPath(new URL('./chat-review-fixture/recovery.html', import.meta.url)),
         chatView: fileURLToPath(new URL('./chat-review-fixture/chat-view.html', import.meta.url)),
       },
     },

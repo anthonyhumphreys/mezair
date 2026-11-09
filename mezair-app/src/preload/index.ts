@@ -354,6 +354,8 @@ const api: MezairAPI = {
       ipcRenderer.invoke('chat:delete-artifact-annotation', id),
     listThreads: (workspaceId: string | null) =>
       ipcRenderer.invoke('chat:list-threads', workspaceId),
+    threadExists: (threadId: string, workspaceId: string | null) =>
+      ipcRenderer.invoke('chat:thread-exists', threadId, workspaceId),
     listCheckpoints: (threadId: string) => ipcRenderer.invoke('chat:list-checkpoints', threadId),
     previewCheckpoint: (threadId: string, messageId: string) =>
       ipcRenderer.invoke('chat:preview-checkpoint', threadId, messageId),

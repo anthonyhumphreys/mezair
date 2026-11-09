@@ -75,6 +75,7 @@ try {
     for (const [page, check] of [
       ['index.html', 'checkReview'],
       ['chat-view.html', 'checkChatView'],
+      ['recovery.html', 'checkRecovery'],
     ]) {
       console.log(`Checking ${page} at ${width}px`);
       const { targetId } = await cdp.command('Target.createTarget', { url: 'about:blank' });

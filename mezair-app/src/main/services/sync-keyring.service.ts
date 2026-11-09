@@ -1,3 +1,4 @@
+import { captureDeferredSyncWork } from './sync-deferred-work.js';
 import { CheckpointLeaseBusyError } from './chat-checkpoint-locks.js';
 // E2E keyring: account data key (ADK) custody, X25519 device identity,
 // key distribution (pairing secrets + per-device wraps), rotation on
@@ -2457,8 +2458,10 @@ const quarantineRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 function retryQuarantineAfterLease(scope: SyncScope): void {
   const key = JSON.stringify(scope);
   if (quarantineRetryTimers.has(key)) return;
+  const isCurrent = captureDeferredSyncWork();
   const timer = setTimeout(() => {
     quarantineRetryTimers.delete(key);
+    if (!isCurrent()) return;
     try {
       retryQuarantinedEntities(scope);
     } catch {

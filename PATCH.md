@@ -1085,3 +1085,16 @@ pending payloads for destinations the local thread catalogue confirms deleted.
 Pin the thread workspace identity at session creation as well as its repository
 bindings. A workspace reset that leaves a thread unassigned cannot turn an old
 workspace grant into an unrestricted legacy-thread session.
+
+For C17, delegated worker ownership begins before asynchronous startup and lasts
+through native process close. Destructive review and rewind reject overlapping
+worker paths even if the coordinating chat is idle. POSIX Git timeout cleanup
+waits for child and live process-group termination; progressing pulls have a
+separate hard/idle deadline. Retire deferred quarantine work with its sync
+session. Validate startup content at Codex/ACP dispatch and Claude SDK child
+creation, including deferred startup retries. Main commits visible local-model
+exchanges before queued continuation capture; temporary history stays in memory.
+Composer drafts include workspace identity, and renderer-owned recovery survives
+route unmounts and checks both normal and work-item destinations. Completed
+optional prefills cannot resurrect removed files or prevent sending. Temporary
+navigation invalidates earlier normal-thread creation requests.

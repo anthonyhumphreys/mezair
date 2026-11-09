@@ -953,6 +953,8 @@ export type PublicWorkflowRun = Omit<
 };
 
 export interface ChatSendOptions {
+  /** Visible user entry; main commits on-device exchanges before draining queued turns. */
+  visibleUserMessage?: { id: string; content: string; timestamp: string };
   collaborationMode?: ChatCollaborationMode;
   reasoningEffort?: ReasoningEffort;
   model?: string;
@@ -1334,7 +1336,7 @@ export interface CodexEvent {
     permissionProfile: import('./agent-access.js').PermissionProfile;
     appliedMode: string;
   };
-  /** Browser-owned sessions are persisted by the main process before broadcast. */
+  /** Main owns persistence for this event/item; renderer must not write competing copies. */
   persistedBy?: 'main';
   /** App routing metadata attached to live provider events. */
   sessionId?: string;

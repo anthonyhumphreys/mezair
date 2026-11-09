@@ -1,3 +1,4 @@
+import { assertNoManagedWorkerWrites } from '../services/managed-worker-paths.js';
 import {
   listActiveCodexSessions,
   getCodexSessionExecutionPaths,
@@ -36,6 +37,7 @@ import { TURN_DELIVERY_MAX_FILES, TURN_DELIVERY_MAX_PATH_LENGTH } from '../../sh
 import type { TurnDeliveryMode } from '../../shared/scoped-git.js';
 
 function assertNoWriter(repoPath: string): void {
+  assertNoManagedWorkerWrites([repoPath]);
   if (
     listActiveCodexSessions().some(
       (session) =>

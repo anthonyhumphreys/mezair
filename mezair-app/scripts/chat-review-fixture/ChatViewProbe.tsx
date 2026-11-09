@@ -57,6 +57,7 @@ const api = (parts: string[] = []): unknown =>
         return new Promise((resolve) => {
           finishRestore = () => resolve({ filesChanged: 1, undoKey: 'synthetic-undo' });
         });
+      if (parts.join('.') === 'chat.threadExists') return Promise.resolve(true);
       if (parts.join('.') === 'chat.listThreads')
         return Promise.resolve(['source', 'branch', 'other', 'fresh'].map((id) => ({ id })));
       if (parts.join('.') === 'settings.get')
@@ -237,7 +238,7 @@ Object.assign(window, {
       node.dispatchEvent(new Event('input', { bubbles: true }));
     };
     localStorage.setItem(
-      'mezair:chat-draft:branch:coder:attachments',
+      `mezair:chat-draft:${JSON.stringify(['ws', 'branch', 'coder'])}:attachments`,
       JSON.stringify(
         Array.from({ length: 10 }, (_, i) => ({
           ...attachment,
@@ -316,6 +317,8 @@ Object.assign(window, {
     const partialRecovery = document.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="Chat message"]',
     )!.value;
+    button('Remount chat view').click();
+    await frame();
     button('Switch to other conversation').click();
     await frame();
     button('Open recovered branch').click();
@@ -344,7 +347,8 @@ Object.assign(window, {
       'Returning to the branch must recover its original attachments',
     );
     check(
-      localStorage.getItem('mezair:chat-draft:other:coder') === 'Other conversation draft',
+      localStorage.getItem(`mezair:chat-draft:${JSON.stringify(['ws', 'other', 'coder'])}`) ===
+        'Other conversation draft',
       'The other conversation must retain its own persisted draft',
     );
     const recoveredValue = document.querySelector<HTMLTextAreaElement>(

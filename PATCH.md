@@ -1081,3 +1081,7 @@ Recovery acknowledges text separately from attachments, keeps overflow available
 without repeating text, and persists current scoped attachment drafts through
 composer remounts. Reject a blocked /new instead of clearing its text. Release
 pending payloads for destinations the local thread catalogue confirms deleted.
+
+Pin the thread workspace identity at session creation as well as its repository
+bindings. A workspace reset that leaves a thread unassigned cannot turn an old
+workspace grant into an unrestricted legacy-thread session.

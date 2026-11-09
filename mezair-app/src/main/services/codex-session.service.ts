@@ -145,6 +145,7 @@ interface ManagedSession {
   /** Every repo in the session's scope; the MCP endpoint enforces tool repo arguments against it. */
   repoIds: string[];
   repoPaths: string[];
+  workspaceScopeId: string | null;
   preparingSend?: boolean;
   workspaceId?: string;
   appThreadId?: string;
@@ -251,6 +252,7 @@ type PendingServerRequest =
       sessionId: string;
       requestId: JsonRpcRequestId;
       kind: 'user_input' | 'mcp_elicitation' | 'cursor_ask_question' | 'cursor_create_plan';
+      questionIds?: string[];
     };
 
 const pendingServerRequests = new Map<string, PendingServerRequest>();
@@ -560,6 +562,7 @@ export async function startSession(
     repoId: repoIds[0],
     repoIds: [...repoIds],
     repoPaths: repoPaths.map(canonicalCheckpointPath),
+    workspaceScopeId: appThread?.workspaceId ?? null,
     workspaceId: options?.scaffold?.workspaceId ?? options?.workspace?.workspaceId,
     appThreadId: options?.threadId,
     kind: options?.scaffold ? 'scaffold' : repoIds.length > 0 ? 'repo' : 'workspace',
@@ -1804,6 +1807,8 @@ export function getCodexSessionExecutionPaths(sessionId: string): string[] {
 function assertSessionRepositoryScope(session: ManagedSession): void {
   if (!session.appThreadId || session.temporaryChat) return;
   const thread = getChatThread(session.appThreadId);
+  if (thread && (thread.workspaceId ?? null) !== session.workspaceScopeId)
+    throw new Error('The conversation workspace changed. Start a new session before sending.');
   if (thread?.workspaceId) assertWorkspaceRepositoryMembership(thread.workspaceId, session.repoIds);
   if (
     !thread ||
@@ -1901,16 +1906,30 @@ export function resolveApproval(
     (option) => option && typeof option === 'object' && option.optionId === outcome?.optionId,
   );
   const grants =
-    decision === 'accept' ||
-    decision === 'acceptForSession' ||
-    (outcome?.outcome === 'selected' &&
-      (!selected || !['reject_once', 'reject_always'].includes(String(selected.kind))));
+    outcome?.outcome === 'selected'
+      ? !selected || !['reject_once', 'reject_always'].includes(String(selected.kind))
+      : outcome?.outcome === 'cancelled'
+        ? false
+        : decision === 'accept' || decision === 'acceptForSession';
   if (grants) assertSessionRepositoryScope(session);
   pendingServerRequests.delete(requestKey);
   pendingApprovalDetails.delete(requestKey);
   sendCodexJsonRpcResult(session.process, requestId, result);
   setSessionThreadAttention(session, 'working');
   emitCompanionEvent('approvals');
+}
+
+function inputCarriesContent(response: CodexInputResponse, questionIds?: string[]): boolean {
+  if (response.kind === 'user_input')
+    return Object.entries(response.answers).some(
+      ([id, answers]) =>
+        !questionIds?.includes(id) || !Array.isArray(answers) || answers.length > 0,
+    );
+  if (response.kind === 'mcp_elicitation')
+    return (
+      response.action === 'accept' || (response.content !== undefined && response.content !== null)
+    );
+  return response.action === 'submit';
 }
 
 export function resolveInputRequest(
@@ -1927,9 +1946,7 @@ export function resolveInputRequest(
   }
 
   if (
-    response.kind === 'user_input'
-      ? Object.keys(response.answers).length > 0
-      : response.action === 'accept' || response.action === 'submit'
+    inputCarriesContent(response, request.kind === 'user_input' ? request.questionIds : undefined)
   )
     assertSessionRepositoryScope(session);
   pendingServerRequests.delete(requestKey);
@@ -1965,12 +1982,15 @@ export function resolveAgentUIQuestion(
     throw new Error('Question is no longer awaiting an answer.');
   }
 
-  if (resolution.action === 'submit') assertSessionRepositoryScope(session);
   const response = providerResponseFromAgentUIResolution(
     record.intent,
     resolution,
     binding.responseKind,
   );
+  if (
+    inputCarriesContent(response, pending.kind === 'user_input' ? pending.questionIds : undefined)
+  )
+    assertSessionRepositoryScope(session);
   sendCodexJsonRpcResult(session.process, binding.requestId, buildInputResponse(response));
   pendingServerRequests.delete(requestKey);
   const resolved = recordAgentUIQuestionResolution(record.intent, resolution);
@@ -2347,6 +2367,9 @@ function handleServerMessage(session: ManagedSession, line: string): void {
             sessionId: session.id,
             requestId: event.inputRequestId,
             kind,
+            ...(event.inputRequest?.kind === 'user_input'
+              ? { questionIds: event.inputRequest.questions.map((question) => question.id) }
+              : {}),
           });
         }
       }

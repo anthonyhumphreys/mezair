@@ -543,7 +543,8 @@
       session could receive a new writable turn after its repository left the workspace: checkpoint
       capture rejected the repository, but its best-effort error was swallowed. The shared send
       boundary now checks current membership independently of snapshots, including after
-      asynchronous ACP acknowledgements. Guides, feedback, local output, live tool context and
+      asynchronous ACP acknowledgements. A pinned workspace identity also rejects a reset that
+      leaves the same thread unassigned. Guides, feedback, local output, live tool context and
       accepted pending answers/approvals use the same current grant. Denial and cancellation remain
       available.
     </p>

@@ -352,6 +352,18 @@ describe('ACP session parity (cursor/devin)', () => {
     }
   });
 
+  it('rejects a workspace removed by a reset even when its thread and repo IDs remain', async () => {
+    mocks.workspaceId = 'ws';
+    const proc = createFakeAcpProcess();
+    const session = await startAcpSession(proc, { threadId: 'workspace-thread' });
+    mocks.workspaceId = undefined;
+    await expect(sendMessage(session.id, 'Must not reuse the old grant')).rejects.toThrow(
+      'conversation workspace changed',
+    );
+    expect(writtenRequests(proc, 'session/prompt')).toHaveLength(0);
+    expect(getAgentToolSessionContext(session.id)).toBeUndefined();
+  });
+
   it('rechecks workspace membership after ACP acknowledgements before sending content', async () => {
     mocks.workspaceId = 'ws';
     const proc = createFakeAcpProcess();
@@ -479,6 +491,22 @@ describe('ACP session parity (cursor/devin)', () => {
       method: 'cursor/create_plan',
       params: { plan: 'Write the files' },
     });
+    emit(proc, {
+      jsonrpc: '2.0',
+      id: 'scope-user-input',
+      method: 'item/tool/requestUserInput',
+      params: { questions: [{ id: 'question', header: 'Header', question: 'Continue?' }] },
+    });
+    emit(proc, {
+      jsonrpc: '2.0',
+      id: 'scope-elicitation',
+      method: 'mcpServer/elicitation/request',
+      params: {
+        serverName: 'test',
+        message: 'Continue?',
+        requestedSchema: { type: 'object', properties: {} },
+      },
+    });
     mocks.membershipAllowed = false;
     expect(() => resolveApproval(session.id, 'scope-permission', 'accept')).toThrow(
       'no longer in this workspace',
@@ -490,6 +518,25 @@ describe('ACP session parity (cursor/devin)', () => {
       resolveInputRequest(session.id, 'scope-plan', {
         kind: 'cursor_create_plan',
         action: 'submit',
+      }),
+    ).toThrow('no longer in this workspace');
+    expect(() =>
+      resolveInputRequest(session.id, 'scope-user-input', {
+        kind: 'user_input',
+        answers: { question: ['yes'] },
+      }),
+    ).toThrow('no longer in this workspace');
+    expect(() =>
+      resolveInputRequest(session.id, 'scope-user-input', {
+        kind: 'user_input',
+        answers: { 'secret-label': [] },
+      }),
+    ).toThrow('no longer in this workspace');
+    expect(() =>
+      resolveInputRequest(session.id, 'scope-elicitation', {
+        kind: 'mcp_elicitation',
+        action: 'decline',
+        content: { secret: 'Do not publish' },
       }),
     ).toThrow('no longer in this workspace');
     const record = [...mocks.questionRecords.values()][0];
@@ -506,8 +553,26 @@ describe('ACP session parity (cursor/devin)', () => {
       proc.written
         .flatMap((line) => line.split('\n').filter(Boolean))
         .map((line) => JSON.parse(line) as { id?: string; result?: unknown })
-        .filter((message) => message.id === 'scope-permission' || message.id === 'scope-plan');
+        .filter((message) =>
+          ['scope-permission', 'scope-plan', 'scope-user-input', 'scope-elicitation'].includes(
+            message.id ?? '',
+          ),
+        );
     expect(replies()).toHaveLength(0);
+    // The provider option is authoritative even when the generic UI decision is accept.
+    expect(() =>
+      resolveApproval(session.id, 'scope-permission', 'accept', 'reject-once'),
+    ).not.toThrow();
+    emit(proc, {
+      jsonrpc: '2.0',
+      id: 'scope-permission',
+      method: 'session/request_permission',
+      params: {
+        sessionId: 'acp-1',
+        toolCall: { title: 'Write', kind: 'execute' },
+        options: [{ optionId: 'allow-once', kind: 'allow_once', name: 'Allow' }],
+      },
+    });
     expect(() => resolveApproval(session.id, 'scope-permission', 'cancel')).not.toThrow();
     expect(() =>
       resolveInputRequest(session.id, 'scope-plan', {
@@ -515,7 +580,19 @@ describe('ACP session parity (cursor/devin)', () => {
         action: 'cancel',
       }),
     ).not.toThrow();
-    expect(replies()).toHaveLength(2);
+    expect(() =>
+      resolveInputRequest(session.id, 'scope-user-input', {
+        kind: 'user_input',
+        answers: { question: [] },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      resolveInputRequest(session.id, 'scope-elicitation', {
+        kind: 'mcp_elicitation',
+        action: 'cancel',
+      }),
+    ).not.toThrow();
+    expect(replies()).toHaveLength(5);
   });
   it('cancels automatic provider approval safely when the workspace grant was removed', async () => {
     mocks.workspaceId = 'ws';

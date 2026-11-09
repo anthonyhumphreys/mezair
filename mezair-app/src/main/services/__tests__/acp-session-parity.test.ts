@@ -66,6 +66,17 @@ const mocks = vi.hoisted(() => ({
   timeline: [] as string[],
   persistedEventTypes: [] as string[],
   threadRepoIds: ['r1'] as string[],
+  workspaceId: undefined as string | undefined,
+  membershipAllowed: true,
+  questionRecords: new Map<
+    string,
+    {
+      intent: {
+        id: string;
+        payload: { questions: Array<{ id: string; options?: Array<{ value: string }> }> };
+      };
+    }
+  >(),
 }));
 
 vi.mock('node:child_process', async (importOriginal) => ({
@@ -93,6 +104,11 @@ vi.mock('../chat-checkpoint.service.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../chat-checkpoint.service.js')>();
   return { ...actual, captureTurnCheckpoints: vi.fn(async () => []) };
 });
+vi.mock('../chat-session-scope.js', () => ({
+  assertWorkspaceRepositoryMembership: () => {
+    if (!mocks.membershipAllowed) throw new Error('repository is no longer in this workspace');
+  },
+}));
 vi.mock('../settings.service.js', () => ({ getSettings: () => mocks.settings }));
 
 vi.mock('../persona.service.js', () => ({
@@ -109,7 +125,12 @@ vi.mock('../dojo-analytics.service.js', () => ({
 }));
 vi.mock('../companion-events.service.js', () => ({ emitCompanionEvent: () => undefined }));
 vi.mock('../chat-persistence.service.js', () => ({
-  getChatThread: (id: string) => ({ id, repoIds: mocks.threadRepoIds, purpose: 'chat' }),
+  getChatThread: (id: string) => ({
+    id,
+    repoIds: mocks.threadRepoIds,
+    workspaceId: mocks.workspaceId,
+    purpose: 'chat',
+  }),
   isTemporaryChatThread: () => false,
   updateChatThreadAttention: () => undefined,
 }));
@@ -125,7 +146,20 @@ vi.mock('../chat-evidence.service.js', () => ({
 }));
 vi.mock('../agent-ui-intent.service.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../agent-ui-intent.service.js')>();
-  return { ...actual, getAgentUIIntent: vi.fn(() => null) };
+  return {
+    ...actual,
+    getAgentUIIntent: vi.fn(() => null),
+    getAgentUIIntentRecord: (id: string) => mocks.questionRecords.get(id),
+    upsertAgentUIIntent: (record: {
+      intent: {
+        id: string;
+        payload: { questions: Array<{ id: string; options?: Array<{ value: string }> }> };
+      };
+    }) => {
+      mocks.questionRecords.set(record.intent.id, record);
+      return record.intent;
+    },
+  };
 });
 vi.mock('../thread-assist.service.js', () => ({ scheduleThreadMetadataRefresh: () => undefined }));
 vi.mock('../notification.service.js', () => ({ notifyChatActivity: () => undefined }));
@@ -146,6 +180,9 @@ import {
   startSession,
   getAgentToolSessionContext,
   getCodexSession,
+  resolveApproval,
+  resolveInputRequest,
+  resolveAgentUIQuestion,
   getCodexSessionExecutionPaths,
   getCodexSessionCheckpointBindings,
   steerTurn,
@@ -179,9 +216,10 @@ async function startAcpSession(
   options?: Parameters<typeof startSession>[3],
   personaId = 'coder',
   bindings = { paths: ['/repo'], ids: ['r1'] },
+  runtime?: Parameters<typeof startSession>[4],
 ) {
   mocks.spawnResults.push(proc);
-  const started = startSession(bindings.paths, bindings.ids, personaId, options);
+  const started = startSession(bindings.paths, bindings.ids, personaId, options, runtime);
   // startSession awaits the env build before spawning — emit only once the
   // fake process's stdout listeners are attached.
   await waitForSpawn();
@@ -224,6 +262,9 @@ describe('ACP session parity (cursor/devin)', () => {
   beforeEach(() => {
     events = [];
     mocks.threadRepoIds = ['r1'];
+    mocks.workspaceId = undefined;
+    mocks.membershipAllowed = true;
+    mocks.questionRecords.clear();
     mocks.timeline = [];
     mocks.persistedEventTypes = [];
     unsubscribe = subscribeToCodexEvents((payload) => {
@@ -271,7 +312,11 @@ describe('ACP session parity (cursor/devin)', () => {
   it('rejects stale repository scope for ordinary and queued sends without checkpointing the replacement', async () => {
     const proc = createFakeAcpProcess();
     const session = await startAcpSession(proc, { threadId: 'bound-thread' });
-    expect([...getCodexSessionCheckpointBindings(session.id)]).toEqual([['r1', '/repo']]);
+    expect([...getCodexSessionCheckpointBindings(session.id)]).toEqual([
+      ['r1', canonicalCheckpointPath('/repo')],
+    ]);
+    const { captureTurnCheckpoints } = await import('../chat-checkpoint.service.js');
+    vi.mocked(captureTurnCheckpoints).mockClear();
     mocks.threadRepoIds = ['replacement'];
     expect(() => getCodexSessionCheckpointBindings(session.id)).toThrow('repositories changed');
     await expect(sendMessage(session.id, 'ordinary')).rejects.toThrow('repositories changed');
@@ -282,8 +327,9 @@ describe('ACP session parity (cursor/devin)', () => {
       message: 'queued',
     });
     expect(result.status).toBe('failed');
+    expect(vi.mocked(captureTurnCheckpoints)).not.toHaveBeenCalled();
     expect(writtenRequests(proc, 'session/prompt')).toHaveLength(0);
-    expect(getCodexSessionExecutionPaths(session.id)).toContain('/repo');
+    expect(getCodexSessionExecutionPaths(session.id)).toContain(canonicalCheckpointPath('/repo'));
   });
 
   it('includes a repo-less workspace cwd in send/recovery exclusion', async () => {
@@ -304,6 +350,197 @@ describe('ACP session parity (cursor/devin)', () => {
     } finally {
       release();
     }
+  });
+
+  it('rechecks workspace membership after ACP acknowledgements before sending content', async () => {
+    mocks.workspaceId = 'ws';
+    const proc = createFakeAcpProcess();
+    const session = await startAcpSession(proc, { threadId: 'workspace-thread' });
+    const sending = sendMessage(session.id, 'Do not write after detach');
+    const rejected = expect(sending).rejects.toThrow('no longer in this workspace');
+    await acknowledgeLastRequest(proc, 'session/set_mode');
+    mocks.membershipAllowed = false;
+    await acknowledgeLastRequest(proc, 'session/set_config_option');
+    await rejected;
+    expect(writtenRequests(proc, 'session/prompt')).toHaveLength(0);
+    expect(getAgentToolSessionContext(session.id)).toBeUndefined();
+  });
+
+  it('rechecks membership when a previously queued request reaches delivery', async () => {
+    mocks.workspaceId = 'ws';
+    const proc = createFakeAcpProcess();
+    const session = await startAcpSession(proc, { threadId: 'workspace-thread' });
+    await sendConfiguredMessage(proc, session.id, 'Allowed turn');
+    const request = {
+      sessionId: session.id,
+      requestId: 'detached-queue',
+      intent: 'queue' as const,
+      message: 'Must not start',
+    };
+    await followUpTurn(request);
+    mocks.membershipAllowed = false;
+    emit(proc, { jsonrpc: '2.0', id: 't1', result: { stopReason: 'end_turn' } });
+    await vi.waitFor(async () =>
+      expect(await followUpTurn(request)).toMatchObject({ status: 'failed' }),
+    );
+    expect(writtenRequests(proc, 'session/prompt')).toHaveLength(1);
+  });
+
+  it.each([true, false])(
+    'keeps follow-ups queued through ordinary send preparation (local=%s)',
+    async (local) => {
+      const proc = createFakeAcpProcess();
+      const session = await startAcpSession(proc);
+      let finish: ((handled: boolean) => void) | undefined;
+      const sending = sendMessage(
+        session.id,
+        'First',
+        [],
+        undefined,
+        undefined,
+        () =>
+          new Promise<boolean>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      await vi.waitFor(() => expect(finish).toBeDefined());
+      const request = {
+        sessionId: session.id,
+        requestId: 'during-preparation',
+        intent: 'queue' as const,
+        message: 'Next',
+      };
+      expect(await followUpTurn(request)).toMatchObject({ status: 'queued' });
+      finish!(local);
+      await acknowledgeLastRequest(proc, 'session/set_mode');
+      await acknowledgeLastRequest(proc, 'session/set_config_option');
+      await sending;
+      if (!local) {
+        const before = writtenRequests(proc, 'session/set_mode').length;
+        emit(proc, { jsonrpc: '2.0', id: 't1', result: { stopReason: 'end_turn' } });
+        await vi.waitFor(() =>
+          expect(writtenRequests(proc, 'session/set_mode').length).toBeGreaterThan(before),
+        );
+        await acknowledgeLastRequest(proc, 'session/set_mode');
+        await acknowledgeLastRequest(proc, 'session/set_config_option');
+      }
+      await vi.waitFor(async () =>
+        expect(await followUpTurn(request)).toMatchObject({ status: 'delivered' }),
+      );
+      expect(writtenRequests(proc, 'session/prompt')).toHaveLength(local ? 1 : 2);
+    },
+  );
+
+  it.each(['scaffold', 'headless'] as const)(
+    'starts explicit repo-less %s execution roots',
+    async (kind) => {
+      const proc = createFakeAcpProcess();
+      const root = '/explicit-execution-root';
+      const session = await startAcpSession(
+        proc,
+        kind === 'scaffold' ? { scaffold: { workspaceId: 'ws', rootPath: root } } : {},
+        'coder',
+        { paths: [root], ids: [] },
+        kind === 'headless'
+          ? {
+              provider: 'cursor',
+              model: 'default',
+              codexMode: 'workspace-auto',
+              headless: true,
+              bypassEnabledProviderGate: true,
+            }
+          : undefined,
+      );
+      expect(getCodexSessionExecutionPaths(session.id)).toContain(canonicalCheckpointPath(root));
+      expect(session.repoIds).toEqual([]);
+    },
+  );
+
+  it('keeps denied approval, input and question submissions pending and allows cancellation after detachment', async () => {
+    mocks.workspaceId = 'ws';
+    const proc = createFakeAcpProcess();
+    const session = await startAcpSession(proc, { threadId: 'workspace-thread' });
+    emit(proc, {
+      jsonrpc: '2.0',
+      id: 'scope-permission',
+      method: 'session/request_permission',
+      params: {
+        sessionId: 'acp-1',
+        toolCall: { title: 'Write', kind: 'execute', rawInput: { command: 'touch file' } },
+        options: [
+          { optionId: 'allow-once', kind: 'allow_once', name: 'Allow once' },
+          { optionId: 'reject-once', kind: 'reject_once', name: 'Reject' },
+        ],
+      },
+    });
+    emit(proc, {
+      jsonrpc: '2.0',
+      id: 'scope-plan',
+      method: 'cursor/create_plan',
+      params: { plan: 'Write the files' },
+    });
+    mocks.membershipAllowed = false;
+    expect(() => resolveApproval(session.id, 'scope-permission', 'accept')).toThrow(
+      'no longer in this workspace',
+    );
+    expect(() => resolveApproval(session.id, 'scope-permission', 'decline', 'allow-once')).toThrow(
+      'no longer in this workspace',
+    );
+    expect(() =>
+      resolveInputRequest(session.id, 'scope-plan', {
+        kind: 'cursor_create_plan',
+        action: 'submit',
+      }),
+    ).toThrow('no longer in this workspace');
+    const record = [...mocks.questionRecords.values()][0];
+    const question = record.intent.payload.questions[0];
+    expect(() =>
+      resolveAgentUIQuestion(record.intent.id, {
+        intentId: record.intent.id,
+        action: 'submit',
+        answers: { [question.id]: true },
+        answeredAt: new Date().toISOString(),
+      }),
+    ).toThrow('no longer in this workspace');
+    const replies = () =>
+      proc.written
+        .flatMap((line) => line.split('\n').filter(Boolean))
+        .map((line) => JSON.parse(line) as { id?: string; result?: unknown })
+        .filter((message) => message.id === 'scope-permission' || message.id === 'scope-plan');
+    expect(replies()).toHaveLength(0);
+    expect(() => resolveApproval(session.id, 'scope-permission', 'cancel')).not.toThrow();
+    expect(() =>
+      resolveInputRequest(session.id, 'scope-plan', {
+        kind: 'cursor_create_plan',
+        action: 'cancel',
+      }),
+    ).not.toThrow();
+    expect(replies()).toHaveLength(2);
+  });
+  it('cancels automatic provider approval safely when the workspace grant was removed', async () => {
+    mocks.workspaceId = 'ws';
+    mocks.settings.codexMode = 'full-access';
+    const proc = createFakeAcpProcess();
+    const session = await startAcpSession(proc, { threadId: 'workspace-thread' });
+    mocks.membershipAllowed = false;
+    expect(() =>
+      emit(proc, {
+        jsonrpc: '2.0',
+        id: 'automatic-after-removal',
+        method: 'session/request_permission',
+        params: {
+          sessionId: 'acp-1',
+          toolCall: { title: 'Write', kind: 'execute' },
+          options: [{ optionId: 'allow-once', kind: 'allow_once', name: 'Allow' }],
+        },
+      }),
+    ).not.toThrow();
+    const response = proc.written
+      .flatMap((line) => line.split('\n').filter(Boolean))
+      .map((line) => JSON.parse(line) as { id?: string; result?: unknown })
+      .find((message) => message.id === 'automatic-after-removal');
+    expect(response?.result).toEqual({ outcome: { outcome: 'cancelled' } });
+    expect(getAgentToolSessionContext(session.id)).toBeUndefined();
   });
 
   it('resumes via session/load when the agent advertises loadSession', async () => {

@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SCHEMA_SQL } from '../../db/schema.js';
+import { assertWorkspaceRepositoryMembership } from '../chat-session-scope.js';
 import { acquireCheckpointLifecycle } from '../chat-checkpoint-lifecycle.js';
 import { acquireCheckpointPaths } from '../chat-checkpoint-locks.js';
 const state = vi.hoisted(() => ({ db: undefined as unknown as Database.Database }));
@@ -333,4 +334,21 @@ it('skips an offline secondary checkout while enforcing membership on explicit s
       new Map([['outside', repo]]),
     ),
   ).rejects.toThrow('no longer');
+});
+
+it('uses live workspace membership independently of the unchanged conversation repo IDs', () => {
+  state.db.exec(
+    "INSERT INTO workspaces(id,name,created_at,updated_at) VALUES('ws','Test','now','now'); INSERT INTO workspace_repos(workspace_id,repo_id,added_at) VALUES('ws','repo','now')",
+  );
+  expect(() => assertWorkspaceRepositoryMembership('ws', ['repo'])).not.toThrow();
+  state.db.exec("DELETE FROM workspace_repos WHERE workspace_id='ws'");
+  expect(() => assertWorkspaceRepositoryMembership('ws', ['repo'])).toThrow(
+    'no longer in this workspace',
+  );
+  expect(
+    state.db.prepare("SELECT repo_ids_json FROM chat_threads WHERE id='thread'").get(),
+  ).toEqual({ repo_ids_json: '["repo"]' });
+  expect(() => assertWorkspaceRepositoryMembership('ws', [])).not.toThrow();
+  state.db.exec("DELETE FROM workspaces WHERE id='ws'");
+  expect(() => assertWorkspaceRepositoryMembership('ws', [])).toThrow('no longer available');
 });

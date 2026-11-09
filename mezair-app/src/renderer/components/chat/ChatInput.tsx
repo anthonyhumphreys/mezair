@@ -194,7 +194,13 @@ interface ChatInputProps {
   /** The selected agent and destination stay visible while setup is closed. */
   setupSummary?: string;
   onPrefillApplied?: (id: string) => void;
-  prefill?: { id: string; text: string; attachments?: ChatAttachment[] } | null;
+  onPrefillTextApplied?: (id: string) => void;
+  prefill?: {
+    id: string;
+    text: string;
+    textApplied?: boolean;
+    attachments?: ChatAttachment[];
+  } | null;
   draftKey?: string;
   allowAttachments?: boolean;
   mentionRepoIds?: string[];
@@ -249,6 +255,7 @@ function ChatInputImpl({
   setupSummary = 'Chat setup',
   prefill,
   onPrefillApplied,
+  onPrefillTextApplied,
   draftKey,
   allowAttachments = true,
   mentionRepoIds = NO_REPO_IDS,
@@ -260,7 +267,15 @@ function ChatInputImpl({
   showSyntaxHint = false,
 }: ChatInputProps) {
   const [value, setValue] = useState(() => loadDraft(draftKey));
-  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>(() =>
+    loadAttachmentDraft(draftKey),
+  );
+  const recoveryBlocked = Boolean(
+    prefill?.attachments?.some(
+      (item) =>
+        !attachments.some((entry) => getAttachmentDedupKey(entry) === getAttachmentDedupKey(item)),
+    ),
+  );
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
   const allowAttachmentsRef = useRef(allowAttachments);
@@ -325,6 +340,7 @@ function ChatInputImpl({
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const syntaxHelpRef = useRef<HTMLDivElement>(null);
   const skipNextDraftSaveRef = useRef(false);
+  const skipNextAttachmentSaveRef = useRef(false);
   const mentionRepoKey = mentionRepoIds.join('\0');
   const draggingFiles = dragDepth > 0;
 
@@ -450,6 +466,7 @@ function ChatInputImpl({
   }, [draftKey, markDraftChanged]);
 
   const handleSend = useCallback(async () => {
+    if (recoveryBlocked) return;
     const trimmed = value.trim();
     if (
       (!trimmed && attachments.length === 0) ||
@@ -503,6 +520,7 @@ function ChatInputImpl({
     disabled,
     busy,
     preparingAttachments,
+    recoveryBlocked,
     onSend,
     clearComposer,
     currentDraftVersion,
@@ -510,6 +528,7 @@ function ChatInputImpl({
 
   const handleFollowUp = useCallback(
     async (intent: ChatFollowUpIntent, retry?: FollowUpSubmission) => {
+      if (!retry && recoveryBlocked) return;
       if (
         disabled ||
         !onFollowUp ||
@@ -616,6 +635,7 @@ function ChatInputImpl({
       followUpCapabilities,
       onFollowUp,
       preparingAttachments,
+      recoveryBlocked,
       value,
       currentDraftVersion,
       rememberUncertainFollowUp,
@@ -624,6 +644,7 @@ function ChatInputImpl({
   );
 
   const handleSideQuestion = useCallback(async () => {
+    if (recoveryBlocked) return;
     const message = value.trim();
     if (
       disabled ||
@@ -685,6 +706,7 @@ function ChatInputImpl({
     disabled,
     onSideQuestion,
     preparingAttachments,
+    recoveryBlocked,
     sideQuestionAvailable,
     value,
     currentDraftVersion,
@@ -1111,10 +1133,11 @@ function ChatInputImpl({
     composerAutosize.cancel();
     markDraftChanged();
     skipNextDraftSaveRef.current = true;
+    skipNextAttachmentSaveRef.current = true;
     const nextDraft = loadDraft(draftKey);
     setValue(nextDraft);
     valueRef.current = nextDraft;
-    setAttachments([]);
+    setAttachments(loadAttachmentDraft(draftKey));
     setAttachmentPreviews({});
     setAttachmentError(null);
     setStandardFeedback(null);
@@ -1139,12 +1162,19 @@ function ChatInputImpl({
       prefillAppliedRef.current = null;
       return;
     }
-    if (prefillAppliedRef.current === prefill.id) return;
-    prefillAppliedRef.current = prefill.id;
-
-    markDraftChanged();
-    setStandardFeedback(null);
-    setValue((prev) => appendComposerPrefill(prev, prefill.text));
+    if (!prefill.textApplied && prefillAppliedRef.current !== prefill.id) {
+      prefillAppliedRef.current = prefill.id;
+      markDraftChanged();
+      setStandardFeedback(null);
+      setValue((prev) => appendComposerPrefill(prev, prefill.text));
+      onPrefillTextApplied?.(prefill.id);
+    }
+    if (!allowAttachments && prefill.attachments?.length) {
+      setAttachmentError(
+        'Choose a provider that supports attachments to finish restoring these files.',
+      );
+      return;
+    }
     if (allowAttachments && prefill.attachments?.length) {
       const current = attachmentsRef.current;
       const next = mergeAttachments(current, prefill.attachments);
@@ -1155,11 +1185,21 @@ function ChatInputImpl({
           ),
       );
       if (next.length < current.length + uniqueIncoming.length) {
-        setAttachmentError('Some files were skipped.');
+        setAttachmentError(
+          'Some recovered files are waiting. Remove an attachment to finish restoring them before sending.',
+        );
       }
-      setAttachments(next);
+      if (next.length !== current.length) setAttachments(next);
+      if (
+        prefill.attachments.some(
+          (item) =>
+            !next.some((entry) => getAttachmentDedupKey(item) === getAttachmentDedupKey(entry)),
+        )
+      )
+        return;
     }
 
+    setAttachmentError(null);
     onPrefillApplied?.(prefill.id);
     composerAutosize.schedule(() => {
       const el = textareaRef.current;
@@ -1167,7 +1207,15 @@ function ChatInputImpl({
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length);
     });
-  }, [allowAttachments, composerAutosize, markDraftChanged, prefill, onPrefillApplied]);
+  }, [
+    allowAttachments,
+    attachments,
+    composerAutosize,
+    markDraftChanged,
+    prefill,
+    onPrefillApplied,
+    onPrefillTextApplied,
+  ]);
 
   useEffect(() => {
     if (allowAttachments) return;
@@ -1264,7 +1312,15 @@ function ChatInputImpl({
     saveDraft(draftKey, value);
   }, [draftKey, value]);
 
-  const hasContent = value.trim().length > 0 || attachments.length > 0;
+  useEffect(() => {
+    if (skipNextAttachmentSaveRef.current) {
+      skipNextAttachmentSaveRef.current = false;
+      return;
+    }
+    saveAttachmentDraft(draftKey, attachments);
+  }, [draftKey, attachments]);
+
+  const hasContent = (value.trim().length > 0 || attachments.length > 0) && !recoveryBlocked;
   const canGuide = Boolean(followUpCapabilities?.guide && onFollowUp);
   const canQueue = Boolean(followUpCapabilities?.queue && onFollowUp);
   const followUpBlocked = uncertainFollowUps.some((submission) =>
@@ -1818,6 +1874,41 @@ function ChatInputImpl({
 
 export const ChatInput = memo(ChatInputImpl);
 
+function loadAttachmentDraft(draftKey: string | undefined): ChatAttachment[] {
+  if (!draftKey) return [];
+  try {
+    const parsed: unknown = JSON.parse(
+      window.localStorage.getItem(`${draftKey}:attachments`) ?? '[]',
+    );
+    return Array.isArray(parsed)
+      ? parsed
+          .filter(
+            (item): item is ChatAttachment =>
+              item &&
+              typeof item.path === 'string' &&
+              typeof item.id === 'string' &&
+              typeof item.name === 'string' &&
+              typeof item.mimeType === 'string' &&
+              typeof item.size === 'number' &&
+              (item.kind === 'file' || item.kind === 'image'),
+          )
+          .slice(0, MAX_ATTACHMENT_COUNT)
+      : [];
+  } catch {
+    return [];
+  }
+}
+function saveAttachmentDraft(draftKey: string | undefined, attachments: ChatAttachment[]): void {
+  if (!draftKey) return;
+  try {
+    if (attachments.length)
+      window.localStorage.setItem(`${draftKey}:attachments`, JSON.stringify(attachments));
+    else window.localStorage.removeItem(`${draftKey}:attachments`);
+  } catch {
+    /* Keep the current in-memory draft when storage is unavailable. */
+  }
+}
+
 function loadDraft(draftKey: string | undefined): string {
   if (!draftKey) return '';
   try {
@@ -1848,6 +1939,7 @@ function clearDraft(draftKey: string | undefined): void {
   if (!draftKey) return;
   try {
     window.localStorage.removeItem(draftKey);
+    window.localStorage.removeItem(`${draftKey}:attachments`);
   } catch {
     // Storage can be unavailable in restricted renderer contexts.
   }

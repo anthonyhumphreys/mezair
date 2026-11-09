@@ -1,3 +1,4 @@
+import { assertWorkspaceRepositoryMembership } from './chat-session-scope.js';
 import { canonicalCheckpointPath, hasCheckpointRestore } from './chat-checkpoint-locks.js';
 import { listDojoPrices, recordDojoExecutionEvent } from './dojo-analytics.service.js';
 import { spawn } from 'node:child_process';
@@ -400,7 +401,7 @@ export async function startSession(
   options?: ChatStartOptions,
   runtime?: RemoteSessionRuntimeOptions,
 ): Promise<CodexSession> {
-  if (repoPaths.length !== repoIds.length)
+  if (repoIds.length > 0 && repoPaths.length !== repoIds.length)
     throw new Error('A session repository is unavailable. Reconnect it before starting.');
   const id = randomUUID();
   const assertStartAccess = captureThreadAccessFence(options?.threadId);
@@ -780,6 +781,7 @@ export async function sendMessage(
     receipt: FollowUpReceipt;
     request: Pick<ChatFollowUpRequest, 'requestId' | 'intent'>;
   },
+  prepare?: () => Promise<boolean>,
 ): Promise<void> {
   const session = sessions.get(sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
@@ -799,6 +801,8 @@ export async function sendMessage(
     // Wait for thread to be ready before sending
     await session.threadReady;
     assertSessionActive(session);
+    if (prepare && (await prepare())) return;
+    assertSessionRepositoryScope(session);
 
     const settings = getSettings();
     const configuredModel = resolveSessionModel(
@@ -1031,11 +1035,17 @@ function assertSessionActive(session: ManagedSession): void {
   if (!isCurrentSession(session)) throw new Error('Session stopped before the follow-up was sent.');
 }
 
+function assertProviderContentScope(session: ManagedSession, method: string): void {
+  if (method === 'turn/start' || method === 'turn/steer' || method === 'session/prompt')
+    assertSessionRepositoryScope(session);
+}
+
 function sendProviderRequest(
   session: ManagedSession,
   method: string,
   params: Record<string, unknown>,
 ): void {
+  assertProviderContentScope(session, method);
   if (!sendCodexJsonRpc(session.process, method, params)) {
     throw new Error(`${acpProcessLabel(session.provider)} could not accept ${method}.`);
   }
@@ -1099,6 +1109,7 @@ function sendFollowUpAwareProviderRequest(
   },
   accessTransition?: () => void,
 ): void {
+  assertProviderContentScope(session, method);
   if (!tracking) {
     if (method !== 'turn/start' && method !== 'session/prompt') {
       sendProviderRequest(session, method, params);
@@ -1134,6 +1145,11 @@ function sendFollowUpAwareProviderRequest(
 export function getAgentToolSessionContext(sessionId: string): AgentToolSessionContext | undefined {
   const session = sessions.get(sessionId);
   if (!session || session.temporaryChat || session.stopping) return undefined;
+  try {
+    assertSessionRepositoryScope(session);
+  } catch {
+    return undefined;
+  }
   const role = getSettings().userRole;
   return {
     sessionId,
@@ -1557,6 +1573,7 @@ export function emitLocalAssistantTurn(sessionId: string, text: string): void {
 export function emitLocalAssistantTurnStart(sessionId: string): void {
   const session = sessions.get(sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
+  assertSessionRepositoryScope(session);
   broadcastEvent(sessionId, { type: 'status', status: 'thinking' });
   setSessionThreadAttention(session, 'working');
 }
@@ -1565,6 +1582,7 @@ export function emitLocalAssistantTurnStart(sessionId: string): void {
 export function emitLocalAssistantText(sessionId: string, text: string): void {
   const session = sessions.get(sessionId);
   if (!session) return;
+  assertSessionRepositoryScope(session);
   broadcastEvent(sessionId, { type: 'text', text });
 }
 
@@ -1786,6 +1804,7 @@ export function getCodexSessionExecutionPaths(sessionId: string): string[] {
 function assertSessionRepositoryScope(session: ManagedSession): void {
   if (!session.appThreadId || session.temporaryChat) return;
   const thread = getChatThread(session.appThreadId);
+  if (thread?.workspaceId) assertWorkspaceRepositoryMembership(thread.workspaceId, session.repoIds);
   if (
     !thread ||
     (Array.isArray(thread.repoIds) &&
@@ -1793,6 +1812,12 @@ function assertSessionRepositoryScope(session: ManagedSession): void {
         thread.repoIds.some((id) => !session.repoIds.includes(id))))
   )
     throw new Error('The conversation repositories changed. Start a new session before sending.');
+}
+
+export function assertCodexSessionScope(sessionId: string): void {
+  const session = sessions.get(sessionId);
+  if (!session) throw new Error('Session not found.');
+  assertSessionRepositoryScope(session);
 }
 
 /** Checkpoints must follow the checkout the provider was actually granted. */
@@ -1861,14 +1886,28 @@ export function resolveApproval(
     throw new Error('Approval request is no longer active for this session.');
   }
 
-  pendingServerRequests.delete(requestKey);
-  pendingApprovalDetails.delete(requestKey);
   const result = buildApprovalResponse(
     request.kind,
     request.kind === 'permissions' ? request.permissions : undefined,
     decision,
     optionId,
   );
+  const outcome = result.outcome as { outcome?: string; optionId?: string } | undefined;
+  const options =
+    request.kind === 'permissions' && Array.isArray(request.permissions?.options)
+      ? request.permissions.options
+      : [];
+  const selected = options.find(
+    (option) => option && typeof option === 'object' && option.optionId === outcome?.optionId,
+  );
+  const grants =
+    decision === 'accept' ||
+    decision === 'acceptForSession' ||
+    (outcome?.outcome === 'selected' &&
+      (!selected || !['reject_once', 'reject_always'].includes(String(selected.kind))));
+  if (grants) assertSessionRepositoryScope(session);
+  pendingServerRequests.delete(requestKey);
+  pendingApprovalDetails.delete(requestKey);
   sendCodexJsonRpcResult(session.process, requestId, result);
   setSessionThreadAttention(session, 'working');
   emitCompanionEvent('approvals');
@@ -1887,6 +1926,12 @@ export function resolveInputRequest(
     throw new Error('Input request is no longer active for this session.');
   }
 
+  if (
+    response.kind === 'user_input'
+      ? Object.keys(response.answers).length > 0
+      : response.action === 'accept' || response.action === 'submit'
+  )
+    assertSessionRepositoryScope(session);
   pendingServerRequests.delete(requestKey);
   sendCodexJsonRpcResult(session.process, requestId, buildInputResponse(response));
   setSessionThreadAttention(session, 'working');
@@ -1920,6 +1965,7 @@ export function resolveAgentUIQuestion(
     throw new Error('Question is no longer awaiting an answer.');
   }
 
+  if (resolution.action === 'submit') assertSessionRepositoryScope(session);
   const response = providerResponseFromAgentUIResolution(
     record.intent,
     resolution,
@@ -2280,7 +2326,11 @@ function handleServerMessage(session: ManagedSession, line: string): void {
               typeof option.optionId === 'string',
           )
         ) {
-          resolveApproval(session.id, event.approvalRequestId, 'accept');
+          try {
+            resolveApproval(session.id, event.approvalRequestId, 'accept');
+          } catch {
+            resolveApproval(session.id, event.approvalRequestId, 'cancel');
+          }
           return;
         }
         emitCompanionEvent('approvals');

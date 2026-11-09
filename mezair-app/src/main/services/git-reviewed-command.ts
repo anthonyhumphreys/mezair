@@ -5,7 +5,7 @@ export function runReviewedGit(
   repoPath: string,
   args: string[],
   timeoutMs = 30_000,
-): Promise<{ stdout: string; code: number | null }> {
+): Promise<{ stdout: string; stderr: string; code: number | null }> {
   return new Promise((resolve, reject) => {
     const child = spawn('git', args, {
       cwd: repoPath,
@@ -64,11 +64,13 @@ export function runReviewedGit(
       timeoutMs,
     );
     child.stdout.on('data', (data: string) => {
+      if (settled) return;
       stdout += data;
       stdoutBytes += Buffer.byteLength(data);
       if (stdoutBytes > 32 * 1024 * 1024) fail(new Error('This diff is too large to review.'));
     });
     child.stderr.on('data', (data: string) => {
+      if (settled) return;
       stderr = (stderr + data).slice(-8192);
     });
     child.on('error', fail);
@@ -77,7 +79,7 @@ export function runReviewedGit(
       settled = true;
       clearTimeout(timer);
       if (code !== 0 && code !== 1) reject(new Error(stderr.trim() || 'Git review failed.'));
-      else resolve({ stdout, code });
+      else resolve({ stdout, stderr, code });
     });
   });
 }

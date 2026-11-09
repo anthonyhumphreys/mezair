@@ -20,8 +20,10 @@ export function canonicalCheckpointPath(value: string): string {
   }
 }
 
+export class CheckpointLeaseBusyError extends Error {}
+
 export function acquireCheckpointPaths(paths: string[]): () => void {
-  const canonical = [...new Set(paths.map(canonicalCheckpointPath))];
+  const canonical = [...new Set([...new Set(paths)].map(canonicalCheckpointPath))];
   if (
     canonical.some((value) =>
       [...checkpointRestorePaths].some(
@@ -32,7 +34,9 @@ export function acquireCheckpointPaths(paths: string[]): () => void {
       ),
     )
   )
-    throw new Error('Wait for file rewind or review to finish in these repositories.');
+    throw new CheckpointLeaseBusyError(
+      'Wait for file rewind or review to finish in these repositories.',
+    );
   canonical.forEach((value) => checkpointRestorePaths.add(value));
   return () => canonical.forEach((value) => checkpointRestorePaths.delete(value));
 }

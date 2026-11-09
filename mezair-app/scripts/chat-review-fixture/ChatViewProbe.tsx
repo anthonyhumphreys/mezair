@@ -6,7 +6,12 @@ import { ChatView } from '../../src/renderer/components/chat/ChatView';
 import type { MezairAPI } from '../../src/shared/ipc-api';
 import '../../src/renderer/styles/global.css';
 
+// Each viewport uses a fresh synthetic draft state in the disposable browser profile.
+localStorage.clear();
+
 const attachment = {
+  id: 'original-attachment',
+  createdAt: 'now',
   kind: 'file',
   name: 'requirements.txt',
   path: '/synthetic/requirements.txt',
@@ -24,6 +29,8 @@ let rejectSend: ((error: Error) => void) | undefined;
 let payload: unknown;
 let forks = 0;
 let emptyFork = false;
+let checkpointMode = false;
+let finishRestore: (() => void) | undefined;
 const errors: string[] = [];
 window.addEventListener('error', (event) => errors.push(event.message));
 let state: Record<string, unknown>;
@@ -34,6 +41,24 @@ const api = (parts: string[] = []): unknown =>
     apply: () => {
       const method = parts.at(-1)!;
       if (method.startsWith('on')) return noop;
+      if (checkpointMode && parts.join('.') === 'chat.listCheckpoints')
+        return Promise.resolve([
+          { messageId: 'message', repoId: 'a', kind: 'turn', createdAt: 'now' },
+        ]);
+      if (checkpointMode && parts.join('.') === 'chat.previewCheckpoint')
+        return Promise.resolve({
+          messageId: 'message',
+          fingerprint: 'reviewed',
+          repos: [
+            { repoId: 'a', createdAt: 'now', changes: [{ path: 'file.txt', effect: 'restore' }] },
+          ],
+        });
+      if (checkpointMode && parts.join('.') === 'chat.restoreCheckpoint')
+        return new Promise((resolve) => {
+          finishRestore = () => resolve({ filesChanged: 1, undoKey: 'synthetic-undo' });
+        });
+      if (parts.join('.') === 'chat.listThreads')
+        return Promise.resolve(['source', 'branch', 'other', 'fresh'].map((id) => ({ id })));
       if (parts.join('.') === 'settings.get')
         return Promise.resolve({
           codexMode: 'workspace-auto',
@@ -68,12 +93,17 @@ Object.assign(window, {
 function Probe() {
   const [thread, setThread] = useState('source');
   const [busy, setBusy] = useState(false);
+  const [generation, setGeneration] = useState(0);
+  const [workItemMode, setWorkItemMode] = useState(false);
   const threadRecord = (id: string) => ({
     id,
     title: id,
     workspaceId: 'ws',
     repoIds: ['a'],
     personaId: 'coder',
+    ...(workItemMode
+      ? { workItemId: 'w1', workItemProvider: 'github', workItemTitle: 'Synthetic work item' }
+      : {}),
     createdAt: 'now',
     updatedAt: 'now',
   });
@@ -95,7 +125,7 @@ function Probe() {
     activeThread: threadRecord(thread),
     activeThreadId: thread,
     isTemporaryChat: false,
-    chatLayout: 'standard',
+    chatLayout: workItemMode ? 'workitems' : 'standard',
     sideQuestion: null,
     historyReady: true,
     historyHasEarlier: false,
@@ -138,6 +168,7 @@ function Probe() {
       return 'branch';
     },
     startNewSession: async () => {
+      if (workItemMode) return undefined;
       setThread('fresh');
       return 'fresh';
     },
@@ -161,10 +192,13 @@ function Probe() {
     <MemoryRouter>
       <RepoIndexProvider>
         <main className="h-screen bg-bg-primary text-text-primary">
+          <button onClick={() => setThread('source')}>Open original conversation</button>
           <button onClick={() => setThread('other')}>Switch to other conversation</button>
           <button onClick={() => setThread('branch')}>Open recovered branch</button>
           <button onClick={() => setBusy(!busy)}>Toggle thread busy</button>
-          <ChatView userRole="developer" />
+          <button onClick={() => setWorkItemMode(true)}>Use work-item layout</button>
+          <button onClick={() => setGeneration((value) => value + 1)}>Remount chat view</button>
+          <ChatView key={generation} userRole="developer" />
         </main>
       </RepoIndexProvider>
     </MemoryRouter>
@@ -202,6 +236,17 @@ Object.assign(window, {
       );
       node.dispatchEvent(new Event('input', { bubbles: true }));
     };
+    localStorage.setItem(
+      'mezair:chat-draft:branch:coder:attachments',
+      JSON.stringify(
+        Array.from({ length: 10 }, (_, i) => ({
+          ...attachment,
+          id: `slot-${i}`,
+          name: `slot-${i}.txt`,
+          path: `/synthetic/slot-${i}.txt`,
+        })),
+      ),
+    );
     await until(() => document.querySelector('button[title="Edit and resend"]'));
     document.querySelector<HTMLButtonElement>('button[title="Edit and resend"]')!.click();
     await frame();
@@ -264,6 +309,25 @@ Object.assign(window, {
         .querySelector<HTMLTextAreaElement>('textarea[aria-label="Chat message"]')
         ?.value.includes('Edited request with attachment'),
     );
+    check(
+      document.body.textContent?.includes('recovered files are waiting'),
+      'Overflow recovery must retain skipped files and explain how to free space',
+    );
+    const partialRecovery = document.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Chat message"]',
+    )!.value;
+    button('Switch to other conversation').click();
+    await frame();
+    button('Open recovered branch').click();
+    await frame();
+    await frame();
+    check(
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Chat message"]')!.value ===
+        partialRecovery,
+      'Partially restored requests must not append their text again after navigation',
+    );
+    document.querySelector<HTMLButtonElement>('button[aria-label="Remove slot-0.txt"]')!.click();
+    await frame();
     await until(() =>
       document
         .querySelector<HTMLTextAreaElement>('textarea[aria-label="Chat message"]')
@@ -282,6 +346,21 @@ Object.assign(window, {
     check(
       localStorage.getItem('mezair:chat-draft:other:coder') === 'Other conversation draft',
       'The other conversation must retain its own persisted draft',
+    );
+    const recoveredValue = document.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Chat message"]',
+    )!.value;
+    check(
+      recoveredValue.indexOf('Edited request') < recoveredValue.indexOf('Second failed action') &&
+        recoveredValue.split('Edited request').length === 2,
+      'Recovery must preserve request order without repeating text after freeing attachment slots',
+    );
+    button('Remount chat view').click();
+    await frame();
+    await frame();
+    check(
+      document.querySelector('button[aria-label="Remove requirements.txt"]'),
+      'Recovered attachments must survive a composer remount',
     );
     document.querySelector<HTMLButtonElement>('button[title="Edit and resend"]')!.click();
     await frame();
@@ -304,6 +383,68 @@ Object.assign(window, {
     check(
       (payload as { thread: string }).thread === 'fresh',
       'Editing the first message must send to the explicitly created new thread',
+    );
+    rejectSend!(new Error('Finish attachment-only probe'));
+    await frame();
+    await frame();
+    checkpointMode = true;
+    button('Open original conversation').click();
+    await frame();
+    await frame();
+    button('Remount chat view').click();
+    await frame();
+    await frame();
+    document.querySelector<HTMLButtonElement>('button[title="Edit and resend"]')!.click();
+    await frame();
+    type(
+      document.querySelector<HTMLTextAreaElement>('textarea:not([aria-label="Chat message"])')!,
+      'Source-bound edit',
+    );
+    await frame();
+    const sourceForks = forks;
+    [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find((node) => node.textContent?.includes('Resend ·'))!
+      .click();
+    await until(() => button('Rewind 1 file'));
+    button('Rewind 1 file').click();
+    await until(() => finishRestore);
+    button('Switch to other conversation').click();
+    await frame();
+    finishRestore!();
+    await frame();
+    await frame();
+    check(
+      forks === sourceForks,
+      'Navigation during rewind must never fork the destination conversation',
+    );
+    button('Open original conversation').click();
+    await until(() =>
+      document
+        .querySelector<HTMLTextAreaElement>('textarea[aria-label="Chat message"]')
+        ?.value.includes('Source-bound edit'),
+    );
+    check(
+      document.querySelector('button[aria-label="Remove requirements.txt"]'),
+      'Interrupted resend must retain its source-scoped text and attachment',
+    );
+    document
+      .querySelector<HTMLButtonElement>('button[aria-label="Remove requirements.txt"]')!
+      .click();
+    button('Use work-item layout').click();
+    await frame();
+    const composer = document.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Chat message"]',
+    )!;
+    type(composer, '/new');
+    await frame();
+    composer.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    );
+    await frame();
+    await frame();
+    check(
+      composer.value === '/new' && state.activeThreadId === 'source',
+      'A blocked /new must retain its draft in the work-item conversation',
     );
     return { passed: true, assertions };
   },

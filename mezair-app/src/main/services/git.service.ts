@@ -300,10 +300,11 @@ export async function unstageFiles(repoPath: string, paths: string[]): Promise<v
   await git.raw(['--literal-pathspecs', 'reset', 'HEAD', '--', ...targets]);
 }
 
-export async function discardFiles(repoPath: string, paths: string[]): Promise<void> {
+export async function discardFiles(repoPath: string, paths: string[], assertCanDiscard?: () => void): Promise<void> {
   paths.forEach((value) => assertRepoRelativePath(repoPath, value));
   const release = acquireCheckpointPaths([repoPath]);
   try {
+    assertCanDiscard?.();
     const git = gitClient(repoPath);
     // Separate untracked from tracked
     const status = await git.status();
@@ -312,6 +313,7 @@ export async function discardFiles(repoPath: string, paths: string[]): Promise<v
     const tracked = paths.filter((p) => !untracked.has(p));
     const untrackedToRemove = paths.filter((p) => untracked.has(p));
 
+    assertCanDiscard?.();
     if (tracked.length > 0) {
       await git.raw(['--literal-pathspecs', 'checkout', '--', ...tracked]);
     }
@@ -346,6 +348,15 @@ export async function pushBranch(
   return result?.pushed?.[0]?.local ?? branch ?? 'pushed';
 }
 
+async function runCheckoutCommand(repoPath: string, args: string[]): Promise<string> {
+  const result = await runReviewedGit(repoPath, args);
+  if (result.code !== 0)
+    throw new Error(
+      result.stderr.trim() || result.stdout.trim() || 'Git checkout operation failed.',
+    );
+  return result.stdout.trim() || 'Completed';
+}
+
 export async function pullBranch(
   repoPath: string,
   remote = 'origin',
@@ -353,11 +364,8 @@ export async function pullBranch(
 ): Promise<string> {
   const release = acquireCheckpointPaths([repoPath]);
   try {
-    const git = gitClient(repoPath);
-    const args: string[] = [remote];
-    if (branch) args.push(branch);
-    const result = await git.pull(args);
-    return `${result.summary.changes} changes, ${result.summary.insertions} insertions, ${result.summary.deletions} deletions`;
+    const args = ['pull', remote, ...(branch ? [branch] : [])];
+    return await runCheckoutCommand(repoPath, args);
   } finally {
     release();
   }
@@ -413,12 +421,12 @@ export async function createBranch(
 ): Promise<void> {
   const release = acquireCheckpointPaths([repoPath]);
   try {
-    const git = gitClient(repoPath);
-    if (startPoint) {
-      await git.checkoutBranch(name, startPoint);
-    } else {
-      await git.checkoutLocalBranch(name);
-    }
+    await runCheckoutCommand(repoPath, [
+      'checkout',
+      '-b',
+      name,
+      ...(startPoint ? [startPoint] : []),
+    ]);
   } finally {
     release();
   }
@@ -427,8 +435,7 @@ export async function createBranch(
 export async function switchBranch(repoPath: string, name: string): Promise<void> {
   const release = acquireCheckpointPaths([repoPath]);
   try {
-    const git = gitClient(repoPath);
-    await git.checkout(name);
+    await runCheckoutCommand(repoPath, ['checkout', name]);
   } finally {
     release();
   }
@@ -514,9 +521,11 @@ export async function discardReviewedFile(
   repoPath: string,
   filePath: string,
   fingerprint: string,
+  assertCanDiscard?: () => void,
 ): Promise<void> {
   const release = acquireCheckpointPaths([repoPath]);
   try {
+    assertCanDiscard?.();
     const patch = await reviewedFilePatch(repoPath, filePath, false);
     await assertNotSubmodulePath(repoPath, filePath);
     if (!patch || crypto.createHash('sha256').update(patch).digest('hex') !== fingerprint)
@@ -527,6 +536,7 @@ export async function discardReviewedFile(
     try {
       const patchPath = path.join(dir, 'reviewed.patch');
       fs.writeFileSync(patchPath, patch);
+      assertCanDiscard?.();
       await execFileAsync(
         'git',
         ['apply', '--reverse', '--binary', '--whitespace=nowarn', patchPath],
@@ -598,9 +608,11 @@ export async function applyFileHunk(
   hunkIndex: number,
   fingerprint: string,
   action: GitHunkAction,
+  assertCanDiscard?: () => void,
 ): Promise<void> {
   const release = action === 'discard' ? acquireCheckpointPaths([repoPath]) : () => undefined;
   try {
+    if (action === 'discard') assertCanDiscard?.();
     assertRepoRelativePath(repoPath, filePath);
     if (!Number.isInteger(hunkIndex) || hunkIndex < 0) throw new Error('Invalid hunk.');
     if (action !== 'stage' && action !== 'unstage' && action !== 'discard') {
@@ -631,6 +643,7 @@ export async function applyFileHunk(
           : action === 'unstage'
             ? ['apply', '--cached', '-R', '--whitespace=nowarn', patchFile]
             : ['apply', '-R', '--whitespace=nowarn', patchFile];
+      if (action === 'discard') assertCanDiscard?.();
       await execFileAsync('git', args, { cwd: repoPath, timeout: 30_000 });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -643,9 +656,7 @@ export async function applyFileHunk(
 export async function mergeBranch(repoPath: string, branch: string): Promise<string> {
   const release = acquireCheckpointPaths([repoPath]);
   try {
-    const git = gitClient(repoPath);
-    const result = await git.merge([branch]);
-    return result.result ?? 'merged';
+    return await runCheckoutCommand(repoPath, ['merge', branch]);
   } finally {
     release();
   }

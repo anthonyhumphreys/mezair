@@ -65,10 +65,11 @@ Object.assign(window, {
     check(button('Stage file'), 'Review must load an actionable file');
     button('Toggle review busy').click();
     await frame();
+    const discardControls = [...document.querySelectorAll<HTMLButtonElement>('button')].filter(
+      (node) => ['Discard', 'Discard file'].includes(node.textContent?.trim() ?? ''),
+    );
     check(
-      [...document.querySelectorAll<HTMLButtonElement>('button')]
-        .filter((node) => node.textContent?.trim() === 'Discard')
-        .every((node) => node.disabled),
+      discardControls.length === 2 && discardControls.every((node) => node.disabled),
       'Discard file and hunk must be disabled while the provider is busy',
     );
     button('Toggle review busy').click();

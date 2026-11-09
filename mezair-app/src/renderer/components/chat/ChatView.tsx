@@ -230,11 +230,14 @@ export function ChatView({ userRole }: ChatViewProps) {
       ? 'workitem-layout'
       : (activePersona?.id ?? 'no-persona');
   const composerScope = composerRecoveryScope(activeWorkspace?.id, activeThreadId, recoveryPersona);
+  const composerScopeRef = useRef(composerScope);
+  composerScopeRef.current = composerScope;
   const {
     prefill: composerPrefill,
     setPrefill: setComposerPrefill,
     recover: recoverComposer,
     acknowledge: acknowledgePrefill,
+    markTextApplied: markPrefillTextApplied,
   } = useScopedComposerRecovery(composerScope);
   const [reviewRevision, setReviewRevision] = useState(0);
   const [executionStrategy, setExecutionStrategy] = useState<ExecutionStrategy>('auto');
@@ -520,6 +523,11 @@ export function ChatView({ userRole }: ChatViewProps) {
     ): Promise<boolean> => {
       if (busy || (!text.trim() && !attachments.length)) return false;
       const sourceThreadId = activeThreadId;
+      const sourceScope = composerScope;
+      const retainAfterNavigation = () => {
+        if (composerScopeRef.current !== sourceScope)
+          recoverComposer(sourceScope, { id: crypto.randomUUID(), text, attachments });
+      };
       try {
         if (restoreFiles && messageId && sourceThreadId) {
           const result = await new Promise<ChatCheckpointRestoreResult | null>((complete) =>
@@ -530,21 +538,39 @@ export function ChatView({ userRole }: ChatViewProps) {
               complete,
             }),
           );
-          if (!result || result.warning) return false;
+          if (!result || result.warning) {
+            retainAfterNavigation();
+            return false;
+          }
         }
         // The edited message replaces this one in a new branch; the original
         // conversation stays as it was.
-        const branchId = (await forkThread(sourceIndex, true)) ?? (await startNewSession());
+        if (composerScopeRef.current !== sourceScope)
+          throw new Error('The source conversation changed. Your edit is kept.');
+        const forkId = await forkThread(sourceIndex, true, sourceThreadId ?? undefined);
+        if (!forkId && composerScopeRef.current !== sourceScope)
+          throw new Error('The source conversation changed. Your edit is kept.');
+        const branchId = forkId ?? (await startNewSession());
         if (!branchId) throw new Error('Could not create the new conversation. Your edit is kept.');
         return await new Promise<boolean>((resolve) =>
           requestChatAction(text, branchId ?? undefined, undefined, attachments, resolve),
         );
       } catch (err) {
+        retainAfterNavigation();
         setSendNotice(err instanceof Error ? err.message : 'Could not resend the edited message.');
         return false;
       }
     },
-    [activeThreadId, busy, forkThread, requestChatAction, startNewSession, workspaceKey],
+    [
+      activeThreadId,
+      busy,
+      composerScope,
+      recoverComposer,
+      forkThread,
+      requestChatAction,
+      startNewSession,
+      workspaceKey,
+    ],
   );
 
   const handleRetry = useCallback(
@@ -1849,6 +1875,7 @@ export function ChatView({ userRole }: ChatViewProps) {
             contextControls={contextControls}
             prefill={isTemporaryChat ? null : composerPrefill}
             onPrefillApplied={acknowledgePrefill}
+            onPrefillTextApplied={markPrefillTextApplied}
             draftKey={isTemporaryChat ? undefined : composerDraftKey}
             allowAttachments={!isTemporaryChat}
             mentionRepoIds={mentionRepoIds}

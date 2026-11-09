@@ -1061,3 +1061,23 @@ Queue every failed composer action until its own scoped composer acknowledges
 applying it. First-message edits use the explicitly created destination thread.
 Keyboard arrows begin at the focused enabled option after a panel is toggled off.
 Rendered regressions fail on uncaught browser exceptions.
+
+Ordinary sends reserve the provider before checkpoint and local-reply preparation;
+queue admission sees that reservation and preparation completion drains or fails
+pending work deterministically. Preserve explicit repo-less scaffold and headless
+Mesh execution roots while validating repo-bound path cardinality. Current
+workspace membership is authoritative at every new content delivery, including
+post-acknowledgement ACP prompts, guides, structured feedback, pending answers,
+accepted approvals and local output; do not consume a denied pending request.
+Keep cancellation available. Resolve explicit provider approval options by their
+actual grant, and cancel automatic grants safely after scope removal. Native
+stream callbacks retain scope failures for the awaited send rather than throwing
+through an EventEmitter. Live MCP context fails closed for detached scope.
+Quarantined workspace projection and binding updates commit atomically; lease
+contention keeps the sealed update retryable and schedules a bounded retry.
+Main-process discard checks overlapping active sessions inside the checkout lease.
+Forks and replacement-session startup respect navigation from their source thread.
+Recovery acknowledges text separately from attachments, keeps overflow available
+without repeating text, and persists current scoped attachment drafts through
+composer remounts. Reject a blocked /new instead of clearing its text. Release
+pending payloads for destinations the local thread catalogue confirms deleted.

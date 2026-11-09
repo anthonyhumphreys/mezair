@@ -54,10 +54,11 @@ const mocks = vi.hoisted(() => ({
     reasoningLevel: 'medium',
     userRole: 'ba-brm',
   } as Record<string, unknown>,
+  membershipAllowed: true,
   spawnResults: [] as FakeProcess[],
   threads: new Map<
     string,
-    { id?: string; repoIds?: string[]; temporary?: boolean; purpose?: string }
+    { id?: string; repoIds?: string[]; temporary?: boolean; purpose?: string; workspaceId?: string }
   >(),
 }));
 
@@ -80,6 +81,11 @@ vi.mock('../chat-continuation.service.js', () => ({
   }),
   prependThreadContinuation: (context: string | undefined, message: string) =>
     context ? `${context}\nNewest user request:\n${message}` : message,
+}));
+vi.mock('../chat-session-scope.js', () => ({
+  assertWorkspaceRepositoryMembership: () => {
+    if (!mocks.membershipAllowed) throw new Error('repository is no longer in this workspace');
+  },
 }));
 vi.mock('../settings.service.js', () => ({ getSettings: () => mocks.settings }));
 vi.mock('../persona.service.js', () => ({
@@ -125,6 +131,9 @@ vi.mock('../codex-runtime.service.js', () => ({ resolveCodexRuntime: async () =>
 import { spawn } from 'node:child_process';
 import {
   getAgentToolSessionContext,
+  followUpTurn,
+  steerTurn,
+  emitLocalAssistantTurn,
   invalidateThreadAccess,
   captureThreadAccessFence,
   sendMessage,
@@ -192,6 +201,7 @@ async function startAcp(provider: 'cursor' | 'devin', mcpCapabilities?: Record<s
 
 describe('codex-session agent MCP wiring', () => {
   beforeEach(() => {
+    mocks.membershipAllowed = true;
     resetAgentMcpRegistryForTests();
     setAgentMcpEndpoint({ url: URL, port: 45555, shimPath: '/app/scripts/mezair-mcp-shim.mjs' });
     mocks.settings.userRole = 'ba-brm';
@@ -201,6 +211,33 @@ describe('codex-session agent MCP wiring', () => {
   afterEach(() => {
     stopAllSessions();
     vi.clearAllMocks();
+  });
+
+  it('denies detached-workspace guide, feedback, local output and tool context', async () => {
+    mocks.threads.set('detachable', { repoIds: ['r1', 'r2'], workspaceId: 'ws' });
+    const { proc, session } = await startCodex({ threadId: 'detachable' });
+    await sendMessage(session.id, 'Allowed before removal');
+    const request = requests(proc, 'turn/start').at(-1)!;
+    emit(proc, { jsonrpc: '2.0', id: request.id, result: { turn: { id: 'active-turn' } } });
+    emit(proc, {jsonrpc:'2.0', method:'turn/started', params:{turn:{id:'active-turn'}}});
+    mocks.membershipAllowed = false;
+    await expect(steerTurn(session.id, 'Not allowed after removal')).rejects.toThrow(
+      'no longer in this workspace',
+    );
+    expect(
+      await followUpTurn({
+        sessionId: session.id,
+        requestId: 'detached-guide',
+        intent: 'guide',
+        message: 'Not allowed',
+      }),
+    ).toMatchObject({ status: 'failed' });
+    await expect(deliverStructuredAgentFeedback(session.id, 'Not allowed')).rejects.toThrow('no longer in this workspace');
+    expect(() => emitLocalAssistantTurn(session.id, 'Do not emit')).toThrow(
+      'no longer in this workspace',
+    );
+    expect(getAgentToolSessionContext(session.id)).toBeUndefined();
+    expect(requests(proc, 'turn/steer')).toHaveLength(0);
   });
 
   it('injects the mezair server into Codex app-server args and the token into env only', async () => {

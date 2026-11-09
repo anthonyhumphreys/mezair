@@ -1,3 +1,4 @@
+import { guardLocalChatStream } from '../services/local-chat-stream.js';
 import {
   createThreadWithPullRequest,
   linkThreadPullRequest,
@@ -65,6 +66,7 @@ import {
   getCodexSession,
   getCodexSessionExecutionPaths,
   getCodexSessionCheckpointBindings,
+  assertCodexSessionScope,
   isTemporaryChatSession,
   stopAllSessions,
   getSessionForRepo,
@@ -235,6 +237,7 @@ async function tryLocalLlmChatReply(
   const threadId = isTemporaryChatSession(sessionId)
     ? undefined
     : getCodexSession(sessionId)?.appThreadId;
+  assertCodexSessionScope(sessionId);
   const localPrompt = prependThreadContinuation(
     threadId ? captureThreadContinuation(threadId).context : undefined,
     message,
@@ -250,9 +253,9 @@ async function tryLocalLlmChatReply(
       started = true;
     }
   };
-  const result = await callPreferredLocalModel(localPrompt, 4096, {
-    images: imagePaths,
-    onPartial: (delta) => {
+  const stream = guardLocalChatStream(
+    () => assertCodexSessionScope(sessionId),
+    (delta) => {
       pending += delta;
       // Check the buffered prefix for refusal phrasing on every delta so a
       // refusal is caught before its text ever reaches the transcript.
@@ -264,7 +267,17 @@ async function tryLocalLlmChatReply(
         pending = '';
       }
     },
+  );
+  const result = await callPreferredLocalModel(localPrompt, 4096, {
+    images: imagePaths,
+    onPartial: stream.onPartial,
   });
+  try {
+    stream.finish();
+  } catch (error) {
+    if (started) emitLocalAssistantTurnEnd(sessionId, 'interrupted');
+    throw error;
+  }
   const full = result.ok ? (result.content ?? '') : '';
   const content = full.trim();
   if (!result.ok || !content || isLikelyLocalModelRefusal(content)) {
@@ -273,6 +286,7 @@ async function tryLocalLlmChatReply(
     return false;
   }
 
+  assertCodexSessionScope(sessionId);
   console.log(`[Chat] Answered via local model (${content.length} chars)`);
   start();
   // Streamed text is already on screen; emit only the unstreamed remainder (or
@@ -498,36 +512,43 @@ export function registerChatHandlers(): void {
         enrichedMessage = `[Work Item ${parsed.workItemId}] ${parsed.command}: ${message}`;
       }
 
-      const checkpointKey = options?.checkpointKey;
-      if (
-        typeof checkpointKey === 'string' &&
-        checkpointKey &&
-        !isTemporaryChatSession(sessionId)
-      ) {
-        const threadId = getCodexSession(sessionId)?.appThreadId;
-        const thread = threadId ? getChatThread(threadId) : null;
-        if (thread && !thread.temporary && thread.purpose !== 'side-question') {
-          // A changed provider binding must fail closed; snapshot I/O remains best effort.
-          const bindings = getCodexSessionCheckpointBindings(sessionId);
-          await captureTurnCheckpoints(
-            thread.id,
-            checkpointKey.slice(0, 120),
-            [...bindings.keys()],
-            'turn',
-            false,
-            bindings,
-          ).catch((error) => console.warn('[Checkpoints] skipped', error));
+      await sendMessage(sessionId, enrichedMessage, attachments, options, undefined, async () => {
+        assertCodexSessionScope(sessionId);
+        const checkpointKey = options?.checkpointKey;
+        if (
+          typeof checkpointKey === 'string' &&
+          checkpointKey &&
+          !isTemporaryChatSession(sessionId)
+        ) {
+          const threadId = getCodexSession(sessionId)?.appThreadId;
+          const thread = threadId ? getChatThread(threadId) : null;
+          if (thread && !thread.temporary && thread.purpose !== 'side-question') {
+            // A changed provider binding must fail closed; snapshot I/O remains best effort.
+            const bindings = getCodexSessionCheckpointBindings(sessionId);
+            await captureTurnCheckpoints(
+              thread.id,
+              checkpointKey.slice(0, 120),
+              [...bindings.keys()],
+              'turn',
+              false,
+              bindings,
+            ).catch((error) => console.warn('[Checkpoints] skipped', error));
+          }
         }
-      }
 
-      // Plain messages — and, on macOS 27+, image-only attachments — may be
-      // answerable on-device.
-      if (!parsed.command) {
-        const handledLocally = await tryLocalLlmChatReply(sessionId, enrichedMessage, attachments);
-        if (handledLocally) return;
-      }
+        // Plain messages — and, on macOS 27+, image-only attachments — may be
+        // answerable on-device.
+        if (!parsed.command) {
+          const handledLocally = await tryLocalLlmChatReply(
+            sessionId,
+            enrichedMessage,
+            attachments,
+          );
+          if (handledLocally) return true;
+        }
 
-      await sendMessage(sessionId, enrichedMessage, attachments, options);
+        return false;
+      });
     },
   );
 

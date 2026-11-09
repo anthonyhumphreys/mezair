@@ -86,10 +86,9 @@
       <a href="https://github.com/anthonyhumphreys/mezair/pull/105">Chat experience PR</a>
     </p>
     <p>
-      The changes address the original twenty inline findings, fifteen delayed follow-up findings,
-      twenty additional findings from the latest review, the additional findings in the review
-      summary, nine test suggestions, and the independent rewind safety finding. The PR is
-      intentionally left open for the owner to merge.
+      The changes address 67 inline review threads (one contains two findings), additional
+      review-summary findings, thirteen test suggestions and independently verified recovery and
+      streaming issues. The PR remains open for the owner to merge.
     </p>
     <h2>File recovery and Git safety</h2>
     <ul>
@@ -502,19 +501,99 @@
         multiple-action recovery.
       </li>
     </ul>
-    <h2>Validation</h2>
+    <h2>Final review follow-up</h2>
+    <ul>
+      <li>
+        Ordinary sends reserve their session before checkpoint or local-reply preparation.
+        Follow-ups queue during preparation and settle after local replies, provider delivery or
+        failure.
+      </li>
+      <li>
+        Explicit scaffold and headless Mesh execution roots remain valid without repository IDs.
+        Repo-bound sessions retain path-cardinality validation and canonical Windows assertions.
+      </li>
+      <li>
+        Git pull, branch creation, checkout and merge have bounded subprocess lifetimes. Discard
+        checks overlapping active conversations in main while holding the same lease that blocks new
+        turns.
+      </li>
+      <li>
+        Quarantined workspace projection and binding changes now commit together. A busy recovery
+        lease retains the original sealed update and schedules retry.
+      </li>
+      <li>
+        Forks carry their source thread and respect navigation; replacement sessions stop before
+        installing themselves in another conversation. A blocked /new retains its text.
+      </li>
+      <li>
+        Recovery retains overflow attachments, blocks incomplete submission and acknowledges text
+        separately so navigation cannot append it twice. Scoped attachment metadata survives
+        composer remounts. Deleted destinations release queued payloads after checking the local
+        thread catalogue.
+      </li>
+      <li>
+        Rendered assertions check request ordering, both discard controls and exact mutation
+        destinations. Service regressions check that stale sends never capture and real mutation
+        entry points preserve Undo while leased.
+      </li>
+    </ul>
+    <h2>Security finding: current workspace membership</h2>
     <p>
-      The full local suite passed 3,712 tests with 12 existing skips. The final Unicode-stream
-      regression also passed in the 24-test Git suite. Both Desktop TypeScript projects, lint and
-      the production main/preload/renderer build passed.
+      <strong>Outcome: implementation complete; final CI verification pending.</strong> A ready
+      session could receive a new writable turn after its repository left the workspace: checkpoint
+      capture rejected the repository, but its best-effort error was swallowed. The shared send
+      boundary now checks current membership independently of snapshots, including after
+      asynchronous ACP acknowledgements. Guides, feedback, local output, live tool context and
+      accepted pending answers/approvals use the same current grant. Denial and cancellation remain
+      available.
     </p>
     <p>
-      The expanded rendered suite passed 70 assertions at 1280px and 720px. It exercises repository
-      switches, exact mutation destinations, stale errors and confirmation, busy controls, keyboard
-      navigation, verification remounts, and the real ChatView's editor, explicit first-message
-      branch and scoped multi-action recovery. It uses synthetic state in disposable browser
-      profiles, without account, provider or repository access; uncaught browser exceptions fail the
-      run.
+      Files: <code>chat-session-scope.ts</code>, <code>codex-session.service.ts</code>,
+      <code>chat.ipc.ts</code> and <code>local-chat-stream.ts</code>. The narrow strategy preserves
+      immutable execution bindings and retained repair paths rather than replacing them with
+      ordinary checkout paths. Legitimate scaffold, Mesh, repository-free workspace and queued-send
+      controls pass.
+    </p>
+    <p>
+      Regression proof uses real SQLite membership removal and provider protocol fakes: unchanged
+      conversation repository IDs cannot authorize a detached repository, no new prompt/steer or
+      accepted reply is written, and cancellation succeeds. An EventEmitter test proves a revoked
+      local stream rejects the awaited send without escaping the native callback. Fresh independent
+      review exposed that callback issue and the pending-response sibling paths; both were
+      addressed.
+    </p>
+    <pre><code># Owning workspace: mezair-app/
+# Gate 1: syntax, imports and types
+pnpm exec tsc --noEmit -p tsconfig.node.json
+pnpm exec tsc --noEmit -p tsconfig.web.json
+# Gate 2: original trigger, sibling paths and callback safety
+pnpm exec vitest run src/main/services/__tests__/acp-session-parity.test.ts src/main/services/__tests__/agent-mcp-session.test.ts src/main/services/__tests__/chat-checkpoint-safety.test.ts src/main/services/__tests__/local-chat-stream.test.ts
+# Gate 3: legitimate controls and package checks
+pnpm lint
+pnpm exec electron-vite build
+pnpm exec vitest run</code></pre>
+    <p>
+      The affected service set passed 183 tests. The last completed full local run before the final
+      callback regressions passed 3,722 tests with 12 existing skips. A later full run encountered
+      host sleeps lasting up to 15 minutes; the affected tests passed on rerun. The final CI run is
+      the authoritative complete result. This is a targeted permission-boundary fix, not a claim
+      that all repository vulnerabilities were audited or that existing native processes lose their
+      OS permissions mid-turn.
+    </p>
+    <h2>Validation</h2>
+    <p>
+      A complete earlier local suite passed 3,712 tests with 12 existing skips. The final
+      Unicode-stream regression also passed in the 24-test Git suite. Both Desktop TypeScript
+      projects, lint and the production main/preload/renderer build passed.
+    </p>
+    <p>
+      The extended rendered suite includes the original 70 assertions plus overflow recovery,
+      remount, navigation and blocked-command regressions at 1280px and 720px; final totals are
+      recorded in the handoff. It exercises repository switches, exact mutation destinations, stale
+      errors and confirmation, busy controls, keyboard navigation, verification remounts, and the
+      real ChatView's editor, explicit first-message branch and scoped multi-action recovery. It
+      uses synthetic state in disposable browser profiles, without account, provider or repository
+      access; uncaught browser exceptions fail the run.
     </p>
     <p>
       The final handoff records the latest commit's remote results, including packaging, paired
@@ -527,9 +606,9 @@
     <!-- PERF_TABLE_START -->
     <h2>Measured chat performance</h2>
     <p>
-      The last completed paired CI run before this follow-up, on <code>8bc488f7</code>, compared
-      five alternating pairs against pinned reference <code>25800924</code>. This is the cumulative
-      PR comparison against a historical baseline, not the isolated speedup from the review fixes.
+      An earlier completed paired CI run, on <code>8bc488f7</code>, compared five alternating pairs
+      against pinned reference <code>25800924</code>. This is the cumulative PR comparison against a
+      historical baseline, not the isolated speedup from the review fixes.
     </p>
     <div class="table">
       <table>

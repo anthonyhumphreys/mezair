@@ -1,3 +1,6 @@
+import { acquireCheckpointPaths } from '../chat-checkpoint-locks.js';
+import { deleteChatThread } from '../chat-persistence.service.js';
+import { deleteLocalEntity } from '../sync-entity-domain.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { SCHEMA_SQL } from '../../db/schema.js';
@@ -24,6 +27,7 @@ vi.mock('../settings.service.js', () => ({
 
 import {
   createWorkspace,
+  removeReposFromWorkspace,
   deleteWorkspace,
   getWorkspacePreferences,
   updateWorkspace,
@@ -190,4 +194,37 @@ describe('workspace deletion', () => {
       count: 1,
     });
   });
+});
+
+it('keeps undo rows and membership intact through real deletion entry points during a rewind', () => {
+  seedWorkspace('protected-workspace');
+  inMemoryDb.exec(`INSERT OR REPLACE INTO repos(id,name,path) VALUES('protected-repo','Repo','/protected-checkout');
+    INSERT INTO workspace_repos(workspace_id,repo_id,added_at) VALUES('protected-workspace','protected-repo','now');
+    INSERT INTO chat_threads(id,workspace_id,persona_id,title,repo_ids_json) VALUES('protected-thread','protected-workspace','coder','Thread','["protected-repo"]');
+    INSERT INTO chat_checkpoints(id,thread_id,message_id,repo_id,commit_sha,ref_name,repo_path,kind,created_at) VALUES('protected-undo','protected-thread','undo','protected-repo','sha','refs/mezair/checkpoints/undo','/protected-checkout','restore','now');`);
+  const release = acquireCheckpointPaths(['/protected-checkout']);
+  try {
+    for (const mutate of [
+      () => deleteChatThread('protected-thread'),
+      () => deleteWorkspace('protected-workspace'),
+      () => deleteLocalEntity('workspace-definition', 'protected-workspace'),
+      () => removeReposFromWorkspace('protected-workspace', ['protected-repo']),
+    ])
+      expect(mutate).toThrow('Wait for file rewind');
+  } finally {
+    release();
+  }
+  expect(
+    inMemoryDb.prepare("SELECT id FROM chat_checkpoints WHERE id='protected-undo'").get(),
+  ).toEqual({ id: 'protected-undo' });
+  expect(
+    inMemoryDb
+      .prepare("SELECT repo_id FROM workspace_repos WHERE workspace_id='protected-workspace'")
+      .get(),
+  ).toEqual({ repo_id: 'protected-repo' });
+  removeReposFromWorkspace('protected-workspace', ['protected-repo']);
+  deleteChatThread('protected-thread');
+  expect(
+    inMemoryDb.prepare("SELECT id FROM chat_checkpoints WHERE id='protected-undo'").get(),
+  ).toBeUndefined();
 });

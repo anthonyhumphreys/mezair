@@ -1,3 +1,4 @@
+import { CheckpointLeaseBusyError } from '../chat-checkpoint-locks.js';
 import Database from 'better-sqlite3';
 import {
   createPublicKey,
@@ -256,8 +257,24 @@ describe('entity seal/unseal', () => {
       quarantineJson: JSON.stringify({ envelope, revision: 7 }),
     });
     installAccountKey(SCOPE, 1, key, 'pairing');
-
+    const deferred = db
+      .prepare("SELECT base_revision, quarantine_json FROM sync_bindings WHERE entity_id='w-retry'")
+      .get();
+    vi.useFakeTimers();
+    applyRemoteEntityPayload.mockImplementationOnce(() => {
+      throw new CheckpointLeaseBusyError('Wait for file rewind');
+    });
     retryQuarantinedEntities(SCOPE);
+    expect(
+      db
+        .prepare(
+          "SELECT base_revision, quarantine_json FROM sync_bindings WHERE entity_id='w-retry'",
+        )
+        .get(),
+    ).toEqual(deferred);
+
+    vi.advanceTimersByTime(3000);
+    vi.useRealTimers();
 
     const binding = db
       .prepare(
@@ -418,7 +435,11 @@ describe('device identity + key wrap', () => {
       }),
     ).toThrow(/does not match/);
     expect(() =>
-      createDeviceIdentityBindingProof({ ...SCOPE, accountId: 'other-account' }, ENROLLMENT, challenge),
+      createDeviceIdentityBindingProof(
+        { ...SCOPE, accountId: 'other-account' },
+        ENROLLMENT,
+        challenge,
+      ),
     ).toThrow(/different account/);
   });
 
@@ -506,8 +527,9 @@ describe('device identity + key wrap', () => {
 
     const recipient = ensureDeviceIdentity(SCOPE, 'enr-recipient');
     setDeviceTrust(SCOPE, 'enr-recipient', 'pending');
-    expect(trustAuthenticatedDeviceIdentity(SCOPE, 'enr-recipient', randomBytes(32).toString('base64')))
-      .toBe(false);
+    expect(
+      trustAuthenticatedDeviceIdentity(SCOPE, 'enr-recipient', randomBytes(32).toString('base64')),
+    ).toBe(false);
     expect(trustAuthenticatedDeviceIdentity(SCOPE, 'enr-recipient', recipient.pub)).toBe(true);
     expect(wrapAccountKeyFor(SCOPE, 'enr-recipient', recipient.pub)).toBe(true);
     const wrap = outboxPayloads(CRYPTO_ENTITY_KEYRING_WRAP).at(-1) as KeyringWrapPayload;
@@ -536,8 +558,9 @@ describe('device identity + key wrap', () => {
     const peer = ensureDeviceIdentity(SCOPE, 'enr-revoked');
     setDeviceTrust(SCOPE, 'enr-revoked', 'revoked');
     expect(trustAuthenticatedDeviceIdentity(SCOPE, 'enr-revoked', peer.pub)).toBe(false);
-    expect(db.prepare('SELECT state FROM sync_device_trust WHERE enrollment_id = ?').get('enr-revoked'))
-      .toEqual({ state: 'revoked' });
+    expect(
+      db.prepare('SELECT state FROM sync_device_trust WHERE enrollment_id = ?').get('enr-revoked'),
+    ).toEqual({ state: 'revoked' });
   });
 
   it('ignores a wrap addressed to a different enrollment', () => {

@@ -1,3 +1,4 @@
+import { CheckpointLeaseBusyError } from './chat-checkpoint-locks.js';
 // E2E keyring: account data key (ADK) custody, X25519 device identity,
 // key distribution (pairing secrets + per-device wraps), rotation on
 // revoke, and the seal/unseal primitives the sync engine calls at its
@@ -109,10 +110,7 @@ const MAX_PENDING_KEYRING_WRAPS = 64;
 const DEVICE_IDENTITY_BINDING_INFO = Buffer.from('mezair-device-identity-binding-v1', 'utf8');
 
 export type UnsealFailure =
-  | 'malformed-envelope'
-  | 'unknown-key-version'
-  | 'auth-failed'
-  | 'malformed-plaintext';
+  'malformed-envelope' | 'unknown-key-version' | 'auth-failed' | 'malformed-plaintext';
 
 export class UnsealError extends Error {
   readonly reason: UnsealFailure;
@@ -301,8 +299,7 @@ function assertBundleHasNoConflicts(
          WHERE backend_id = ? AND account_id = ? AND key_version = ?`,
       )
       .get(scope.backendId, scope.accountId, entry.keyVersion) as
-      | { key_wrapped: Buffer }
-      | undefined;
+      { key_wrapped: Buffer } | undefined;
     if (existing === undefined) continue;
     const existingKey = unwrapSecretBytes(existing.key_wrapped);
     if (existingKey === null || !existingKey.equals(entry.key)) {
@@ -468,8 +465,7 @@ function retainedRecoverySecret(
        WHERE backend_id = ? AND account_id = ?`,
     )
     .get(scope.backendId, scope.accountId) as
-    | { recovery_id: string; secret_wrapped: Buffer; invalidated_at: string | null }
-    | undefined;
+    { recovery_id: string; secret_wrapped: Buffer; invalidated_at: string | null } | undefined;
   if (row === undefined || (recoveryId !== undefined && row.recovery_id !== recoveryId))
     return null;
   if (forRefresh && row.invalidated_at !== null) return null;
@@ -602,8 +598,7 @@ export function installAccountKey(
        WHERE backend_id = ? AND account_id = ? AND key_version = ?`,
     )
     .get(scope.backendId, scope.accountId, version) as
-    | { key_wrapped: Buffer; source: string }
-    | undefined;
+    { key_wrapped: Buffer; source: string } | undefined;
   if (existing === undefined) {
     db.prepare(
       `INSERT INTO sync_keyring
@@ -654,8 +649,7 @@ export function canProvisionAccountKey(scope: SyncScope, ownEnrollmentId: string
        WHERE backend_id = ? AND account_id = ? AND dataset_epoch = ?`,
     )
     .get(scope.backendId, scope.accountId, scope.datasetEpoch) as
-    | { last_pull_at: string | null }
-    | undefined;
+    { last_pull_at: string | null } | undefined;
   if (pulled?.last_pull_at == null) return false;
   if (!isAccountKeyBootstrapEligible(scope, ownEnrollmentId)) return false;
   const otherIdentities = listDeviceIdentities(scope).some(
@@ -808,8 +802,7 @@ function ownDevicePrivateKey(scope: SyncScope, enrollmentId: string): Buffer | n
        WHERE backend_id = ? AND account_id = ? AND enrollment_id = ?`,
     )
     .get(scope.backendId, scope.accountId, enrollmentId) as
-    | { identity_priv_wrapped: Buffer | null }
-    | undefined;
+    { identity_priv_wrapped: Buffer | null } | undefined;
   if (row?.identity_priv_wrapped == null) return null;
   return unwrapSecretBytes(row.identity_priv_wrapped);
 }
@@ -914,7 +907,9 @@ export function trustAuthenticatedDeviceIdentity(
   ) {
     return false;
   }
-  const observed = listDeviceIdentities(scope).find((device) => device.enrollmentId === enrollmentId);
+  const observed = listDeviceIdentities(scope).find(
+    (device) => device.enrollmentId === enrollmentId,
+  );
   if (observed?.pub !== boundIdentityPub) return false;
   setDeviceTrust(scope, enrollmentId, 'trusted');
   return deviceTrustState(scope, enrollmentId) === 'trusted';
@@ -1509,7 +1504,8 @@ export function wrapAccountKeyFor(
   const bundle = accountKeyBundle(scope);
   if (bundle === null) throw new AccountKeyUnavailableError();
   const maxVersion = bundle[bundle.length - 1].keyVersion;
-  if (bundle.every((entry) => hasDelivery(scope, targetEnrollmentId, entry.keyVersion))) return false;
+  if (bundle.every((entry) => hasDelivery(scope, targetEnrollmentId, entry.keyVersion)))
+    return false;
   const issuerEnrollmentId = getActiveEnrollmentId(scope);
   if (issuerEnrollmentId === null || deviceTrustState(scope, issuerEnrollmentId) === 'revoked') {
     return false;
@@ -1803,8 +1799,7 @@ function pairingSecretFor(scope: SyncScope, nonce: string): Buffer | null {
        WHERE backend_id = ? AND account_id = ? AND nonce = ?`,
     )
     .get(scope.backendId, scope.accountId, nonce) as
-    | { secret_wrapped: Buffer; role: string }
-    | undefined;
+    { secret_wrapped: Buffer; role: string } | undefined;
   if (row === undefined || row.role !== 'redeemer') return null;
   return unwrapSecretBytes(row.secret_wrapped);
 }
@@ -2002,8 +1997,7 @@ function installDeliveredKey(scope: SyncScope, version: number, key: Buffer): vo
        WHERE backend_id = ? AND account_id = ? AND key_version = ?`,
     )
     .get(scope.backendId, scope.accountId, version) as
-    | { key_wrapped: Buffer; source: string }
-    | undefined;
+    { key_wrapped: Buffer; source: string } | undefined;
   if (existing === undefined) {
     installAccountKey(scope, version, key, 'wrap');
     return;
@@ -2071,8 +2065,7 @@ export function handleCryptoBoundaryEntity(
            WHERE backend_id = ? AND account_id = ? AND enrollment_id = ?`,
         )
         .get(scope.backendId, scope.accountId, record.enrollmentId) as
-        | { identity_pub: string }
-        | undefined;
+        { identity_pub: string } | undefined;
       // An enrollment identity is pinned on first observation. A changed key
       // is a new enrollment, even if the old enrollment is pending or revoked.
       if (existing !== undefined && existing.identity_pub !== record.pub) return true;
@@ -2140,8 +2133,7 @@ export function handleCryptoBoundaryEntity(
            WHERE backend_id = ? AND account_id = ? AND enrollment_id = ?`,
         )
         .get(scope.backendId, scope.accountId, wrap.senderEnrollmentId) as
-        | { identity_pub: string }
-        | undefined;
+        { identity_pub: string } | undefined;
       if (sender !== undefined && sender.identity_pub !== wrap.senderPub) return true;
       const senderTrust = deviceTrustState(scope, wrap.senderEnrollmentId);
       // Backend enrollment/status is not an authorization signal. Until the
@@ -2336,8 +2328,7 @@ export function handleCryptoBoundaryEntity(
            WHERE backend_id = ? AND account_id = ? AND role = 'issuer' AND proof_nonce = ?`,
         )
         .get(scope.backendId, scope.accountId, record.proofNonce) as
-        | { nonce: string; secret_wrapped: Buffer }
-        | undefined;
+        { nonce: string; secret_wrapped: Buffer } | undefined;
       if (pending === undefined) return true;
       const secret = unwrapSecretBytes(pending.secret_wrapped);
       if (secret === null || secret.byteLength !== 32) return true;
@@ -2356,8 +2347,7 @@ export function handleCryptoBoundaryEntity(
            WHERE backend_id = ? AND account_id = ? AND enrollment_id = ?`,
         )
         .get(scope.backendId, scope.accountId, record.enrollmentId) as
-        | { identity_pub: string }
-        | undefined;
+        { identity_pub: string } | undefined;
       if (existing !== undefined && existing.identity_pub !== record.pub) return true;
       // Register the announced identity and promote to trusted — the
       // pairing blob already delivered the key bundle.
@@ -2463,6 +2453,22 @@ export function retryPendingKeyringWraps(scope: SyncScope): void {
  * only because this key was missing. Successful re-opens project the
  * domain payload immediately.
  */
+const quarantineRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+function retryQuarantineAfterLease(scope: SyncScope): void {
+  const key = JSON.stringify(scope);
+  if (quarantineRetryTimers.has(key)) return;
+  const timer = setTimeout(() => {
+    quarantineRetryTimers.delete(key);
+    try {
+      retryQuarantinedEntities(scope);
+    } catch {
+      /* A closed database retries on the next pull. */
+    }
+  }, 3000);
+  timer.unref();
+  quarantineRetryTimers.set(key, timer);
+}
+
 export function retryQuarantinedEntities(scope: SyncScope): void {
   const rows = getDb()
     .prepare(
@@ -2535,35 +2541,38 @@ export function retryQuarantinedEntities(scope: SyncScope): void {
       const dirty =
         binding.localEditGeneration > binding.acknowledgedGeneration ||
         listMutableOutboxRows(scope, row.entity_type, row.entity_id).length > 0;
-      setBindingQuarantine(scope, row.entity_type, row.entity_id, null);
-      if (dirty && localPayloadJson !== domainJson) {
-        const kind: 'edit-edit' | 'delete-edit' =
-          localPayloadJson === null ? 'delete-edit' : 'edit-edit';
-        insertUnresolvedConflict(scope, {
-          basePayloadJson: binding.basePayloadJson,
-          localPayloadJson,
-          remotePayloadJson: domainJson,
-          baseRevision: binding.baseRevision,
-          remoteRevision: remoteRevision ?? binding.baseRevision,
-          entityType: row.entity_type,
-          entityId: row.entity_id,
-          kind,
-        });
-        continue;
-      }
-      setBindingBase(
-        scope,
-        row.entity_type,
-        row.entity_id,
-        remoteRevision ?? binding.baseRevision,
-        domainJson,
-      );
-      if (dirty) {
-        acknowledgeBindingLocalEdits(scope, row.entity_type, row.entity_id);
-        deletePendingOutboxRows(scope, row.entity_type, row.entity_id);
-      }
-      applyRemoteEntityPayload(row.entity_type, row.entity_id, payload);
-    } catch {
+      getDb().transaction(() => {
+        setBindingQuarantine(scope, row.entity_type, row.entity_id, null);
+        if (dirty && localPayloadJson !== domainJson) {
+          const kind: 'edit-edit' | 'delete-edit' =
+            localPayloadJson === null ? 'delete-edit' : 'edit-edit';
+          insertUnresolvedConflict(scope, {
+            basePayloadJson: binding.basePayloadJson,
+            localPayloadJson,
+            remotePayloadJson: domainJson,
+            baseRevision: binding.baseRevision,
+            remoteRevision: remoteRevision ?? binding.baseRevision,
+            entityType: row.entity_type,
+            entityId: row.entity_id,
+            kind,
+          });
+          return;
+        }
+        setBindingBase(
+          scope,
+          row.entity_type,
+          row.entity_id,
+          remoteRevision ?? binding.baseRevision,
+          domainJson,
+        );
+        if (dirty) {
+          acknowledgeBindingLocalEdits(scope, row.entity_type, row.entity_id);
+          deletePendingOutboxRows(scope, row.entity_type, row.entity_id);
+        }
+        applyRemoteEntityPayload(row.entity_type, row.entity_id, payload);
+      })();
+    } catch (error) {
+      if (error instanceof CheckpointLeaseBusyError) retryQuarantineAfterLease(scope);
       // Still undecryptable — leave it quarantined.
     }
   }

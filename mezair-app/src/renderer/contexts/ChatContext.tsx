@@ -185,7 +185,11 @@ export interface ChatContextValue {
   settleThread: (threadId: string, settled: boolean) => Promise<void>;
   deleteThread: (threadId: string) => Promise<void>;
   /** Forks history up to and including `messageIndex`; resolves to the new thread id. */
-  forkThread: (messageIndex: number, before?: boolean) => Promise<string | null>;
+  forkThread: (
+    messageIndex: number,
+    before?: boolean,
+    expectedSourceId?: string,
+  ) => Promise<string | null>;
   setCollaborationMode: (mode: ChatCollaborationMode) => void;
   setChatLayout: (layout: ChatLayout) => Promise<void>;
   selectWorkItemThread: (workItem: WorkItem) => Promise<void>;
@@ -807,6 +811,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       repoSelection?: RepoInfo[];
       primaryRepo?: RepoInfo | null;
       workItem?: Pick<WorkItem, 'id' | 'provider' | 'title'>;
+      isCurrent?: () => boolean;
     }) => {
       const persona = opts?.persona ?? activePersona;
       if (!persona) return null;
@@ -824,8 +829,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         activeRepoId: primaryRepo?.id ?? null,
       });
 
-      threadLoadVersionRef.current += 1;
       applyThreadState(created);
+      if (opts?.isCurrent && !opts.isCurrent()) return null;
+      threadLoadVersionRef.current += 1;
       setActiveThreadId(created.id);
       setHistoryReady(true);
       setThreadViewSnapshot({ threadId: created.id, lastViewedAt: null });
@@ -2268,6 +2274,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           throw new Error('Wait for the current turn before changing repositories.');
         await window.mezair.chat.stopSession(liveOrRenderedSessionForThread.id);
         forgetLiveSession(liveOrRenderedSessionForThread.id);
+        if (activeThreadRef.current?.id !== thread.id) return false;
       }
       const currentSessionForThread =
         sessionScopeMatches &&
@@ -2357,12 +2364,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     })
                   : null;
         } catch (err) {
-          setError(err instanceof Error ? err.message : 'Failed to start session');
-          setBusy(false);
+          if (activeThreadRef.current?.id === thread.id) {
+            setError(err instanceof Error ? err.message : 'Failed to start session');
+            setBusy(false);
+          }
           return false;
         }
 
         if (!startedSession) return false;
+        if (activeThreadRef.current?.id !== thread.id) {
+          await window.mezair.chat.stopSession(startedSession.id).catch(console.error);
+          return false;
+        }
 
         rememberLiveSession(thread.id, startedSession);
         setSession(startedSession);
@@ -3277,7 +3290,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [session]);
 
   const startNewSession = useCallback(async () => {
-    navigationRequests.current.invalidate();
+    const isNavigationCurrent = navigationRequests.current.begin();
     if (scaffoldModeActive || !activePersona || chatLayout === 'workitems') return;
     threadLoadVersionRef.current += 1;
     detachLiveSession();
@@ -3287,6 +3300,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setError(null);
     const created = await createThreadRecord({
       title: buildEmptyThreadLabel(activePersona.name),
+      isCurrent: isNavigationCurrent,
     });
     return created?.id;
   }, [activePersona, chatLayout, createThreadRecord, detachLiveSession, scaffoldModeActive]);
@@ -3567,11 +3581,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [historyLoadingEarlier]);
 
   const forkThread = useCallback(
-    async (messageIndex: number, before = false) => {
-      navigationRequests.current.invalidate();
+    async (messageIndex: number, before = false, expectedSourceId?: string) => {
+      const isNavigationCurrent = navigationRequests.current.begin();
       if (scaffoldModeActive || !activePersona || chatLayout === 'workitems') return null;
 
       const sourceId = activeThreadRef.current?.id;
+      if (expectedSourceId && expectedSourceId !== sourceId)
+        throw new Error('The source conversation changed. Your edit is kept.');
       const selected = entriesRef.current[messageIndex];
       let forkEntries = entriesRef.current;
       let forkIndex = messageIndex;
@@ -3581,7 +3597,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         historyPageRef.current.cursor
       ) {
         const full = chatMessagesToEntries(await window.mezair.chat.loadHistory(sourceId));
-        if (activeThreadRef.current?.id !== sourceId) return null;
+        if (!isNavigationCurrent() || activeThreadRef.current?.id !== sourceId)
+          throw new Error('The source conversation changed. Your edit is kept.');
         forkEntries = mergeHydratedHistory(
           full,
           historyPageRef.current.entries,
@@ -3624,6 +3641,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setError(null);
 
       const forkedThread = await createThreadRecord({
+        isCurrent: () => isNavigationCurrent() && activeThreadRef.current?.id === sourceId,
         title: buildForkThreadTitle(
           activeThreadRef.current?.title,
           ancestorEntries[ancestorEntries.length - 1]?.content,
@@ -3633,7 +3651,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (before) throw new Error('Could not create the edited conversation branch.');
         return null;
       }
-      const sourceThreadId = activeThreadRef.current?.id;
+      const sourceThreadId = sourceId;
 
       const primaryRepo = activeRepoState ?? activeReposState[0] ?? null;
       const forkTimestampBase = Date.now();
@@ -3678,6 +3696,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           .catch(console.error);
       }
 
+      if (!isNavigationCurrent())
+        throw new Error('The source conversation changed. Your edit is kept.');
       setEntries(ancestorEntries.map((entry) => ({ ...entry })));
       setSession(null);
       return forkedThread.id;

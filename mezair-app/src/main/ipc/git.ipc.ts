@@ -1,3 +1,8 @@
+import {
+  listActiveCodexSessions,
+  getCodexSessionExecutionPaths,
+} from '../services/codex-session.service.js';
+import { checkpointPathsOverlap } from '../services/chat-checkpoint.service.js';
 import { ipcMain } from 'electron';
 import { getDb } from '../db/database.js';
 import {
@@ -29,6 +34,17 @@ import {
 } from '../services/scoped-git.service.js';
 import { TURN_DELIVERY_MAX_FILES, TURN_DELIVERY_MAX_PATH_LENGTH } from '../../shared/scoped-git.js';
 import type { TurnDeliveryMode } from '../../shared/scoped-git.js';
+
+function assertNoWriter(repoPath: string): void {
+  if (
+    listActiveCodexSessions().some(
+      (session) =>
+        (session.status === 'busy' || session.status === 'starting') &&
+        checkpointPathsOverlap([repoPath], getCodexSessionExecutionPaths(session.id)),
+    )
+  )
+    throw new Error('Wait for the active agent in this checkout before discarding changes.');
+}
 
 /** Resolve a repoId to its disk path from the database. */
 function repoPath(repoId: string): string {
@@ -86,14 +102,18 @@ export function registerGitHandlers(): void {
   });
 
   ipcMain.handle('git:discard', (_e, repoId: string, paths: string[]) => {
-    return discardFiles(repoPath(repoId), paths);
+    const executionPath = repoPath(repoId);
+    return discardFiles(executionPath, paths, () => assertNoWriter(executionPath));
   });
   ipcMain.handle(
     'git:discard-reviewed',
     (_e, repoId: string, filePath: string, fingerprint: string) => {
       if (typeof filePath !== 'string' || typeof fingerprint !== 'string')
         throw new Error('A reviewed file is required.');
-      return discardReviewedFile(repoPath(repoId), filePath, fingerprint);
+      const executionPath = repoPath(repoId);
+      return discardReviewedFile(executionPath, filePath, fingerprint, () =>
+        assertNoWriter(executionPath),
+      );
     },
   );
 
@@ -109,7 +129,10 @@ export function registerGitHandlers(): void {
     ) => {
       if (typeof filePath !== 'string' || typeof fingerprint !== 'string')
         throw new Error('Invalid hunk request.');
-      return applyFileHunk(repoPath(repoId), filePath, hunkIndex, fingerprint, action);
+      const executionPath = repoPath(repoId);
+      return applyFileHunk(executionPath, filePath, hunkIndex, fingerprint, action, () =>
+        assertNoWriter(executionPath),
+      );
     },
   );
 

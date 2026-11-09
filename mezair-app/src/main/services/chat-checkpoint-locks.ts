@@ -7,18 +7,21 @@ export function hasCheckpointRestore(): boolean {
   return checkpointRestorePaths.size > 0;
 }
 
+/** Resolve existing ancestors too, so an offline child retains its canonical identity. */
+export function canonicalCheckpointPath(value: string): string {
+  const absolute = path.resolve(value);
+  try {
+    return realpathSync(absolute);
+  } catch {
+    const parent = path.dirname(absolute);
+    return parent === absolute
+      ? absolute
+      : path.join(canonicalCheckpointPath(parent), path.basename(absolute));
+  }
+}
+
 export function acquireCheckpointPaths(paths: string[]): () => void {
-  const canonical = [
-    ...new Set(
-      paths.map((value) => {
-        try {
-          return realpathSync(value);
-        } catch {
-          return path.resolve(value);
-        }
-      }),
-    ),
-  ];
+  const canonical = [...new Set(paths.map(canonicalCheckpointPath))];
   if (
     canonical.some((value) =>
       [...checkpointRestorePaths].some(

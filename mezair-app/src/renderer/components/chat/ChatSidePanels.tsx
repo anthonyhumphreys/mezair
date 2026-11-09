@@ -40,7 +40,7 @@ export function ChatSidePanels({
   review,
 }: {
   /** Working-tree review beside the chat; null when closed. */
-  review: { repos: RepoInfo[]; busy: boolean; onClose: () => void } | null;
+  review: { repos: RepoInfo[]; busy: boolean; refreshKey?: number; onClose: () => void } | null;
   previewMode: PreviewMode | null;
   previewInitialUrl: string;
   onClosePreview: () => void;
@@ -172,7 +172,12 @@ export function ChatSidePanels({
           collapsible={false}
           className="border-l border-border/60 bg-bg-secondary/50"
         >
-          <ChatReviewPanel repos={review.repos} busy={review.busy} onClose={review.onClose} />
+          <ChatReviewPanel
+            repos={review.repos}
+            busy={review.busy}
+            refreshKey={review.refreshKey}
+            onClose={review.onClose}
+          />
         </ResizableSidebarPanel>
       )}
 

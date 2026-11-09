@@ -46,7 +46,9 @@ try {
   const [port, endpoint] = readFileSync(portFile, 'utf8').trim().split('\n');
   cdp = await connectCdp(`ws://127.0.0.1:${port}${endpoint}`);
   let browserErrors = 0;
+  let uncaughtExceptions = 0;
   cdp.onEvent((event) => {
+    if (event.method === 'Runtime.exceptionThrown') uncaughtExceptions++;
     if (event.method === 'Runtime.exceptionThrown' && browserErrors++ < 10)
       console.error(
         'Fixture exception:',
@@ -116,6 +118,7 @@ try {
       await cdp.command('Target.closeTarget', { targetId });
     }
   }
+  if (uncaughtExceptions) throw new Error(`${uncaughtExceptions} uncaught browser exception(s)`);
   console.log(JSON.stringify({ viewports: results }));
 } finally {
   cdp?.close();

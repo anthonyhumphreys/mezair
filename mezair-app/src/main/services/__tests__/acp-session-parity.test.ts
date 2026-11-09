@@ -1,3 +1,5 @@
+import os from 'node:os';
+import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -63,9 +65,11 @@ const mocks = vi.hoisted(() => ({
   spawnResults: [] as FakeAcpProcess[],
   timeline: [] as string[],
   persistedEventTypes: [] as string[],
+  threadRepoIds: ['r1'] as string[],
 }));
 
-vi.mock('node:child_process', () => ({
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
   spawn: vi.fn(() => {
     const proc = mocks.spawnResults.shift();
     if (!proc) throw new Error('No fake ACP process queued for spawn()');
@@ -85,6 +89,10 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [] },
 }));
 
+vi.mock('../chat-checkpoint.service.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../chat-checkpoint.service.js')>();
+  return { ...actual, captureTurnCheckpoints: vi.fn(async () => []) };
+});
 vi.mock('../settings.service.js', () => ({ getSettings: () => mocks.settings }));
 
 vi.mock('../persona.service.js', () => ({
@@ -101,9 +109,13 @@ vi.mock('../dojo-analytics.service.js', () => ({
 }));
 vi.mock('../companion-events.service.js', () => ({ emitCompanionEvent: () => undefined }));
 vi.mock('../chat-persistence.service.js', () => ({
-  getChatThread: () => null,
+  getChatThread: (id: string) => ({ id, repoIds: mocks.threadRepoIds, purpose: 'chat' }),
   isTemporaryChatThread: () => false,
   updateChatThreadAttention: () => undefined,
+}));
+vi.mock('../chat-continuation.service.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../chat-continuation.service.js')>()),
+  captureThreadContinuation: () => ({ context: '' }),
 }));
 vi.mock('../chat-evidence.service.js', () => ({
   saveChatEvent: vi.fn((_threadId, _repoId, _sessionId, event) => {
@@ -127,12 +139,15 @@ vi.mock('../llm-gateway-runtime.service.js', () => ({
 }));
 vi.mock('../codex-runtime.service.js', () => ({ resolveCodexRuntime: async () => '/bin/codex' }));
 
+import { acquireCheckpointPaths, canonicalCheckpointPath } from '../chat-checkpoint-locks.js';
 import { spawn } from 'node:child_process';
 import {
   listPendingApprovalRequests,
   startSession,
   getAgentToolSessionContext,
   getCodexSession,
+  getCodexSessionExecutionPaths,
+  getCodexSessionCheckpointBindings,
   steerTurn,
   sendMessage,
   followUpTurn,
@@ -163,9 +178,10 @@ async function startAcpSession(
   proc: FakeAcpProcess,
   options?: Parameters<typeof startSession>[3],
   personaId = 'coder',
+  bindings = { paths: ['/repo'], ids: ['r1'] },
 ) {
   mocks.spawnResults.push(proc);
-  const started = startSession(['/repo'], ['r1'], personaId, options);
+  const started = startSession(bindings.paths, bindings.ids, personaId, options);
   // startSession awaits the env build before spawning — emit only once the
   // fake process's stdout listeners are attached.
   await waitForSpawn();
@@ -207,6 +223,7 @@ describe('ACP session parity (cursor/devin)', () => {
 
   beforeEach(() => {
     events = [];
+    mocks.threadRepoIds = ['r1'];
     mocks.timeline = [];
     mocks.persistedEventTypes = [];
     unsubscribe = subscribeToCodexEvents((payload) => {
@@ -249,6 +266,44 @@ describe('ACP session parity (cursor/devin)', () => {
       ['acp'],
       expect.objectContaining({ cwd: '/repo' }),
     );
+  });
+
+  it('rejects stale repository scope for ordinary and queued sends without checkpointing the replacement', async () => {
+    const proc = createFakeAcpProcess();
+    const session = await startAcpSession(proc, { threadId: 'bound-thread' });
+    expect([...getCodexSessionCheckpointBindings(session.id)]).toEqual([['r1', '/repo']]);
+    mocks.threadRepoIds = ['replacement'];
+    expect(() => getCodexSessionCheckpointBindings(session.id)).toThrow('repositories changed');
+    await expect(sendMessage(session.id, 'ordinary')).rejects.toThrow('repositories changed');
+    const result = await followUpTurn({
+      sessionId: session.id,
+      requestId: 'stale-queue',
+      intent: 'queue',
+      message: 'queued',
+    });
+    expect(result.status).toBe('failed');
+    expect(writtenRequests(proc, 'session/prompt')).toHaveLength(0);
+    expect(getCodexSessionExecutionPaths(session.id)).toContain('/repo');
+  });
+
+  it('includes a repo-less workspace cwd in send/recovery exclusion', async () => {
+    const proc = createFakeAcpProcess();
+    const cwd = path.join(os.tmpdir(), 'mezair-workspace-scope');
+    const session = await startAcpSession(
+      proc,
+      { workspace: { workspaceId: 'ws', cwd } },
+      'coder',
+      { paths: [], ids: [] },
+    );
+    expect(getCodexSessionExecutionPaths(session.id)).toContain(canonicalCheckpointPath(cwd));
+    const release = acquireCheckpointPaths([cwd]);
+    try {
+      const sending = sendMessage(session.id, 'Must wait');
+      await expect(sending).rejects.toThrow('Wait for file rewind');
+      expect(writtenRequests(proc, 'session/prompt')).toHaveLength(0);
+    } finally {
+      release();
+    }
   });
 
   it('resumes via session/load when the agent advertises loadSession', async () => {
@@ -620,12 +675,26 @@ describe('ACP session parity (cursor/devin)', () => {
       message: 'next task',
     });
 
+    const previousModeRequests = writtenRequests(proc, 'session/set_mode').length;
     emit(proc, { jsonrpc: '2.0', id: 't-terminal-order', result: { stopReason: 'end_turn' } });
+    await vi.waitFor(() =>
+      expect(writtenRequests(proc, 'session/set_mode').length).toBeGreaterThan(
+        previousModeRequests,
+      ),
+    );
     await acknowledgeLastRequest(proc, 'session/set_mode');
     await acknowledgeLastRequest(proc, 'session/set_config_option');
     await tick();
     await tick();
 
+    await vi.waitFor(() =>
+      expect(
+        events.some(
+          (item) =>
+            item.event.type === 'follow_up_delivery' && item.event.followUpStatus === 'delivered',
+        ),
+      ).toBe(true),
+    );
     const persistedAt = mocks.timeline.indexOf('persist:turn_outcome');
     const deliveredAt = mocks.timeline.indexOf('event:turn_outcome');
     const followUpAt = mocks.timeline.lastIndexOf('event:follow_up_delivery');

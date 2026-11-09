@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import {
   acquireCheckpointPaths,
+  canonicalCheckpointPath,
   checkpointRestorePaths as restoringRepos,
 } from './chat-checkpoint-locks.js';
+import { acquireCheckpointLifecycle } from './chat-checkpoint-lifecycle.js';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -170,6 +172,7 @@ export async function createCheckpointCommit(
   message: string,
   depth = 0,
   budget = { remaining: 65 },
+  manifest: Array<{ repoPath: string; commit: string; ref: string }> = [],
 ): Promise<string> {
   if (--budget.remaining < 0 || depth > 8)
     throw new Error('Submodule nesting exceeds the checkpoint limit.');
@@ -183,6 +186,7 @@ export async function createCheckpointCommit(
         message,
         depth + 1,
         budget,
+        manifest,
       );
       children.push({ path: relative, ref, commit });
     }
@@ -204,6 +208,8 @@ export async function createCheckpointCommit(
       })
     ).trim();
     await git(repoPath, ['update-ref', refName, commit]);
+    if (depth > 0)
+      manifest.push({ repoPath: canonicalCheckpointPath(repoPath), commit, ref: refName });
     return commit;
   } catch (error) {
     for (const child of children)
@@ -317,8 +323,7 @@ function repoPathFor(repoId: string): string | null {
   return row?.path ?? null;
 }
 
-/** Resolve repair bindings through the same validator used to start provider sessions. */
-async function targetPaths(threadId: string, repoIds: string[]): Promise<Map<string, string>> {
+function validateCheckpointScope(threadId: string, repoIds: string[]): void {
   const db = getDb();
   const thread = db
     .prepare('SELECT workspace_id, repo_ids_json FROM chat_threads WHERE id = ?')
@@ -335,6 +340,12 @@ async function targetPaths(threadId: string, repoIds: string[]): Promise<Map<str
     )
       throw new Error('A checkpoint repository is no longer in this conversation workspace.');
   }
+}
+
+/** Resolve repair bindings through the same validator used to start provider sessions. */
+async function targetPaths(threadId: string, repoIds: string[]): Promise<Map<string, string>> {
+  validateCheckpointScope(threadId, repoIds);
+  const db = getDb();
   // Avoid loading the review runtime for ordinary chats.
   const repair = db
     .prepare(
@@ -351,7 +362,7 @@ async function targetPaths(threadId: string, repoIds: string[]): Promise<Map<str
   for (const [index, id] of repoIds.entries()) {
     const value = repairPaths?.[index] ?? repoPathFor(id);
     if (!value) throw new Error('A repository is unavailable. No files were rewound.');
-    paths.set(id, fs.realpathSync(value));
+    paths.set(id, canonicalCheckpointPath(value));
   }
   return paths;
 }
@@ -403,6 +414,7 @@ export async function captureTurnCheckpoints(
 ): Promise<ChatCheckpointSummary[]> {
   const db = getDb();
   const created: ChatCheckpointSummary[] = [];
+  validateCheckpointScope(threadId, repoIds);
   const paths = executionPaths ?? (await targetPaths(threadId, repoIds));
   const release =
     kind === 'restore' && strict && executionPaths
@@ -417,40 +429,66 @@ export async function captureTurnCheckpoints(
       }
       const existing = db
         .prepare(
-          'SELECT created_at FROM chat_checkpoints WHERE thread_id = ? AND message_id = ? AND repo_id = ?',
+          'SELECT id, created_at FROM chat_checkpoints WHERE thread_id = ? AND message_id = ? AND repo_id = ?',
         )
-        .get(threadId, messageId, repoId) as { created_at: string } | undefined;
+        .get(threadId, messageId, repoId) as { id: string; created_at: string } | undefined;
       if (existing && kind === 'turn') {
         created.push({ messageId, repoId, createdAt: existing.created_at, kind });
         continue;
       }
       const refName = checkpointRef(threadId, messageId, repoId);
       let commit: string | undefined;
+      const manifest: Array<{ repoPath: string; commit: string; ref: string }> = [];
+      const checkpointId = existing?.id ?? crypto.randomUUID();
       try {
         commit = await createCheckpointCommit(
           repoPath,
           refName,
           `Mezair checkpoint ${threadId} ${messageId}`,
+          0,
+          { remaining: 65 },
+          manifest,
         );
         const createdAt = new Date().toISOString();
-        db.prepare(
-          `INSERT INTO chat_checkpoints (id, thread_id, message_id, repo_id, commit_sha, ref_name, kind, created_at, repo_path)
+        db.transaction(() => {
+          db.prepare(
+            `INSERT INTO chat_checkpoints (id, thread_id, message_id, repo_id, commit_sha, ref_name, kind, created_at, repo_path)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(thread_id, message_id, repo_id)
          DO UPDATE SET commit_sha = excluded.commit_sha, ref_name = excluded.ref_name, created_at = excluded.created_at, repo_path = excluded.repo_path`,
-        ).run(
-          crypto.randomUUID(),
-          threadId,
-          messageId,
-          repoId,
-          commit,
-          refName,
-          kind,
-          createdAt,
-          repoPath,
-        );
+          ).run(
+            checkpointId,
+            threadId,
+            messageId,
+            repoId,
+            commit,
+            refName,
+            kind,
+            createdAt,
+            repoPath,
+          );
+          // The independent manifest survives a parent ref being removed outside Mezair.
+          db.prepare(
+            `INSERT OR IGNORE INTO chat_checkpoint_cleanup (id, repo_path, commit_sha, ref_name)
+            SELECT id, repo_path, commit_sha, ref_name FROM chat_checkpoint_ref_manifest WHERE checkpoint_id = ?`,
+          ).run(checkpointId);
+          db.prepare('DELETE FROM chat_checkpoint_ref_manifest WHERE checkpoint_id = ?').run(
+            checkpointId,
+          );
+          const insert = db.prepare(
+            'INSERT INTO chat_checkpoint_ref_manifest (id, checkpoint_id, repo_path, commit_sha, ref_name) VALUES (?, ?, ?, ?, ?)',
+          );
+          for (const child of manifest)
+            insert.run(crypto.randomUUID(), checkpointId, child.repoPath, child.commit, child.ref);
+        })();
         created.push({ messageId, repoId, createdAt, kind });
       } catch (error) {
+        const cleanup = db.prepare(
+          'INSERT OR IGNORE INTO chat_checkpoint_cleanup (id, repo_path, commit_sha, ref_name) VALUES (?, ?, ?, ?)',
+        );
+        for (const child of manifest)
+          cleanup.run(crypto.randomUUID(), child.repoPath, child.commit, child.ref);
+        if (commit) cleanup.run(crypto.randomUUID(), repoPath, commit, refName);
         if (commit) await removeCheckpointRef(repoPath, commit, refName).catch(() => undefined);
         if (strict)
           throw new Error('Could not save the undo checkpoint. No files were rewound.', {
@@ -470,7 +508,7 @@ async function pruneThreadCheckpoints(threadId: string): Promise<void> {
   const db = getDb();
   const messages = db
     .prepare(
-      `SELECT message_id, MAX(created_at) AS latest FROM chat_checkpoints
+      `SELECT message_id, MAX(rowid) AS latest FROM chat_checkpoints
        WHERE thread_id = ? GROUP BY message_id ORDER BY latest DESC`,
     )
     .all(threadId) as Array<{ message_id: string }>;
@@ -496,31 +534,50 @@ async function deleteCheckpointRows(rows: CheckpointRow[]): Promise<void> {
 
 /** Removes every checkpoint ref for a thread; call before deleting the thread. */
 export async function deleteThreadCheckpoints(threadId: string): Promise<void> {
-  const rows = getDb()
-    .prepare('SELECT * FROM chat_checkpoints WHERE thread_id = ?')
-    .all(threadId) as CheckpointRow[];
-  await deleteCheckpointRows(rows);
+  const release = acquireCheckpointLifecycle({ threadId });
+  try {
+    const rows = getDb()
+      .prepare('SELECT * FROM chat_checkpoints WHERE thread_id = ?')
+      .all(threadId) as CheckpointRow[];
+    await deleteCheckpointRows(rows);
+  } finally {
+    release();
+  }
 }
 
 /** SQL deletion triggers retain cleanup metadata even when threads cascade away. */
+let cleanupCursor = '';
 let drainingCleanup: Promise<void> | undefined;
 export function drainCheckpointCleanup(): Promise<void> {
   if (drainingCleanup) return drainingCleanup;
   drainingCleanup = (async () => {
     const db = getDb();
-    const rows = db.prepare('SELECT * FROM chat_checkpoint_cleanup LIMIT 60').all() as Array<{
+    let rows = db
+      .prepare('SELECT * FROM chat_checkpoint_cleanup WHERE id > ? ORDER BY id LIMIT 60')
+      .all(cleanupCursor) as Array<{
       id: string;
       repo_path: string;
       commit_sha: string;
       ref_name: string;
     }>;
+    if (!rows.length && cleanupCursor) {
+      cleanupCursor = '';
+      rows = db
+        .prepare('SELECT * FROM chat_checkpoint_cleanup ORDER BY id LIMIT 60')
+        .all() as typeof rows;
+    }
     for (const row of rows) {
+      cleanupCursor = row.id;
       if (!isGitWorkTree(row.repo_path)) continue; // Retry when an offline checkout returns.
+      let release: (() => void) | undefined;
       try {
+        release = acquireCheckpointPaths([row.repo_path]);
         await removeCheckpointRef(row.repo_path, row.commit_sha, row.ref_name);
         db.prepare('DELETE FROM chat_checkpoint_cleanup WHERE id = ?').run(row.id);
       } catch (error) {
         console.warn('[Checkpoints] retained cleanup will retry', error);
+      } finally {
+        release?.();
       }
     }
   })().finally(() => {

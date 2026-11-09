@@ -23,6 +23,7 @@ const repo = { id: 'a', name: 'Synthetic', path: '/synthetic', status: 'ready' }
 let rejectSend: ((error: Error) => void) | undefined;
 let payload: unknown;
 let forks = 0;
+let emptyFork = false;
 const errors: string[] = [];
 window.addEventListener('error', (event) => errors.push(event.message));
 let state: Record<string, unknown>;
@@ -90,7 +91,7 @@ function Probe() {
     scaffoldModeActive: false,
     scaffoldStatus: null,
     error: null,
-    threads: ['source', 'branch', 'other'].map(threadRecord),
+    threads: ['source', 'branch', 'other', 'fresh'].map(threadRecord),
     activeThread: threadRecord(thread),
     activeThreadId: thread,
     isTemporaryChat: false,
@@ -132,15 +133,17 @@ function Probe() {
     activeGoal: null,
     forkThread: async () => {
       forks++;
+      if (emptyFork) return null;
       setThread('branch');
       return 'branch';
     },
     startNewSession: async () => {
-      throw new Error('Expected an existing branch');
+      setThread('fresh');
+      return 'fresh';
     },
     selectThread: async (id: string) => setThread(id),
     send: async (text: string, attachments: unknown[]) => {
-      payload = { text, attachments };
+      payload = { text, attachments, thread };
       return new Promise<boolean>((_resolve, reject) => {
         rejectSend = reject;
       });
@@ -230,6 +233,12 @@ Object.assign(window, {
         sent.attachments[0]?.name === attachment.name,
       'The real ChatView send must retain edited text and original attachments',
     );
+    window.dispatchEvent(
+      new CustomEvent('mezair:chat-send', {
+        detail: { text: 'Second failed action for this branch' },
+      }),
+    );
+    await frame();
     button('Switch to other conversation').click();
     await frame();
     type(
@@ -255,6 +264,17 @@ Object.assign(window, {
         .querySelector<HTMLTextAreaElement>('textarea[aria-label="Chat message"]')
         ?.value.includes('Edited request with attachment'),
     );
+    await until(() =>
+      document
+        .querySelector<HTMLTextAreaElement>('textarea[aria-label="Chat message"]')
+        ?.value.includes('Second failed action'),
+    );
+    check(
+      document
+        .querySelector<HTMLTextAreaElement>('textarea[aria-label="Chat message"]')
+        ?.value.includes('Edited request with attachment'),
+      'Every failed action for an inactive conversation must be recovered in order',
+    );
     check(
       document.querySelector('button[aria-label="Remove requirements.txt"]'),
       'Returning to the branch must recover its original attachments',
@@ -274,11 +294,16 @@ Object.assign(window, {
       node.textContent?.includes('Resend ·'),
     )!;
     check(!resend.disabled, 'An attachment-only edited message must remain sendable');
+    emptyFork = true;
     resend.click();
     await until(() => (payload as { text: string })?.text === '');
     check(
       (payload as { attachments: unknown[] }).attachments.length === 1,
       'Attachment-only resend must carry the retained attachment through ChatView',
+    );
+    check(
+      (payload as { thread: string }).thread === 'fresh',
+      'Editing the first message must send to the explicitly created new thread',
     );
     return { passed: true, assertions };
   },

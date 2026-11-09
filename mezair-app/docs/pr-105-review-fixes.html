@@ -82,13 +82,14 @@
   <body>
     <h1>PR #105: review fixes</h1>
     <p>
-      8 November 2026 ·
+      9 November 2026 ·
       <a href="https://github.com/anthonyhumphreys/mezair/pull/105">Chat experience PR</a>
     </p>
     <p>
       The changes address the original twenty inline findings, fifteen delayed follow-up findings,
-      the additional findings in the review summary, six test suggestions, and the independent
-      rewind safety finding. The PR is intentionally left open for the owner to merge.
+      twenty additional findings from the latest review, the additional findings in the review
+      summary, nine test suggestions, and the independent rewind safety finding. The PR is
+      intentionally left open for the owner to merge.
     </p>
     <h2>File recovery and Git safety</h2>
     <ul>
@@ -457,37 +458,131 @@
       workspace membership, indirect deletion, executable-bit preservation, reviewed deletion,
       repair-worktree recovery, the oldest retained checkpoint, and upgrades from schema 120.
     </p>
+    <h2>Latest review: recovery boundaries and interaction details</h2>
+    <ul>
+      <li>
+        Thread deletion, local and synced workspace deletion, repository removal and ref cleanup
+        share recovery leases. Undo metadata stays intact during a rewind.
+      </li>
+      <li>
+        Normal and queued captures use the provider session's actual repository bindings. Stale
+        bindings fail closed; the UI starts a fresh idle session when repository selection changes.
+        Active-session exclusion includes the execution cwd for repository-free workspace chats.
+      </li>
+      <li>
+        Offline secondary checkouts are skipped during best-effort capture while explicit bindings
+        still validate current membership.
+      </li>
+      <li>
+        Schema 122 stores independent child-ref manifests. Cleanup survives a missing parent ref,
+        preserves legacy paths before forgetting a repository, and advances past unavailable rows.
+        Retention uses insertion order so clock changes cannot immediately prune a new Undo.
+      </li>
+      <li>
+        Git review forces three context lines, uses the displayed no-index patch for untracked
+        hunks, terminates hanging Git/filter process groups, refuses parent-level submodule discard,
+        and fences checkout-changing branch operations.
+      </li>
+      <li>
+        Both file and hunk discard are disabled during active work. Rewind and Undo invalidate and
+        refresh the open Review panel immediately.
+      </li>
+      <li>
+        First-message edits carry the explicitly created thread ID. Composer recovery queues all
+        failed actions and acknowledges each after applying it. Reuse and event handlers follow the
+        active conversation; work-item layout keeps its own scope.
+      </li>
+      <li>
+        Arrow keys continue from the focused option after a panel closes. Regressions cover disabled
+        selected options and confirm the actual repository IDs used by delayed mutations.
+      </li>
+      <li>
+        Rendered checks fail on uncaught browser exceptions. The expanded suite passed 70 assertions
+        across wide and narrow layouts, including the real ChatView first-message edit and
+        multiple-action recovery.
+      </li>
+    </ul>
     <h2>Validation</h2>
     <p>
-      Initial full local suite before the delayed review: 3,688 tests passed, with 12 existing skips. Both Desktop TypeScript checks and
-      lint passed. Production main/preload/renderer and headless daemon builds passed. The synthetic
-      initial browser suite passed thirteen assertions at each of 1280px and 720px (26 assertions total).
-      The local performance harness passed its transcript, dashboard and advanced interaction
-      checks; paired CI remains the authoritative budget comparison. The original Electron native
-      binaries were restored after Node-based testing.
+      The full local suite passed 3,712 tests with 12 existing skips. The final Unicode-stream
+      regression also passed in the 24-test Git suite. Both Desktop TypeScript projects, lint and
+      the production main/preload/renderer build passed.
     </p>
     <p>
-      A synthetic rendered test exercises stale-file errors, delayed repository switching, retained
-      delegation commands, and rejected resends at wide and narrow widths. This runs in a fresh
-      browser profile without account, provider or repository access and is included in Desktop CI.
-      Profile cleanup retries transient filesystem errors while Chrome helpers finish exiting.
+      The expanded rendered suite passed 70 assertions at 1280px and 720px. It exercises repository
+      switches, exact mutation destinations, stale errors and confirmation, busy controls, keyboard
+      navigation, verification remounts, and the real ChatView's editor, explicit first-message
+      branch and scoped multi-action recovery. It uses synthetic state in disposable browser
+      profiles, without account, provider or repository access; uncaught browser exceptions fail the
+      run.
     </p>
     <p>
-      Safari checks also exercised stale errors, repository-switch invalidation, failed resend text
-      retention, delegation command retention and stale-preview reconfirmation. The Mac relocked
-      during the final screenshot check; the isolated browser suite verifies the confirmation's
-      visibility and viewport bounds. These are synthetic state checks, not a live-provider
-      endurance test.
+      The final handoff records the latest commit's remote results, including packaging, paired
+      renderer performance budgets and the Windows packaged soak, from the
+      <a href="https://github.com/anthonyhumphreys/mezair/pull/105/checks">PR checks page</a>.
+      Earlier local runs encountered sandbox loopback restrictions and host stalls; the completed
+      local run and CI provide the verification evidence. No merge or release is performed by this
+      change.
     </p>
+    <!-- PERF_TABLE_START -->
+    <h2>Measured chat performance</h2>
     <p>
-      Remote results are available on the
-      <a href="https://github.com/anthonyhumphreys/mezair/pull/105/checks">PR checks page</a>; the
-      final handoff records their verified state. No merge or release is performed by this change.
+      The last completed paired CI run before this follow-up, on <code>8bc488f7</code>, compared
+      five alternating pairs against pinned reference <code>25800924</code>. This is the cumulative
+      PR comparison against a historical baseline, not the isolated speedup from the review fixes.
     </p>
-    <p>The extended suite adds the real ChatView and in-flight verification remount scenarios.
-      The final handoff records results on the latest commit. Later full local runs encountered
-      host stalls and worker/browser startup timeouts; stable CI runners provide final full-suite,
-      browser, packaging and soak verification.</p>
+    <div class="table">
+      <table>
+        <thead>
+          <tr>
+            <th>Median metric</th>
+            <th>Reference</th>
+            <th>PR</th>
+            <th>Reduction</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>Transcript mount</th>
+            <td>1,766.2 ms</td>
+            <td>126.3 ms</td>
+            <td>92.8%</td>
+          </tr>
+          <tr>
+            <th>Stream update p95</th>
+            <td>20.7 ms</td>
+            <td>15.2 ms</td>
+            <td>26.6%</td>
+          </tr>
+          <tr>
+            <th>Compose batch</th>
+            <td>57.2 ms</td>
+            <td>43.9 ms</td>
+            <td>23.3%</td>
+          </tr>
+          <tr>
+            <th>DOM elements</th>
+            <td>57,021</td>
+            <td>681</td>
+            <td>98.8%</td>
+          </tr>
+          <tr>
+            <th>Retained JS heap over idle</th>
+            <td>71.32 MB</td>
+            <td>12.35 MB</td>
+            <td>82.7%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Scenario: 1,000 turns, 30 operations per turn, 60 stream updates, fresh headless Chrome
+      contexts and forced garbage collection. Retained heap measures renderer JavaScript over idle,
+      not total Desktop RSS. These results do not measure real provider latency or replace
+      live-provider endurance testing.
+      <a href="https://github.com/anthonyhumphreys/mezair/actions/runs/42520529972">Source run</a>.
+    </p>
+    <!-- PERF_TABLE_END -->
     <h2>Reproduce the rendered checks</h2>
     <pre><code># From mezair-app/
 pnpm exec vite build --config scripts/chat-review.vite.config.ts

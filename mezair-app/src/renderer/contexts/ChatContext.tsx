@@ -174,7 +174,7 @@ export interface ChatContextValue {
   interrupt: () => Promise<void>;
   stopSession: (sessionId: string) => Promise<void>;
   invalidateThreadAccess: (threadId: string) => Promise<void>;
-  startNewSession: () => Promise<void>;
+  startNewSession: () => Promise<string | undefined>;
   ensureChatThread: (firstPrompt?: string) => Promise<string>;
   loadHistory: () => Promise<void>;
   clearHistory: () => Promise<void>;
@@ -2259,7 +2259,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         renderedSession?.appThreadId === thread.id || renderedSessionThreadId === thread.id;
       const liveOrRenderedSessionForThread =
         threadLiveSession ?? (renderedSessionBelongsToThread ? renderedSession : null);
+      const sessionRepoIds =
+        liveOrRenderedSessionForThread?.repoIds ??
+        (liveOrRenderedSessionForThread?.repoId ? [liveOrRenderedSessionForThread.repoId] : []);
+      const sessionScopeMatches = sameIdList(sessionRepoIds, selectedRepoIds);
+      if (liveOrRenderedSessionForThread && !sessionScopeMatches) {
+        if (liveOrRenderedSessionForThread.status === 'busy')
+          throw new Error('Wait for the current turn before changing repositories.');
+        await window.mezair.chat.stopSession(liveOrRenderedSessionForThread.id);
+        forgetLiveSession(liveOrRenderedSessionForThread.id);
+      }
       const currentSessionForThread =
+        sessionScopeMatches &&
         liveOrRenderedSessionForThread?.personaId === activePersona.id &&
         liveOrRenderedSessionForThread.provider === modelProvider
           ? liveOrRenderedSessionForThread
@@ -2457,6 +2468,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     },
     [
       session,
+      forgetLiveSession,
       activePersona,
       activeRepoState,
       activeReposState,
@@ -3273,9 +3285,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setActiveArtifacts([]);
     setBusy(false);
     setError(null);
-    await createThreadRecord({
+    const created = await createThreadRecord({
       title: buildEmptyThreadLabel(activePersona.name),
     });
+    return created?.id;
   }, [activePersona, chatLayout, createThreadRecord, detachLiveSession, scaffoldModeActive]);
 
   const startTemporaryChat = useCallback(async () => {

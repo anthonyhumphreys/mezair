@@ -1460,6 +1460,7 @@ export type CodexSessionContinuity =
 export interface CodexSession {
   id: string;
   repoId?: string;
+  repoIds?: string[];
   workspaceId?: string;
   appThreadId?: string;
   kind?: 'repo' | 'workspace' | 'scaffold';

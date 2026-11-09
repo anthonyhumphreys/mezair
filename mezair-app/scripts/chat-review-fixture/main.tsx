@@ -13,8 +13,16 @@ installReviewPreview();
 const readStatus = window.mezair.git.status;
 let releaseRepository: (() => void) | undefined;
 let delayRepository = true;
-window.mezair.git.status = (repoId) =>
-  repoId === 'b' && delayRepository
+const statusDestinations: string[] = [];
+const stageDestinations: string[] = [];
+const stage = window.mezair.git.stage;
+window.mezair.git.stage = (repoId, paths) => {
+  stageDestinations.push(repoId);
+  return stage(repoId, paths);
+};
+window.mezair.git.status = (repoId) => {
+  statusDestinations.push(repoId);
+  return repoId === 'b' && delayRepository
     ? new Promise((resolve) => {
         releaseRepository = async () => {
           delayRepository = false;
@@ -22,6 +30,7 @@ window.mezair.git.status = (repoId) =>
         };
       })
     : readStatus('a');
+};
 const root = createRoot(document.getElementById('root')!);
 flushSync(() =>
   root.render(
@@ -54,6 +63,51 @@ Object.assign(window, {
     await frame();
     await frame();
     check(button('Stage file'), 'Review must load an actionable file');
+    button('Toggle review busy').click();
+    await frame();
+    check(
+      [...document.querySelectorAll<HTMLButtonElement>('button')]
+        .filter((node) => node.textContent?.trim() === 'Discard')
+        .every((node) => node.disabled),
+      'Discard file and hunk must be disabled while the provider is busy',
+    );
+    button('Toggle review busy').click();
+    await frame();
+    await frame();
+    const first = button('First enabled');
+    check(
+      first.tabIndex === 0 && button('Second enabled').tabIndex === -1,
+      'A disabled selected option must leave the first enabled option tabbable',
+    );
+    first.focus();
+    first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    await frame();
+    check(
+      document.activeElement === button('Second enabled') &&
+        button('Second enabled').getAttribute('aria-checked') === 'true',
+      'ArrowRight must select the next enabled option',
+    );
+    button('Review probe').click();
+    await frame();
+    button('Review probe').focus();
+    button('Review probe').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+    );
+    await frame();
+    check(
+      document.activeElement === button('Preview probe') &&
+        button('Preview probe').getAttribute('aria-checked') === 'true',
+      'Arrow navigation must continue from focused Review after its panel closes',
+    );
+    const beforeRecovery = statusDestinations.length;
+    button('Refresh after recovery').click();
+    await frame();
+    await frame();
+    check(
+      statusDestinations.length > beforeRecovery,
+      'Recovery revision must reload the open review panel',
+    );
+
     button('Stage').click();
     await frame();
     await frame();
@@ -82,6 +136,7 @@ Object.assign(window, {
     document.querySelector<HTMLButtonElement>('button[aria-label="Refresh changes"]')!.click();
     await frame();
     await frame();
+    check(stageDestinations.at(-1) === 'b', 'Stage must use the repository the user reviewed');
     const statusReads = (
       window as unknown as { reviewStatusReads: () => number }
     ).reviewStatusReads();
@@ -92,6 +147,7 @@ Object.assign(window, {
       (window as unknown as { reviewStatusReads: () => number }).reviewStatusReads() > statusReads,
       'A successful mutation must refresh its repository even if Refresh raced its completion',
     );
+    check(statusDestinations.at(-1) === 'b', 'Mutation completion must refresh repository B');
     const command = document.querySelector<HTMLInputElement>(
       'input[aria-label="Unsaved integration command"]',
     )!;

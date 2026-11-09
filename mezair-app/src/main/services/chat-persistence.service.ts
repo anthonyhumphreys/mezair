@@ -1,3 +1,4 @@
+import { acquireCheckpointLifecycle } from './chat-checkpoint-lifecycle.js';
 import { listThreadPullRequestLinks } from './thread-pull-request.service.js';
 import { randomUUID } from 'node:crypto';
 import type {
@@ -663,92 +664,100 @@ export function updateChatThread(
   threadId: string,
   updates: UpdateChatThreadInput,
 ): ChatThread | null {
-  const temporary = temporaryChats.get(threadId);
-  if (temporary) {
-    const now = new Date().toISOString();
-    if (
-      updates.settled === true &&
-      ['working', 'approval', 'input'].includes(temporary.thread.attentionState)
-    ) {
-      throw new Error('This thread still needs attention and cannot be settled yet.');
+  const releaseCheckpointScope =
+    updates.repoIds !== undefined && !temporaryChatThreadIds.has(threadId)
+      ? acquireCheckpointLifecycle({ threadId })
+      : () => undefined;
+  try {
+    const temporary = temporaryChats.get(threadId);
+    if (temporary) {
+      const now = new Date().toISOString();
+      if (
+        updates.settled === true &&
+        ['working', 'approval', 'input'].includes(temporary.thread.attentionState)
+      ) {
+        throw new Error('This thread still needs attention and cannot be settled yet.');
+      }
+      if (typeof updates.title === 'string')
+        temporary.thread.title = updates.title.trim() || 'Temporary chat';
+      if (typeof updates.personaId === 'string')
+        temporary.thread.personaId = updates.personaId.trim() || 'coder';
+      if (updates.settled === true) {
+        temporary.thread.settledAt = now;
+      }
+      if (updates.settled === false) temporary.thread.settledAt = undefined;
+      if (updates.viewed) temporary.thread.lastViewedAt = now;
+      if (updates.summary !== undefined) temporary.thread.summary = updates.summary ?? undefined;
+      if (updates.titleLocked === true) temporary.thread.titleLocked = true;
+      temporary.thread.updatedAt = now;
+      return { ...temporary.thread, repoIds: [] };
     }
-    if (typeof updates.title === 'string')
-      temporary.thread.title = updates.title.trim() || 'Temporary chat';
-    if (typeof updates.personaId === 'string')
-      temporary.thread.personaId = updates.personaId.trim() || 'coder';
+    if (temporaryChatThreadIds.has(threadId)) return null;
+    const db = getDb();
+    const assignments = ['updated_at = ?'];
+    const values: Array<string | null> = [new Date().toISOString()];
+
+    if (typeof updates.title === 'string') {
+      assignments.push('title = ?');
+      values.push(updates.title.trim() || 'Untitled thread');
+    }
+
+    if (typeof updates.personaId === 'string') {
+      assignments.push('persona_id = ?');
+      values.push(updates.personaId.trim() || 'coder');
+    }
+
+    if (typeof updates.workItemTitle === 'string') {
+      assignments.push('work_item_title = ?');
+      values.push(updates.workItemTitle.trim() || null);
+    }
+
+    if (updates.repoIds) {
+      assignments.push('repo_ids_json = ?');
+      values.push(serialiseRepoIds(updates.repoIds));
+    }
+
+    if ('activeRepoId' in updates) {
+      assignments.push('active_repo_id = ?');
+      values.push(updates.activeRepoId ?? null);
+    }
+
     if (updates.settled === true) {
-      temporary.thread.settledAt = now;
+      const row = db
+        .prepare('SELECT attention_state FROM chat_threads WHERE id = ?')
+        .get(threadId) as { attention_state: string } | undefined;
+      if (row && ['working', 'approval', 'input'].includes(row.attention_state)) {
+        throw new Error('This thread still needs attention and cannot be settled yet.');
+      }
+      assignments.push('settled_at = ?');
+      values.push(new Date().toISOString());
+    } else if (updates.settled === false) {
+      assignments.push('settled_at = NULL');
     }
-    if (updates.settled === false) temporary.thread.settledAt = undefined;
-    if (updates.viewed) temporary.thread.lastViewedAt = now;
-    if (updates.summary !== undefined) temporary.thread.summary = updates.summary ?? undefined;
-    if (updates.titleLocked === true) temporary.thread.titleLocked = true;
-    temporary.thread.updatedAt = now;
-    return { ...temporary.thread, repoIds: [] };
-  }
-  if (temporaryChatThreadIds.has(threadId)) return null;
-  const db = getDb();
-  const assignments = ['updated_at = ?'];
-  const values: Array<string | null> = [new Date().toISOString()];
 
-  if (typeof updates.title === 'string') {
-    assignments.push('title = ?');
-    values.push(updates.title.trim() || 'Untitled thread');
-  }
-
-  if (typeof updates.personaId === 'string') {
-    assignments.push('persona_id = ?');
-    values.push(updates.personaId.trim() || 'coder');
-  }
-
-  if (typeof updates.workItemTitle === 'string') {
-    assignments.push('work_item_title = ?');
-    values.push(updates.workItemTitle.trim() || null);
-  }
-
-  if (updates.repoIds) {
-    assignments.push('repo_ids_json = ?');
-    values.push(serialiseRepoIds(updates.repoIds));
-  }
-
-  if ('activeRepoId' in updates) {
-    assignments.push('active_repo_id = ?');
-    values.push(updates.activeRepoId ?? null);
-  }
-
-  if (updates.settled === true) {
-    const row = db
-      .prepare('SELECT attention_state FROM chat_threads WHERE id = ?')
-      .get(threadId) as { attention_state: string } | undefined;
-    if (row && ['working', 'approval', 'input'].includes(row.attention_state)) {
-      throw new Error('This thread still needs attention and cannot be settled yet.');
+    if (updates.viewed) {
+      assignments.push('last_viewed_at = ?');
+      values.push(new Date().toISOString());
     }
-    assignments.push('settled_at = ?');
-    values.push(new Date().toISOString());
-  } else if (updates.settled === false) {
-    assignments.push('settled_at = NULL');
+
+    if (updates.summary !== undefined) {
+      assignments.push('summary = ?');
+      values.push(updates.summary?.trim() || null);
+    }
+
+    if (updates.titleLocked === true) {
+      assignments.push('title_locked = 1');
+    }
+
+    db.prepare(`UPDATE chat_threads SET ${assignments.join(', ')} WHERE id = ?`).run(
+      ...values,
+      threadId,
+    );
+
+    return getChatThread(threadId);
+  } finally {
+    releaseCheckpointScope();
   }
-
-  if (updates.viewed) {
-    assignments.push('last_viewed_at = ?');
-    values.push(new Date().toISOString());
-  }
-
-  if (updates.summary !== undefined) {
-    assignments.push('summary = ?');
-    values.push(updates.summary?.trim() || null);
-  }
-
-  if (updates.titleLocked === true) {
-    assignments.push('title_locked = 1');
-  }
-
-  db.prepare(`UPDATE chat_threads SET ${assignments.join(', ')} WHERE id = ?`).run(
-    ...values,
-    threadId,
-  );
-
-  return getChatThread(threadId);
 }
 
 export function updateChatThreadAttention(
@@ -799,18 +808,25 @@ function buildWorkItemThreadTitle(workItemId: string, title: string): string {
 }
 
 export function deleteChatThread(threadId: string): void {
-  if (temporaryChatThreadIds.has(threadId)) {
-    endTemporaryChatThread(threadId);
-    return;
+  const releaseCheckpointScope = temporaryChatThreadIds.has(threadId)
+    ? () => undefined
+    : acquireCheckpointLifecycle({ threadId });
+  try {
+    if (temporaryChatThreadIds.has(threadId)) {
+      endTemporaryChatThread(threadId);
+      return;
+    }
+    revokeThreadSharesInBackground([threadId]);
+    const db = getDb();
+    const tx = db.transaction(() => {
+      db.prepare('DELETE FROM chat_messages WHERE thread_id = ?').run(threadId);
+      db.prepare('DELETE FROM chat_sessions WHERE thread_id = ?').run(threadId);
+      db.prepare('DELETE FROM chat_threads WHERE id = ?').run(threadId);
+    });
+    tx();
+  } finally {
+    releaseCheckpointScope();
   }
-  revokeThreadSharesInBackground([threadId]);
-  const db = getDb();
-  const tx = db.transaction(() => {
-    db.prepare('DELETE FROM chat_messages WHERE thread_id = ?').run(threadId);
-    db.prepare('DELETE FROM chat_sessions WHERE thread_id = ?').run(threadId);
-    db.prepare('DELETE FROM chat_threads WHERE id = ?').run(threadId);
-  });
-  tx();
 }
 
 export function saveChatThreadPlan(threadId: string, plan: ChatPlanSnapshot): ChatThread | null {

@@ -26,11 +26,13 @@ interface LoadedDiff {
 export function ChatReviewPanel({
   repos,
   busy,
+  refreshKey = 0,
   onClose,
 }: {
   repos: RepoInfo[];
   /** Refreshes when a turn ends so new agent edits appear. */
   busy: boolean;
+  refreshKey?: number;
   onClose: () => void;
 }) {
   const [repoId, setRepoId] = useState<string | null>(repos[0]?.id ?? null);
@@ -38,6 +40,7 @@ export function ChatReviewPanel({
   const [status, setStatus] = useState<{
     repoId: string;
     revision: number;
+    refreshKey: number;
     files: GitFileChange[];
   } | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -55,10 +58,13 @@ export function ChatReviewPanel({
     ? repoId
     : (repos[0]?.id ?? null);
   const ready = Boolean(
-    effectiveRepoId && status?.repoId === effectiveRepoId && status.revision === revision,
+    effectiveRepoId &&
+    status?.repoId === effectiveRepoId &&
+    status.revision === revision &&
+    status.refreshKey === refreshKey,
   );
   const files = status?.repoId === effectiveRepoId ? status.files : EMPTY_FILES;
-  const contextKey = `${effectiveRepoId}:${side}:${revision}`;
+  const contextKey = `${effectiveRepoId}:${side}:${revision}:${refreshKey}`;
   const repoRef = useRef(effectiveRepoId);
   repoRef.current = effectiveRepoId;
 
@@ -83,7 +89,7 @@ export function ChatReviewPanel({
       .status(effectiveRepoId)
       .then((status) => {
         if (request !== statusRequest.current) return;
-        setStatus({ repoId: effectiveRepoId, revision, files: status.files });
+        setStatus({ repoId: effectiveRepoId, revision, refreshKey, files: status.files });
       })
       .catch((err: unknown) => {
         if (request !== statusRequest.current) return;
@@ -96,7 +102,7 @@ export function ChatReviewPanel({
     return () => {
       statusRequest.current++;
     };
-  }, [effectiveRepoId, revision]);
+  }, [effectiveRepoId, revision, refreshKey]);
 
   const visibleFiles = useMemo(
     () => files.filter((file) => (side === 'staged' ? file.staged : hasUnstagedChanges(file))),
@@ -145,6 +151,7 @@ export function ChatReviewPanel({
 
   const applyHunk = async (hunk: GitDiffHunk, action: GitHunkAction) => {
     if (!ready || !effectiveRepoId || !selectedFile || !diff) return;
+    if (action === 'discard' && busy) return;
     if (action === 'unstage' && (selectedFile.oldPath || selectedFile.status === 'renamed')) return;
     const id = `${hunk.index}:${hunk.fingerprint}`;
     setPendingHunk(id);
@@ -407,7 +414,7 @@ export function ChatReviewPanel({
                           <>
                             <ReviewButton
                               tone="danger"
-                              disabled={busyAction || !ready}
+                              disabled={busy || busyAction || !ready}
                               onClick={() => void applyHunk(hunk, 'discard')}
                             >
                               Discard this change
@@ -418,7 +425,7 @@ export function ChatReviewPanel({
                           </>
                         ) : (
                           <ReviewButton
-                            disabled={busyAction || !ready}
+                            disabled={busy || busyAction || !ready}
                             onClick={() => setConfirmDiscard(id)}
                             icon={<Trash2 size={12} aria-hidden="true" />}
                           >

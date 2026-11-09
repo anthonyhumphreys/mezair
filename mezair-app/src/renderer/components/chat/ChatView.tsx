@@ -234,7 +234,9 @@ export function ChatView({ userRole }: ChatViewProps) {
     prefill: composerPrefill,
     setPrefill: setComposerPrefill,
     recover: recoverComposer,
+    acknowledge: acknowledgePrefill,
   } = useScopedComposerRecovery(composerScope);
+  const [reviewRevision, setReviewRevision] = useState(0);
   const [executionStrategy, setExecutionStrategy] = useState<ExecutionStrategy>('auto');
   const [fastMode, setFastMode] = useState(false);
   const [composerFocusRequest, setComposerFocusRequest] = useState(0);
@@ -271,7 +273,7 @@ export function ChatView({ userRole }: ChatViewProps) {
         scope: composerRecoveryScope(
           activeWorkspace?.id,
           threadId ?? activeThreadId,
-          personaId ?? recoveryPersona,
+          recoveryPersona === 'workitem-layout' ? recoveryPersona : (personaId ?? recoveryPersona),
         ),
       };
       setPendingChatActions((pending) => [...pending, action]);
@@ -532,8 +534,8 @@ export function ChatView({ userRole }: ChatViewProps) {
         }
         // The edited message replaces this one in a new branch; the original
         // conversation stays as it was.
-        const branchId = await forkThread(sourceIndex, true);
-        if (!branchId) await startNewSession();
+        const branchId = (await forkThread(sourceIndex, true)) ?? (await startNewSession());
+        if (!branchId) throw new Error('Could not create the new conversation. Your edit is kept.');
         return await new Promise<boolean>((resolve) =>
           requestChatAction(text, branchId ?? undefined, undefined, attachments, resolve),
         );
@@ -593,7 +595,7 @@ export function ChatView({ userRole }: ChatViewProps) {
     };
     window.addEventListener(CHAT_PREFILL_EVENT, handlePrefill);
     return () => window.removeEventListener(CHAT_PREFILL_EVENT, handlePrefill);
-  }, []);
+  }, [setComposerPrefill]);
 
   // --- Handlers ---------------------------------------------------------------
 
@@ -949,13 +951,16 @@ export function ChatView({ userRole }: ChatViewProps) {
     [forkThread],
   );
 
-  const handleReuseMessage = useCallback((messageIndex: number, content: string) => {
-    setComposerPrefill({
-      id: `reuse-${messageIndex}-${Date.now()}`,
-      text: buildMessageReusePrefill(content),
-    });
-    setComposerFocusRequest((prev) => prev + 1);
-  }, []);
+  const handleReuseMessage = useCallback(
+    (messageIndex: number, content: string) => {
+      setComposerPrefill({
+        id: `reuse-${messageIndex}-${Date.now()}`,
+        text: buildMessageReusePrefill(content),
+      });
+      setComposerFocusRequest((prev) => prev + 1);
+    },
+    [setComposerPrefill],
+  );
 
   const availableChatModelOptions = useMemo(
     () =>
@@ -1197,7 +1202,11 @@ export function ChatView({ userRole }: ChatViewProps) {
         workspaceId={isTemporaryChat ? null : (activeWorkspace?.id ?? null)}
         onItsmPrompt={requestChatAction}
         showActivitySidebar={showActivitySidebar}
-        review={showReviewPanel ? { repos: reviewRepos, busy, onClose: panels.closeReview } : null}
+        review={
+          showReviewPanel
+            ? { repos: reviewRepos, busy, refreshKey: reviewRevision, onClose: panels.closeReview }
+            : null
+        }
         activity={{
           workspaceName: isTemporaryChat
             ? 'Temporary chat'
@@ -1270,6 +1279,7 @@ export function ChatView({ userRole }: ChatViewProps) {
       stopSession,
       goalsSupported,
       showReviewPanel,
+      reviewRevision,
       reviewRepos,
       panels.closeReview,
       agentLabel,
@@ -1727,6 +1737,7 @@ export function ChatView({ userRole }: ChatViewProps) {
               repos={repos}
               onClose={closeRewind}
               onRestored={(result) => {
+                setReviewRevision((value) => value + 1);
                 if (rewindTarget.undo) {
                   if (result.warning) setSendNotice(result.warning);
                   else {
@@ -1837,6 +1848,7 @@ export function ChatView({ userRole }: ChatViewProps) {
             leadingControls={composerLeadingControls}
             contextControls={contextControls}
             prefill={isTemporaryChat ? null : composerPrefill}
+            onPrefillApplied={acknowledgePrefill}
             draftKey={isTemporaryChat ? undefined : composerDraftKey}
             allowAttachments={!isTemporaryChat}
             mentionRepoIds={mentionRepoIds}

@@ -18,8 +18,13 @@ import {
   unstageFiles,
   discardReviewedFile,
   discardFiles,
+  switchBranch,
+  createBranch,
+  pullBranch,
+  mergeBranch,
 } from '../git.service.js';
 import { acquireCheckpointPaths } from '../chat-checkpoint-locks.js';
+import { runReviewedGit } from '../git-reviewed-command.js';
 import { parseFileDiff } from '../../../shared/git-hunks.js';
 
 let repo: string;
@@ -128,6 +133,12 @@ it.skipIf(process.platform === 'win32').each(['stage', 'unstage', 'discard'] as 
     await applyFileHunk(repo, 'a.txt', 0, diff.hunks[0].fingerprint, action);
     expect(git('ls-files', '--stage', 'a.txt').slice(0, 6)).toBe(before);
     expect(fs.statSync(path.join(repo, 'a.txt')).mode & 0o111).toBe(0o111);
+    expect(git('show', ':a.txt')).toBe(
+      action === 'stage' ? 'ONE\ntwo\nthree\n' : 'one\ntwo\nthree\n',
+    );
+    expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe(
+      action === 'discard' ? 'one\ntwo\nthree\n' : 'ONE\ntwo\nthree\n',
+    );
   },
 );
 
@@ -255,6 +266,11 @@ describe('review regression cases', () => {
       );
       fs.writeFileSync(path.join(childPath, 'child.txt'), 'after turn\n');
       fs.rmSync(path.join(childPath, 'draft.txt'));
+      const reviewed = await getFileDiff(repo, 'nested', false);
+      await expect(
+        discardReviewedFile(repo, 'nested', reviewed.reviewFingerprint!),
+      ).rejects.toThrow('submodule');
+      expect(fs.readFileSync(path.join(childPath, 'child.txt'), 'utf8')).toBe('after turn\n');
       const changes = await diffAgainstCheckpoint(repo, commit);
       expect(changes.map((item) => item.path)).toEqual(['nested/child.txt', 'nested/draft.txt']);
       await restoreWorkingTree(repo, commit, changes);
@@ -273,4 +289,71 @@ describe('review regression cases', () => {
       fs.rmSync(source, { recursive: true, force: true });
     }
   }, 30_000);
+});
+
+it.each(['stage', 'unstage', 'discard'] as const)(
+  'uses applicable positive context with diff.context=0 (%s)',
+  async (action) => {
+    git('config', 'diff.context', '0');
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'one\nTWO\nthree\n');
+    if (action === 'unstage') git('add', 'a.txt');
+    const diff = parseFileDiff((await getFileDiff(repo, 'a.txt', action === 'unstage')).hunks);
+    await applyFileHunk(repo, 'a.txt', 0, diff.hunks[0].fingerprint, action);
+    expect(git('show', ':a.txt')).toBe(
+      action === 'stage' ? 'one\nTWO\nthree\n' : 'one\ntwo\nthree\n',
+    );
+    expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe(
+      action === 'discard' ? 'one\ntwo\nthree\n' : 'one\nTWO\nthree\n',
+    );
+  },
+);
+
+it.each(['stage', 'discard'] as const)(
+  'applies the displayed no-index hunk for an untracked file (%s)',
+  async (action) => {
+    fs.writeFileSync(path.join(repo, 'new.txt'), 'new content\n');
+    const diff = parseFileDiff((await getFileDiff(repo, 'new.txt', false)).hunks);
+    await applyFileHunk(repo, 'new.txt', 0, diff.hunks[0].fingerprint, action);
+    if (action === 'stage') expect(git('show', ':new.txt')).toBe('new content\n');
+    else expect(fs.existsSync(path.join(repo, 'new.txt'))).toBe(false);
+  },
+);
+
+it('fences branch operations for the entire recovery lease', async () => {
+  const release = acquireCheckpointPaths([repo]);
+  try {
+    for (const operation of [
+      () => switchBranch(repo, 'other'),
+      () => createBranch(repo, 'other'),
+      () => pullBranch(repo),
+      () => mergeBranch(repo, 'other'),
+    ])
+      await expect(operation()).rejects.toThrow('Wait for file rewind');
+  } finally {
+    release();
+  }
+  await createBranch(repo, 'after-recovery');
+  expect(git('branch', '--show-current').trim()).toBe('after-recovery');
+});
+
+it.skipIf(process.platform === 'win32')(
+  'terminates a hanging filter and permits later review',
+  async () => {
+    git('config', 'filter.hanging.clean', 'sleep 30');
+    git('config', 'filter.hanging.required', 'true');
+    fs.writeFileSync(path.join(repo, '.gitattributes'), 'a.txt filter=hanging\n');
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'changed\n');
+    await expect(runReviewedGit(repo, ['diff', '--', 'a.txt'], 100)).rejects.toThrow('timed out');
+    git('config', '--unset', 'filter.hanging.clean');
+    git('config', '--unset', 'filter.hanging.required');
+    expect((await getFileDiff(repo, 'a.txt', false)).hunks).toContain('+changed');
+  },
+);
+
+it('preserves multibyte text across diff stream chunks', async () => {
+  const content = 'é🙂'.repeat(30_000) + '\n';
+  fs.writeFileSync(path.join(repo, 'unicode.txt'), content);
+  const diff = parseFileDiff((await getFileDiff(repo, 'unicode.txt', false)).hunks);
+  await applyFileHunk(repo, 'unicode.txt', 0, diff.hunks[0].fingerprint, 'stage');
+  expect(git('show', ':unicode.txt')).toBe(content);
 });

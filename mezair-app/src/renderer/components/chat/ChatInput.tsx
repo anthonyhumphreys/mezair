@@ -193,6 +193,7 @@ interface ChatInputProps {
   leadingControls?: ReactNode;
   /** The selected agent and destination stay visible while setup is closed. */
   setupSummary?: string;
+  onPrefillApplied?: (id: string) => void;
   prefill?: { id: string; text: string; attachments?: ChatAttachment[] } | null;
   draftKey?: string;
   allowAttachments?: boolean;
@@ -247,6 +248,7 @@ function ChatInputImpl({
   leadingControls,
   setupSummary = 'Chat setup',
   prefill,
+  onPrefillApplied,
   draftKey,
   allowAttachments = true,
   mentionRepoIds = NO_REPO_IDS,
@@ -1158,13 +1160,14 @@ function ChatInputImpl({
       setAttachments(next);
     }
 
+    onPrefillApplied?.(prefill.id);
     composerAutosize.schedule(() => {
       const el = textareaRef.current;
       if (!el) return;
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length);
     });
-  }, [allowAttachments, composerAutosize, markDraftChanged, prefill]);
+  }, [allowAttachments, composerAutosize, markDraftChanged, prefill, onPrefillApplied]);
 
   useEffect(() => {
     if (allowAttachments) return;

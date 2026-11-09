@@ -57,7 +57,8 @@ export function SegmentedControl<T extends string = string>({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const currentIndex = Math.max(0, tabStop);
+    const focused = optionRefs.current.findIndex((element) => element === document.activeElement);
+    const currentIndex = Math.max(0, focused >= 0 ? focused : tabStop);
     const count = options.length;
 
     const step = (direction: 1 | -1) => {

@@ -55,7 +55,10 @@ const mocks = vi.hoisted(() => ({
     userRole: 'ba-brm',
   } as Record<string, unknown>,
   spawnResults: [] as FakeProcess[],
-  threads: new Map<string, { temporary?: boolean; purpose?: string }>(),
+  threads: new Map<
+    string,
+    { id?: string; repoIds?: string[]; temporary?: boolean; purpose?: string }
+  >(),
 }));
 
 vi.mock('node:child_process', () => ({
@@ -158,7 +161,14 @@ async function startCodex(
   const proc = createFakeProcess();
   mocks.spawnResults.push(proc);
   const before = vi.mocked(spawn).mock.calls.length;
-  const started = startSession(['/repo'], repoIds, personaId, { provider: 'codex', ...options });
+  if (options.threadId && !mocks.threads.has(options.threadId))
+    mocks.threads.set(options.threadId, { id: options.threadId, repoIds });
+  const started = startSession(
+    repoIds.map((_, index) => (index === 0 ? '/repo' : `/repo-${index}`)),
+    repoIds,
+    personaId,
+    { provider: 'codex', ...options },
+  );
   await vi.waitFor(() => expect(vi.mocked(spawn).mock.calls.length).toBeGreaterThan(before));
   emit(proc, { jsonrpc: '2.0', method: 'thread/started', params: { thread: { id: 'th-1' } } });
   return { proc, session: await started };
@@ -167,6 +177,7 @@ async function startCodex(
 async function startAcp(provider: 'cursor' | 'devin', mcpCapabilities?: Record<string, boolean>) {
   const proc = createFakeProcess();
   mocks.spawnResults.push(proc);
+  mocks.threads.set('thread-1', { id: 'thread-1', repoIds: ['r1'] });
   const started = startSession(['/repo'], ['r1'], 'coder', { provider, threadId: 'thread-1' });
   await vi.waitFor(() => expect(vi.mocked(spawn)).toHaveBeenCalled());
   expect(requests(proc, 'session/new')).toHaveLength(0);

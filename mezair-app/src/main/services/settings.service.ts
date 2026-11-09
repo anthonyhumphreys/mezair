@@ -1,3 +1,4 @@
+import { acquireCheckpointLifecycle } from './chat-checkpoint-lifecycle.js';
 import type {
   AppSettings,
   ChatBusyEnterAction,
@@ -932,10 +933,17 @@ export function isUsageStatisticsEnabled(): boolean {
 }
 
 export function resetOnboardingState(): void {
-  const db = getDb();
-  db.prepare('UPDATE settings SET user_role = NULL, active_workspace_id = NULL WHERE id = 1').run();
-  db.prepare('DELETE FROM workspace_preferences').run();
-  db.prepare('DELETE FROM workspace_repos').run();
-  db.prepare('DELETE FROM workspaces').run();
-  db.prepare('DELETE FROM workspace_scaffold_sessions').run();
+  const releaseCheckpointScope = acquireCheckpointLifecycle({});
+  try {
+    const db = getDb();
+    db.prepare(
+      'UPDATE settings SET user_role = NULL, active_workspace_id = NULL WHERE id = 1',
+    ).run();
+    db.prepare('DELETE FROM workspace_preferences').run();
+    db.prepare('DELETE FROM workspace_repos').run();
+    db.prepare('DELETE FROM workspaces').run();
+    db.prepare('DELETE FROM workspace_scaffold_sessions').run();
+  } finally {
+    releaseCheckpointScope();
+  }
 }

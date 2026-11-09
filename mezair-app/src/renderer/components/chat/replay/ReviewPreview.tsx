@@ -1,3 +1,4 @@
+import { SegmentedControl } from '../../ui/SegmentedControl';
 import { useState } from 'react';
 import type { RepoInfo } from '../../../../shared/types';
 import { ChatReviewPanel } from '../ChatReviewPanel';
@@ -183,18 +184,60 @@ function DraftProbe() {
     </label>
   );
 }
+function KeyboardProbe() {
+  const [disabledSelection, setDisabledSelection] = useState('disabled');
+  const [panel, setPanel] = useState<string | null>('review');
+  const options = [
+    { value: 'activity', label: 'Activity probe' },
+    { value: 'review', label: 'Review probe' },
+    { value: 'preview', label: 'Preview probe' },
+  ];
+  return (
+    <>
+      <SegmentedControl
+        label="Disabled selected option"
+        value={disabledSelection}
+        onChange={setDisabledSelection}
+        options={[
+          { value: 'first', label: 'First enabled' },
+          { value: 'second', label: 'Second enabled' },
+          { value: 'disabled', label: 'Disabled', disabled: true },
+        ]}
+      />
+      <SegmentedControl
+        label="Toggle panel navigation"
+        value={panel ?? ''}
+        options={options}
+        onChange={setPanel}
+        onReselect={() => setPanel(null)}
+      />
+    </>
+  );
+}
 export function ReviewPreview() {
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [moved, setMoved] = useState(false);
   return (
     <main className="h-screen bg-bg-primary text-text-primary">
       <div className="mx-auto grid h-full max-w-6xl gap-4 p-4 md:grid-cols-2">
-        <ChatReviewPanel repos={repos} busy={false} onClose={() => undefined} />
+        <ChatReviewPanel
+          repos={repos}
+          busy={reviewBusy}
+          refreshKey={refreshKey}
+          onClose={() => undefined}
+        />
         <section className="space-y-5 p-3">
           <h1 className="text-lg font-semibold">Synthetic review states</h1>
           <p>
             Repository B loads after four seconds. Its old file actions must disappear while
             loading. Per-hunk Stage simulates a stale-file error that must remain visible.
           </p>
+          <button onClick={() => setReviewBusy((value) => !value)}>Toggle review busy</button>
+          <button onClick={() => setRefreshKey((value) => value + 1)}>
+            Refresh after recovery
+          </button>
+          <KeyboardProbe />
           <UserMessage
             content="Edit this message; a failed resend must retain your changes."
             onEditResend={async () => false}

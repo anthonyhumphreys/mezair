@@ -64,6 +64,7 @@ import {
   getSessionStatus,
   getCodexSession,
   getCodexSessionExecutionPaths,
+  getCodexSessionCheckpointBindings,
   isTemporaryChatSession,
   stopAllSessions,
   getSessionForRepo,
@@ -506,11 +507,15 @@ export function registerChatHandlers(): void {
         const threadId = getCodexSession(sessionId)?.appThreadId;
         const thread = threadId ? getChatThread(threadId) : null;
         if (thread && !thread.temporary && thread.purpose !== 'side-question') {
-          // Best effort: a checkpoint failure never blocks the message.
+          // A changed provider binding must fail closed; snapshot I/O remains best effort.
+          const bindings = getCodexSessionCheckpointBindings(sessionId);
           await captureTurnCheckpoints(
             thread.id,
             checkpointKey.slice(0, 120),
-            thread.repoIds,
+            [...bindings.keys()],
+            'turn',
+            false,
+            bindings,
           ).catch((error) => console.warn('[Checkpoints] skipped', error));
         }
       }

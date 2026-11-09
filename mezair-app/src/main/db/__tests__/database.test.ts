@@ -13,6 +13,8 @@ describe('legacy database startup', () => {
       db.pragma('foreign_keys = ON');
       db.exec(SCHEMA_SQL);
       db.exec(`DROP TRIGGER queue_chat_checkpoint_cleanup;
+        DROP TRIGGER retain_legacy_checkpoint_path;
+        DROP TABLE chat_checkpoint_ref_manifest;
         ALTER TABLE chat_checkpoints DROP COLUMN repo_path;
         DROP TABLE chat_checkpoint_cleanup;
         INSERT OR REPLACE INTO schema_meta VALUES('schema_version','120');

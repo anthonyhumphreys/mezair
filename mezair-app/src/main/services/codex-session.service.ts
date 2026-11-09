@@ -1,4 +1,4 @@
-import { hasCheckpointRestore } from './chat-checkpoint-locks.js';
+import { canonicalCheckpointPath, hasCheckpointRestore } from './chat-checkpoint-locks.js';
 import { listDojoPrices, recordDojoExecutionEvent } from './dojo-analytics.service.js';
 import { spawn } from 'node:child_process';
 import type { AgentProcess } from './agent-process.js';
@@ -6,7 +6,7 @@ import { ClaudeAgentProcess } from './claude-agent-process.js';
 import { resolveClaudeModel } from '../../shared/claude-models.js';
 
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync, realpathSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import {
@@ -400,6 +400,8 @@ export async function startSession(
   options?: ChatStartOptions,
   runtime?: RemoteSessionRuntimeOptions,
 ): Promise<CodexSession> {
+  if (repoPaths.length !== repoIds.length)
+    throw new Error('A session repository is unavailable. Reconnect it before starting.');
   const id = randomUUID();
   const assertStartAccess = captureThreadAccessFence(options?.threadId);
   const settings = getSettings();
@@ -556,13 +558,7 @@ export async function startSession(
     id,
     repoId: repoIds[0],
     repoIds: [...repoIds],
-    repoPaths: repoPaths.map((value) => {
-      try {
-        return realpathSync(value);
-      } catch {
-        return path.resolve(value);
-      }
-    }),
+    repoPaths: repoPaths.map(canonicalCheckpointPath),
     workspaceId: options?.scaffold?.workspaceId ?? options?.workspace?.workspaceId,
     appThreadId: options?.threadId,
     kind: options?.scaffold ? 'scaffold' : repoIds.length > 0 ? 'repo' : 'workspace',
@@ -791,6 +787,7 @@ export async function sendMessage(
     throw new Error('This session is preparing another send. Queue a follow-up instead.');
   session.preparingSend = true;
   try {
+    assertSessionRepositoryScope(session);
     if (session.temporaryChat && attachments.length > 0) {
       throw new Error('Temporary chat supports text messages only.');
     }
@@ -890,13 +887,21 @@ export async function sendMessage(
         thread.purpose !== 'side-question'
       ) {
         const { captureTurnCheckpoints } = await import('./chat-checkpoint.service.js');
-        await captureTurnCheckpoints(thread.id, followUpTracking.request.requestId, thread.repoIds);
+        await captureTurnCheckpoints(
+          thread.id,
+          followUpTracking.request.requestId,
+          session.repoIds,
+          'turn',
+          false,
+          getCodexSessionCheckpointBindings(session.id),
+        );
         assertSessionActive(session);
       }
     }
+    assertSessionRepositoryScope(session);
     if (hasCheckpointRestore()) {
       const { assertNoCheckpointRestore } = await import('./chat-checkpoint.service.js');
-      assertNoCheckpointRestore(session.repoIds, session.repoPaths);
+      assertNoCheckpointRestore(session.repoIds, getCodexSessionExecutionPaths(session.id));
     }
     session.status = 'busy';
     setSessionThreadAttention(session, 'working');
@@ -1774,7 +1779,28 @@ export function getCodexSession(sessionId: string): CodexSession | null {
 
 /** Actual checkout paths, including retained repair worktrees. */
 export function getCodexSessionExecutionPaths(sessionId: string): string[] {
-  return [...(sessions.get(sessionId)?.repoPaths ?? [])];
+  const session = sessions.get(sessionId);
+  return session ? [...new Set([...session.repoPaths, canonicalCheckpointPath(session.cwd)])] : [];
+}
+
+function assertSessionRepositoryScope(session: ManagedSession): void {
+  if (!session.appThreadId || session.temporaryChat) return;
+  const thread = getChatThread(session.appThreadId);
+  if (
+    !thread ||
+    (Array.isArray(thread.repoIds) &&
+      (thread.repoIds.length !== session.repoIds.length ||
+        thread.repoIds.some((id) => !session.repoIds.includes(id))))
+  )
+    throw new Error('The conversation repositories changed. Start a new session before sending.');
+}
+
+/** Checkpoints must follow the checkout the provider was actually granted. */
+export function getCodexSessionCheckpointBindings(sessionId: string): Map<string, string> {
+  const session = sessions.get(sessionId);
+  if (!session) throw new Error('Session not found.');
+  assertSessionRepositoryScope(session);
+  return new Map(session.repoIds.map((id, index) => [id, session.repoPaths[index]]));
 }
 
 /** Active provider model for durable handoff pinning; absent after the session exits. */
@@ -2787,6 +2813,7 @@ function sessionToPublic(session: ManagedSession): CodexSession {
   return {
     id: session.id,
     repoId: session.repoId,
+    repoIds: [...session.repoIds],
     workspaceId: session.workspaceId,
     appThreadId: session.appThreadId,
     kind: session.kind,

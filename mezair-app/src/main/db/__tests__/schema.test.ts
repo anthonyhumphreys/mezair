@@ -578,7 +578,7 @@ describe('fresh database schema', () => {
         ).map((column) => column.name),
       );
 
-      expect(SCHEMA_VERSION).toBe(121);
+      expect(SCHEMA_VERSION).toBe(122);
       for (const column of [
         'local_llm_mode',
         'local_llm_provider',
@@ -1313,4 +1313,29 @@ it('migration 117 preserves publication receipts and permits GitHub without losi
       .get(),
   ).toBeDefined();
   db.close();
+});
+
+it('migrates v121 cleanup and retains independent submodule ref metadata across cascades', () => {
+  const db = new Database(':memory:');
+  try {
+    db.exec(SCHEMA_SQL);
+    db.exec('DROP TRIGGER queue_chat_checkpoint_cleanup; DROP TABLE chat_checkpoint_ref_manifest');
+    applyMigration(db, MIGRATIONS[122]!);
+    db.exec(CHECKPOINT_CLEANUP_TRIGGER_SQL);
+    db.exec(`INSERT INTO repos(id,name,path) VALUES('r','Repo','/legacy');
+      INSERT INTO chat_threads(id,persona_id,title) VALUES('t','coder','Thread');
+      INSERT INTO chat_checkpoints(id,thread_id,message_id,repo_id,commit_sha,ref_name,created_at)
+        VALUES('parent','t','m','r','sha','refs/mezair/checkpoints/p','now');
+      INSERT INTO chat_checkpoint_ref_manifest VALUES('child','parent','/legacy/child','child-sha','refs/mezair/checkpoints/c');
+      DELETE FROM repos WHERE id='r'; DELETE FROM chat_threads WHERE id='t';`);
+    expect(
+      db.prepare('SELECT id, repo_path FROM chat_checkpoint_cleanup ORDER BY id').all(),
+    ).toEqual([
+      { id: 'child', repo_path: '/legacy/child' },
+      { id: 'parent', repo_path: '/legacy' },
+    ]);
+    expect(db.prepare('SELECT * FROM chat_checkpoint_ref_manifest').all()).toEqual([]);
+  } finally {
+    db.close();
+  }
 });

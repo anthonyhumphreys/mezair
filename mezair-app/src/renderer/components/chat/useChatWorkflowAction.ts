@@ -33,7 +33,7 @@ export function useChatWorkflowAction({
     executionStrategyPrompt?: string,
     fastMode?: boolean,
   ) => Promise<boolean>;
-  startNewSession: () => Promise<void> | void;
+  startNewSession: () => Promise<unknown> | void;
 }) {
   const navigate = useNavigate();
   const [pendingWorkflowAction, setPendingWorkflowAction] = useState<PendingWorkflowAction | null>(

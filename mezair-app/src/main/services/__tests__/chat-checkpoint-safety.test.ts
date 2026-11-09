@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SCHEMA_SQL } from '../../db/schema.js';
+import { acquireCheckpointLifecycle } from '../chat-checkpoint-lifecycle.js';
 import { acquireCheckpointPaths } from '../chat-checkpoint-locks.js';
 const state = vi.hoisted(() => ({ db: undefined as unknown as Database.Database }));
 vi.mock('../../db/database.js', () => ({ getDb: () => state.db }));
@@ -175,11 +176,15 @@ it('retains parent and child cleanup when a submodule checkout is temporarily un
     await deleteThreadCheckpoints('thread');
     await drainCheckpointCleanup();
     expect(state.db.prepare('SELECT COUNT(*) AS count FROM chat_checkpoint_cleanup').get()).toEqual(
-      { count: 1 },
+      { count: 2 },
     );
     expect(git('for-each-ref', '--format=%(refname)', 'refs/mezair/checkpoints')).toContain(
       'refs/mezair/checkpoints',
     );
+    const parent = state.db
+      .prepare('SELECT ref_name FROM chat_checkpoint_cleanup WHERE ref_name NOT LIKE ?')
+      .get('%-submodule-%') as { ref_name: string };
+    git('update-ref', '-d', parent.ref_name);
     fs.renameSync(offline, nested);
     await drainCheckpointCleanup();
     expect(state.db.prepare('SELECT COUNT(*) AS count FROM chat_checkpoint_cleanup').get()).toEqual(
@@ -210,7 +215,7 @@ it('can rewind the oldest retained turn without pruning it during undo capture',
         `filler-${index}`,
         `filler-${index}`,
         `refs/mezair/checkpoints/filler-${index}`,
-        new Date(2026, 0, 1, index).toISOString(),
+        new Date(2099, 0, 1, index).toISOString(),
       );
   }
   fs.writeFileSync(path.join(repo, 'a.txt'), 'current\n');
@@ -248,4 +253,84 @@ it('returns a usable undo key when a file operation fails after restore begins',
   expect((await restoreCheckpoint('thread', undoKey!)).warning).toBeUndefined();
   expect(fs.readFileSync(first, 'utf8')).toBe('first recoverable file\n');
   expect(fs.readFileSync(extra, 'utf8')).toBe('second recoverable file\n');
+});
+
+it('keeps cleanup reachable after a legacy repository row is forgotten', async () => {
+  await captureTurnCheckpoints('thread', 'message', ['repo']);
+  state.db.prepare('UPDATE chat_checkpoints SET repo_path = NULL').run();
+  state.db.prepare("DELETE FROM repos WHERE id = 'repo'").run();
+  expect(state.db.prepare('SELECT repo_path FROM chat_checkpoints').get()).toEqual({
+    repo_path: repo,
+  });
+  state.db.prepare("DELETE FROM chat_threads WHERE id = 'thread'").run();
+  await drainCheckpointCleanup();
+  expect(git('for-each-ref', '--format=%(refname)', 'refs/mezair/checkpoints').trim()).toBe('');
+});
+
+it('round-robins unavailable cleanup rows and never removes an active undo ref', async () => {
+  await captureTurnCheckpoints('thread', 'message', ['repo']);
+  state.db.exec("DELETE FROM chat_threads WHERE id = 'thread'");
+  state.db.exec("UPDATE chat_checkpoint_cleanup SET id = 'z-available'");
+  const insert = state.db.prepare('INSERT INTO chat_checkpoint_cleanup VALUES (?, ?, ?, ?)');
+  for (let i = 0; i < 60; i++)
+    insert.run(
+      `a-${i.toString().padStart(2, '0')}`,
+      path.join(repo, 'offline'),
+      'a'.repeat(40),
+      'refs/mezair/checkpoints/offline',
+    );
+  const release = acquireCheckpointPaths([repo]);
+  try {
+    await drainCheckpointCleanup();
+    await drainCheckpointCleanup();
+  } finally {
+    release();
+  }
+  expect(git('for-each-ref', '--format=%(refname)', 'refs/mezair/checkpoints')).toContain(
+    'message',
+  );
+  await drainCheckpointCleanup();
+  await drainCheckpointCleanup();
+  expect(git('for-each-ref', '--format=%(refname)', 'refs/mezair/checkpoints').trim()).toBe('');
+});
+
+it('rejects deletion and membership changes while recovery owns their checkout', async () => {
+  await captureTurnCheckpoints('thread', 'message', ['repo']);
+  state.db.exec(
+    "INSERT INTO workspaces(id,name,created_at,updated_at) VALUES('ws','Test','now','now'); INSERT INTO workspace_repos(workspace_id,repo_id,added_at) VALUES('ws','repo','now'); UPDATE chat_threads SET workspace_id='ws'",
+  );
+  const release = acquireCheckpointPaths([repo]);
+  try {
+    for (const scope of [
+      { threadId: 'thread' },
+      { workspaceId: 'ws' },
+      { workspaceId: 'ws', repoIds: ['repo'] },
+    ])
+      expect(() => acquireCheckpointLifecycle(scope)).toThrow('Wait for file rewind');
+    await expect(deleteThreadCheckpoints('thread')).rejects.toThrow('Wait for file rewind');
+  } finally {
+    release();
+  }
+  expect(state.db.prepare('SELECT COUNT(*) AS count FROM chat_checkpoints').get()).toEqual({
+    count: 1,
+  });
+  await deleteThreadCheckpoints('thread');
+});
+
+it('skips an offline secondary checkout while enforcing membership on explicit session bindings', async () => {
+  state.db
+    .prepare("INSERT INTO repos(id,name,path) VALUES('secondary','Offline',?)")
+    .run(path.join(repo, 'offline'));
+  state.db.exec(`UPDATE chat_threads SET repo_ids_json='["repo","secondary"]'`);
+  expect(await captureTurnCheckpoints('thread', 'message', ['repo', 'secondary'])).toHaveLength(1);
+  await expect(
+    captureTurnCheckpoints(
+      'thread',
+      'wrong',
+      ['outside'],
+      'turn',
+      false,
+      new Map([['outside', repo]]),
+    ),
+  ).rejects.toThrow('no longer');
 });

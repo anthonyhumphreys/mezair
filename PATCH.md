@@ -1043,3 +1043,21 @@ composer recovery to its original workspace, thread and persona. Refresh the
 current repository after mutations even if a manual refresh raced completion.
 Disable Git color for machine-parsed diffs and require whole-file unstaging for
 renames. Panel controls always retain one enabled keyboard tab stop.
+
+Recovery scope changes, local/synced workspace deletion and ref cleanup must share
+those leases so cascades cannot remove an in-flight undo. Include the provider's
+canonical cwd when checking active work, including repo-less workspace sessions.
+Checkpoint the provider's immutable repo/path bindings and restart stale sessions
+when the thread's repository selection changes. Missing secondary checkouts are
+best-effort omissions, never a reason to silently retarget execution or bypass
+membership checks. Retain recovery by insertion order, independent of wall clocks.
+Schema 122 independently retains child-ref cleanup manifests and backfills legacy
+paths before a repository is forgotten. Cleanup batches advance past offline rows.
+Bound reviewed Git subprocesses and their filters; branch checkout, creation, pull
+and merge share the recovery lease. Force positive diff context, apply untracked
+hunks using the same no-index patch, and refuse parent-level submodule discard.
+Refresh open Review after recovery and disable hunk discard during active work.
+Queue every failed composer action until its own scoped composer acknowledges
+applying it. First-message edits use the explicitly created destination thread.
+Keyboard arrows begin at the focused enabled option after a panel is toggled off.
+Rendered regressions fail on uncaught browser exceptions.

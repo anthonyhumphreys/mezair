@@ -1,12 +1,19 @@
-export const SCHEMA_VERSION = 121;
+export const SCHEMA_VERSION = 122;
 
 export const CHECKPOINT_CLEANUP_TRIGGER_SQL = `
-CREATE TRIGGER IF NOT EXISTS queue_chat_checkpoint_cleanup BEFORE DELETE ON chat_checkpoints
+DROP TRIGGER IF EXISTS queue_chat_checkpoint_cleanup;
+CREATE TRIGGER queue_chat_checkpoint_cleanup BEFORE DELETE ON chat_checkpoints
 BEGIN
   INSERT OR IGNORE INTO chat_checkpoint_cleanup (id, repo_path, commit_sha, ref_name)
   SELECT OLD.id, COALESCE(OLD.repo_path, repos.path), OLD.commit_sha, OLD.ref_name
   FROM (SELECT 1) LEFT JOIN repos ON repos.id = OLD.repo_id
   WHERE COALESCE(OLD.repo_path, repos.path) IS NOT NULL;
+  INSERT OR IGNORE INTO chat_checkpoint_cleanup (id, repo_path, commit_sha, ref_name)
+  SELECT id, repo_path, commit_sha, ref_name FROM chat_checkpoint_ref_manifest WHERE checkpoint_id = OLD.id;
+END;
+CREATE TRIGGER IF NOT EXISTS retain_legacy_checkpoint_path BEFORE DELETE ON repos
+BEGIN
+  UPDATE chat_checkpoints SET repo_path = OLD.path WHERE repo_id = OLD.id AND repo_path IS NULL;
 END;
 `;
 
@@ -266,6 +273,14 @@ CREATE TABLE IF NOT EXISTS chat_checkpoint_cleanup (
   commit_sha TEXT NOT NULL,
   ref_name TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS chat_checkpoint_ref_manifest (
+  id TEXT PRIMARY KEY,
+  checkpoint_id TEXT NOT NULL REFERENCES chat_checkpoints(id) ON DELETE CASCADE,
+  repo_path TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  ref_name TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_checkpoint_ref_manifest_parent ON chat_checkpoint_ref_manifest(checkpoint_id);
 ${CHECKPOINT_CLEANUP_TRIGGER_SQL}
 
 CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_timestamp
@@ -4243,6 +4258,16 @@ CREATE TABLE IF NOT EXISTS chat_checkpoint_cleanup (
   ref_name TEXT NOT NULL
 );
 
+`,
+  122: `
+CREATE TABLE IF NOT EXISTS chat_checkpoint_ref_manifest (
+  id TEXT PRIMARY KEY,
+  checkpoint_id TEXT NOT NULL REFERENCES chat_checkpoints(id) ON DELETE CASCADE,
+  repo_path TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  ref_name TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_checkpoint_ref_manifest_parent ON chat_checkpoint_ref_manifest(checkpoint_id);
 `,
 };
 

@@ -1,3 +1,4 @@
+import { acquireCheckpointLifecycle } from './chat-checkpoint-lifecycle.js';
 /**
  * Per-entity domain codecs for sync: serialize local rows to canonical
  * payloads, validate remote payloads, apply remote projections, and persist
@@ -43,8 +44,7 @@ function buildWorkflowPayload(entityId: string): unknown | null {
   const row = getDb()
     .prepare('SELECT id, name, description, graph_json FROM workflow_templates WHERE id = ?')
     .get(entityId) as
-    | { id: string; name: string; description: string; graph_json: string }
-    | undefined;
+    { id: string; name: string; description: string; graph_json: string } | undefined;
   if (!row) return null;
   let nodes: unknown = [];
   let edges: unknown = [];
@@ -222,8 +222,7 @@ function mergePreferenceSection(
 function buildWorkspacePayload(entityId: string): unknown | null {
   const db = getDb();
   const ws = db.prepare('SELECT id, name FROM workspaces WHERE id = ?').get(entityId) as
-    | { id: string; name: string }
-    | undefined;
+    { id: string; name: string } | undefined;
   if (!ws) return null;
   const repos = db
     .prepare(
@@ -361,8 +360,7 @@ function workspaceHasUnresolvedRefs(preferences: Record<string, unknown> | undef
     const workflowId = section['workflowTemplateId'] ?? section['templateId'];
     if (typeof workflowId === 'string') {
       const row = db.prepare('SELECT id FROM workflow_templates WHERE id = ?').get(workflowId) as
-        | { id: string }
-        | undefined;
+        { id: string } | undefined;
       if (row === undefined) return true;
     }
   }
@@ -402,36 +400,40 @@ export function recomputeWorkspaceDefinitionState(workspaceId: string): void {
 }
 
 function applyWorkspacePayload(entityId: string, payload: unknown): void {
-  if (!validateWorkspacePayload(payload)) return;
-  const p = payload as Record<string, unknown>;
-  const repos = (p.repos as unknown[]).map((r) => r as PortableRepoEntry & Record<string, unknown>);
-  const db = getDb();
-  const now = nowIso();
-  const txn = db.transaction(() => {
-    const bootstrapJson = p.bootstrap !== undefined ? JSON.stringify(p.bootstrap) : null;
-    db.prepare(
-      `INSERT INTO workspaces
+  const releaseCheckpointScope = acquireCheckpointLifecycle({ workspaceId: entityId });
+  try {
+    if (!validateWorkspacePayload(payload)) return;
+    const p = payload as Record<string, unknown>;
+    const repos = (p.repos as unknown[]).map(
+      (r) => r as PortableRepoEntry & Record<string, unknown>,
+    );
+    const db = getDb();
+    const now = nowIso();
+    const txn = db.transaction(() => {
+      const bootstrapJson = p.bootstrap !== undefined ? JSON.stringify(p.bootstrap) : null;
+      db.prepare(
+        `INSERT INTO workspaces
          (id, name, sync_selected, definition_state, bootstrap_json, created_at, updated_at)
        VALUES (?, ?, 1, 'ready', ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name = excluded.name,
          sync_selected = 1, bootstrap_json = excluded.bootstrap_json,
          updated_at = excluded.updated_at`,
-    ).run(entityId, typeof p.name === 'string' ? p.name : '', bootstrapJson, now, now);
+      ).run(entityId, typeof p.name === 'string' ? p.name : '', bootstrapJson, now, now);
 
-    // Reconcile portable repo definitions; preserve existing local mappings.
-    const incoming = new Set(repos.map((r) => String(r.id)));
-    const existing = db
-      .prepare('SELECT portable_id FROM workspace_repo_definitions WHERE workspace_id = ?')
-      .all(entityId) as Array<{ portable_id: string }>;
-    for (const row of existing) {
-      if (!incoming.has(row.portable_id)) {
-        db.prepare(
-          'DELETE FROM workspace_repo_definitions WHERE workspace_id = ? AND portable_id = ?',
-        ).run(entityId, row.portable_id);
+      // Reconcile portable repo definitions; preserve existing local mappings.
+      const incoming = new Set(repos.map((r) => String(r.id)));
+      const existing = db
+        .prepare('SELECT portable_id FROM workspace_repo_definitions WHERE workspace_id = ?')
+        .all(entityId) as Array<{ portable_id: string }>;
+      for (const row of existing) {
+        if (!incoming.has(row.portable_id)) {
+          db.prepare(
+            'DELETE FROM workspace_repo_definitions WHERE workspace_id = ? AND portable_id = ?',
+          ).run(entityId, row.portable_id);
+        }
       }
-    }
-    const upsertDef = db.prepare(
-      `INSERT INTO workspace_repo_definitions
+      const upsertDef = db.prepare(
+        `INSERT INTO workspace_repo_definitions
          (workspace_id, portable_id, name, remote_url, default_branch, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(workspace_id, portable_id) DO UPDATE SET
@@ -439,65 +441,68 @@ function applyWorkspacePayload(entityId: string, payload: unknown): void {
          remote_url = excluded.remote_url,
          default_branch = excluded.default_branch,
          updated_at = excluded.updated_at`,
-    );
-    for (const repo of repos) {
-      upsertDef.run(
-        entityId,
-        String(repo.id),
-        typeof repo.name === 'string' ? repo.name : '',
-        typeof repo.remoteUrl === 'string' ? repo.remoteUrl : null,
-        typeof repo.defaultBranch === 'string' ? repo.defaultBranch : null,
-        now,
-        now,
       );
-    }
-
-    const prefs = isRecord(p.preferences) ? p.preferences : {};
-    // Merge remote portable fields over existing local prefs so device-local
-    // keys (connection ids, provider page refs, launch provenance) survive.
-    const existingPrefs = db
-      .prepare(
-        'SELECT workitems_json, docs_json, launch_json FROM workspace_preferences WHERE workspace_id = ?',
-      )
-      .get(entityId) as
-      | { workitems_json: string | null; docs_json: string | null; launch_json: string | null }
-      | undefined;
-    const parseLocal = (json: string | null): unknown => {
-      if (!json) return undefined;
-      try {
-        return JSON.parse(json);
-      } catch {
-        return undefined;
+      for (const repo of repos) {
+        upsertDef.run(
+          entityId,
+          String(repo.id),
+          typeof repo.name === 'string' ? repo.name : '',
+          typeof repo.remoteUrl === 'string' ? repo.remoteUrl : null,
+          typeof repo.defaultBranch === 'string' ? repo.defaultBranch : null,
+          now,
+          now,
+        );
       }
-    };
-    const workitems = mergePreferenceSection(
-      'workitems',
-      parseLocal(existingPrefs?.workitems_json ?? null),
-      prefs.workitems,
-    );
-    const docs = mergePreferenceSection(
-      'docs',
-      parseLocal(existingPrefs?.docs_json ?? null),
-      prefs.docs,
-    );
-    const launch = mergePreferenceSection(
-      'launch',
-      parseLocal(existingPrefs?.launch_json ?? null),
-      prefs.launch,
-    );
-    db.prepare(
-      `INSERT INTO workspace_preferences (workspace_id, workitems_json, docs_json, launch_json, updated_at)
+
+      const prefs = isRecord(p.preferences) ? p.preferences : {};
+      // Merge remote portable fields over existing local prefs so device-local
+      // keys (connection ids, provider page refs, launch provenance) survive.
+      const existingPrefs = db
+        .prepare(
+          'SELECT workitems_json, docs_json, launch_json FROM workspace_preferences WHERE workspace_id = ?',
+        )
+        .get(entityId) as
+        | { workitems_json: string | null; docs_json: string | null; launch_json: string | null }
+        | undefined;
+      const parseLocal = (json: string | null): unknown => {
+        if (!json) return undefined;
+        try {
+          return JSON.parse(json);
+        } catch {
+          return undefined;
+        }
+      };
+      const workitems = mergePreferenceSection(
+        'workitems',
+        parseLocal(existingPrefs?.workitems_json ?? null),
+        prefs.workitems,
+      );
+      const docs = mergePreferenceSection(
+        'docs',
+        parseLocal(existingPrefs?.docs_json ?? null),
+        prefs.docs,
+      );
+      const launch = mergePreferenceSection(
+        'launch',
+        parseLocal(existingPrefs?.launch_json ?? null),
+        prefs.launch,
+      );
+      db.prepare(
+        `INSERT INTO workspace_preferences (workspace_id, workitems_json, docs_json, launch_json, updated_at)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(workspace_id) DO UPDATE SET
          workitems_json = excluded.workitems_json,
          docs_json = excluded.docs_json,
          launch_json = excluded.launch_json,
          updated_at = excluded.updated_at`,
-    ).run(entityId, JSON.stringify(workitems), JSON.stringify(docs), JSON.stringify(launch), now);
+      ).run(entityId, JSON.stringify(workitems), JSON.stringify(docs), JSON.stringify(launch), now);
 
-    recomputeWorkspaceDefinitionState(entityId);
-  });
-  txn();
+      recomputeWorkspaceDefinitionState(entityId);
+    });
+    txn();
+  } finally {
+    releaseCheckpointScope();
+  }
 }
 
 /** A task manifest can materialize a local definition without enrolling it in Sync. */
@@ -514,8 +519,7 @@ export function applyTaskWorkspaceDefinition(entityId: string, payload: unknown)
  */
 export function isWorkspaceSyncPaused(entityId: string): boolean {
   const row = getDb().prepare('SELECT sync_selected FROM workspaces WHERE id = ?').get(entityId) as
-    | { sync_selected: number }
-    | undefined;
+    { sync_selected: number } | undefined;
   if (row !== undefined) return row.sync_selected === 0;
   const retainedBinding = getDb()
     .prepare(
@@ -535,24 +539,29 @@ export function isWorkspaceSyncPaused(entityId: string): boolean {
 }
 
 function deleteWorkspaceLocally(entityId: string): void {
-  // Mirror deleteWorkspace's local cleanup without emitting sync intent.
-  const db = getDb();
-  const txn = db.transaction(() => {
-    db.prepare(
-      `DELETE FROM chat_messages
+  const releaseCheckpointScope = acquireCheckpointLifecycle({ workspaceId: entityId });
+  try {
+    // Mirror deleteWorkspace's local cleanup without emitting sync intent.
+    const db = getDb();
+    const txn = db.transaction(() => {
+      db.prepare(
+        `DELETE FROM chat_messages
        WHERE thread_id IN (SELECT id FROM chat_threads WHERE workspace_id = ?)`,
-    ).run(entityId);
-    db.prepare(
-      `DELETE FROM chat_sessions
+      ).run(entityId);
+      db.prepare(
+        `DELETE FROM chat_sessions
        WHERE thread_id IN (SELECT id FROM chat_threads WHERE workspace_id = ?)`,
-    ).run(entityId);
-    db.prepare('DELETE FROM chat_threads WHERE workspace_id = ?').run(entityId);
-    db.prepare('DELETE FROM workspaces WHERE id = ?').run(entityId);
-    db.prepare('UPDATE settings SET active_workspace_id = NULL WHERE active_workspace_id = ?').run(
-      entityId,
-    );
-  });
-  txn();
+      ).run(entityId);
+      db.prepare('DELETE FROM chat_threads WHERE workspace_id = ?').run(entityId);
+      db.prepare('DELETE FROM workspaces WHERE id = ?').run(entityId);
+      db.prepare(
+        'UPDATE settings SET active_workspace_id = NULL WHERE active_workspace_id = ?',
+      ).run(entityId);
+    });
+    txn();
+  } finally {
+    releaseCheckpointScope();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -594,8 +603,7 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
 function buildSettingsPayload(): unknown {
   const db = getDb();
   const row = db.prepare('SELECT * FROM settings WHERE id = 1').get() as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
   const fields: Record<string, unknown> = {};
   for (const [key, column] of Object.entries(SETTINGS_COLUMN_MAP)) {
     const value = row?.[column];

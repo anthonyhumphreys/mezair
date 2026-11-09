@@ -24,13 +24,11 @@ export function ComposerSendControl<Id extends string>({
   options,
   selectedId,
   onSelect,
-  hasContent,
   menuLabel,
 }: {
   options: ComposerSendOption<Id>[];
   selectedId: Id;
   onSelect: (id: Id) => void;
-  hasContent: boolean;
   menuLabel: string;
 }) {
   const selected = options.find((option) => option.id === selectedId) ?? options[0];
@@ -38,32 +36,45 @@ export function ComposerSendControl<Id extends string>({
   const Icon = selected.icon;
   const pending = options.some((option) => option.pending);
   const iconOnlySend = selected.id === 'send';
+  const hasMenu = options.length > 1;
+  // The primary and its mode menu share one shape and one fill so they read as a
+  // single split control. Idle-without-draft uses a quiet neutral fill rather than
+  // dropping the fill entirely, so the button never changes size or shape.
+  const ready = !selected.disabled;
+  const fill = ready
+    ? 'bg-accent text-accent-foreground'
+    : 'bg-text-primary/[0.08] text-text-tertiary';
 
   return (
-    <div className="composer-send-control flex shrink-0 items-center gap-1">
+    <div
+      className={cx(
+        'composer-send-control flex h-8 shrink-0 items-stretch rounded-full transition-[background-color,color] duration-150',
+        fill,
+      )}
+    >
       <button
         type="button"
         onClick={selected.run}
         disabled={selected.disabled}
-        className={`composer-send flex h-10 items-center justify-center gap-1.5 transition-[background-color,color,opacity] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 disabled:cursor-not-allowed ${
-          iconOnlySend
-            ? 'w-10 rounded-full bg-accent text-accent-foreground hover:brightness-110 disabled:bg-bg-tertiary disabled:text-text-tertiary'
-            : 'rounded-full bg-accent px-3 text-xs font-semibold text-accent-foreground hover:brightness-110 disabled:opacity-50'
-        } ${!hasContent ? 'disabled:opacity-100' : ''}`}
+        className={cx(
+          'composer-send flex items-center justify-center gap-1.5 rounded-full text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 focus-visible:ring-offset-1 focus-visible:ring-offset-bg-tertiary disabled:cursor-not-allowed',
+          iconOnlySend ? 'w-8' : 'pl-2.5 pr-3',
+          hasMenu && 'rounded-r-none',
+        )}
         aria-label={selected.pending ? `${selected.label}: sending` : selected.ariaLabel}
         aria-busy={selected.pending}
         title={selected.description}
       >
         {selected.pending ? (
-          <Loader2 size={16} className="animate-spin motion-reduce:animate-none" />
+          <Loader2 size={15} className="animate-spin motion-reduce:animate-none" />
         ) : iconOnlySend ? (
-          <ArrowUp size={19} strokeWidth={2.2} />
+          <ArrowUp size={17} strokeWidth={2.25} />
         ) : (
-          <Icon size={14} />
+          <Icon size={13} />
         )}
         {!iconOnlySend && (selected.pending ? 'Sending…' : selected.shortLabel)}
       </button>
-      {options.length > 1 && (
+      {hasMenu && (
         <Menu
           label={menuLabel}
           side="top"
@@ -74,11 +85,14 @@ export function ComposerSendControl<Id extends string>({
               {...props}
               type="button"
               disabled={pending}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-text-tertiary transition-colors duration-150 hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 disabled:opacity-50"
+              className={cx(
+                'flex w-6 items-center justify-center rounded-r-full border-l pr-0.5 transition-[background-color] duration-150 hover:bg-text-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 disabled:opacity-50',
+                ready ? 'border-accent-foreground/20' : 'border-text-primary/10',
+              )}
               aria-label={menuLabel}
               title={menuLabel}
             >
-              <ChevronDown size={13} />
+              <ChevronDown size={13} strokeWidth={2.25} />
             </button>
           )}
         >
@@ -125,11 +139,11 @@ export function ComposerStopButton({ onStop }: { onStop?: () => void }) {
       type="button"
       onClick={onStop}
       disabled={!onStop}
-      className="flex h-10 w-10 items-center justify-center rounded-full text-text-secondary transition-colors duration-150 hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex h-8 w-8 items-center justify-center rounded-full text-text-secondary transition-colors duration-150 hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 disabled:cursor-not-allowed disabled:opacity-50"
       title="Stop the current run"
       aria-label="Stop current run"
     >
-      <Square size={14} fill="currentColor" aria-hidden="true" />
+      <Square size={11} fill="currentColor" strokeWidth={0} aria-hidden="true" />
       <span className="sr-only">Stop</span>
     </button>
   );

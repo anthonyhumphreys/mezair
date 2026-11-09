@@ -21,12 +21,12 @@ export function VoiceInputButton({ onTranscript, disabled, onError }: VoiceInput
       type="button"
       onClick={() => void (isListening ? stopListening() : startListening())}
       disabled={(disabled && !isListening) || status === 'processing'}
-      className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 disabled:opacity-40 ${
+      className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 disabled:opacity-40 ${
         isListening
           ? 'bg-error/15 text-error'
           : status === 'error'
             ? 'text-error hover:bg-error/10'
-            : 'text-text-tertiary hover:bg-bg-tertiary hover:text-text-primary'
+            : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
       }`}
       title={
         status === 'processing'
@@ -50,9 +50,14 @@ export function VoiceInputButton({ onTranscript, disabled, onError }: VoiceInput
       {status === 'processing' ? (
         <Loader2 size={15} className="animate-spin motion-reduce:animate-none" />
       ) : isListening ? (
-        <Square size={13} className="motion-safe:animate-pulse" fill="currentColor" />
+        <Square
+          size={11}
+          className="motion-safe:animate-pulse"
+          fill="currentColor"
+          strokeWidth={0}
+        />
       ) : (
-        <Mic size={16} />
+        <Mic size={15} strokeWidth={1.75} />
       )}
     </button>
   );

@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useId,
   type ReactNode,
 } from 'react';
 import {
@@ -1455,6 +1456,23 @@ function ChatInputImpl({
         ? buildSkillMentionOptionId(selectedSkillMentionResult)
         : undefined;
 
+  const runSettingsProps: RunSettingsProps = {
+    model,
+    modelProvider,
+    executionStrategy,
+    onExecutionStrategyChange,
+    reasoningLevel,
+    reasoningOptions,
+    onReasoningChange,
+    collaborationMode,
+    onCollaborationModeChange,
+    fastMode,
+    fastModeAvailable,
+    onFastModeChange,
+  };
+  const showRunSettings = hasRunSettings(runSettingsProps);
+  const runSettingsDetail = getRunSettingsDetail(runSettingsProps);
+
   return (
     <ChatComposerFrame frameRef={composerWidthRef}>
       <ChatComposerSurface
@@ -1497,7 +1515,7 @@ function ChatInputImpl({
                 key={quickPrompt.id}
                 type="button"
                 onClick={() => handleQuickPrompt(quickPrompt.prompt)}
-                className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-text-muted transition-colors hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+                className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
               >
                 {quickPrompt.label}
               </button>
@@ -1578,8 +1596,8 @@ function ChatInputImpl({
 
         <ChatComposerFooter>
           <div
-            className={`flex min-w-0 max-w-full items-center gap-1 ${
-              compactFooter ? 'w-full flex-nowrap' : 'flex-wrap'
+            className={`flex min-w-0 max-w-full items-center gap-0.5 ${
+              compactFooter ? 'flex-nowrap' : 'flex-wrap'
             }`}
           >
             {allowAttachments && (
@@ -1587,7 +1605,7 @@ function ChatInputImpl({
                 type="button"
                 onClick={() => void handleSelectAttachments()}
                 disabled={disabled || preparingAttachments}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors duration-200 hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 disabled:opacity-30"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors duration-150 hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 disabled:opacity-30"
                 title={preparingAttachments ? 'Preparing attachments' : 'Attach files'}
                 aria-label={preparingAttachments ? 'Preparing attachments' : 'Attach files'}
                 aria-busy={preparingAttachments}
@@ -1595,7 +1613,7 @@ function ChatInputImpl({
                 {preparingAttachments ? (
                   <Loader2 size={15} className="animate-spin" />
                 ) : (
-                  <Plus size={21} strokeWidth={1.8} />
+                  <Plus size={17} strokeWidth={1.75} />
                 )}
               </button>
             )}
@@ -1615,15 +1633,12 @@ function ChatInputImpl({
             )}
 
             {(leadingControls || contextControls) && (
-              <div
-                ref={contextMenuRef}
-                className={`relative min-w-0 ${compactFooter ? 'flex-1' : ''}`}
-              >
+              <div ref={contextMenuRef} className="relative min-w-0">
                 <button
                   ref={contextTriggerRef}
                   type="button"
                   onClick={() => setContextMenuOpen((open) => !open)}
-                  className={`flex h-9 min-w-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 ${compactFooter ? 'w-full' : 'max-w-44'}`}
+                  className={`flex h-8 min-w-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 ${compactFooter ? 'max-w-full' : 'max-w-48'}`}
                   aria-label={`Chat setup: ${setupSummary}`}
                   title="Choose an agent, destination and conversation context"
                   aria-haspopup="dialog"
@@ -1632,8 +1647,8 @@ function ChatInputImpl({
                 >
                   <span className="truncate">{setupSummary}</span>
                   <ChevronDown
-                    size={11}
-                    className={`transition-transform ${contextMenuOpen ? 'rotate-180' : ''}`}
+                    size={12}
+                    className={`shrink-0 text-text-tertiary transition-transform ${contextMenuOpen ? 'rotate-180' : ''}`}
                   />
                 </button>
                 {contextMenuOpen && (
@@ -1664,14 +1679,14 @@ function ChatInputImpl({
           </div>
 
           <div
-            className={`ml-auto flex max-w-full min-w-0 items-center justify-end gap-1.5 ${
-              compactFooter ? 'w-full flex-nowrap' : 'flex-wrap'
+            className={`ml-auto flex max-w-full min-w-0 items-center justify-end gap-1 ${
+              compactFooter ? 'flex-nowrap' : 'flex-wrap'
             }`}
           >
             <div
-              className={`flex min-w-0 items-center gap-1 ${compactFooter ? 'flex-1 flex-nowrap' : 'flex-wrap'}`}
+              className={`flex min-w-0 items-center gap-0.5 ${compactFooter ? 'flex-1 flex-nowrap' : 'flex-wrap'}`}
             >
-              {onModelChange && (
+              {onModelChange ? (
                 <ModelPicker
                   model={model}
                   provider={modelProvider}
@@ -1681,35 +1696,27 @@ function ChatInputImpl({
                   onChange={onModelChange}
                   variant="inline"
                   compact={compactFooter}
-                  hideProvider={veryCompactFooter}
-                  disabled={busy}
+                  hideProvider={compactFooter}
+                  triggerDetail={runSettingsDetail || undefined}
+                  settings={
+                    showRunSettings ? <RunSettingsFields {...runSettingsProps} /> : undefined
+                  }
+                  disabled={busy && !showRunSettings}
                   disabledReason="Stop the current run to change model or provider."
+                  modelLockedReason={
+                    busy && showRunSettings
+                      ? 'Stop the current run to change model or provider.'
+                      : undefined
+                  }
                 />
-              )}
-
-              {(onExecutionStrategyChange ||
-                onReasoningChange ||
-                onCollaborationModeChange ||
-                onFastModeChange) && (
-                <RunSettingsDropdown
-                  model={model}
-                  modelProvider={modelProvider}
-                  executionStrategy={executionStrategy}
-                  onExecutionStrategyChange={onExecutionStrategyChange}
-                  reasoningLevel={reasoningLevel}
-                  reasoningOptions={reasoningOptions}
-                  onReasoningChange={onReasoningChange}
-                  collaborationMode={collaborationMode}
-                  onCollaborationModeChange={onCollaborationModeChange}
-                  fastMode={fastMode}
-                  fastModeAvailable={fastModeAvailable}
-                  onFastModeChange={onFastModeChange}
-                  compact={compactFooter}
-                />
+              ) : (
+                showRunSettings && (
+                  <RunSettingsDropdown {...runSettingsProps} compact={compactFooter} />
+                )
               )}
             </div>
 
-            <div className="ml-auto flex shrink-0 flex-nowrap items-center justify-end gap-1.5">
+            <div className="ml-auto flex shrink-0 flex-nowrap items-center justify-end gap-1">
               {contextUsage && !veryCompactFooter && <ContextMeter usage={contextUsage} />}
               <VoiceInputButton
                 onTranscript={(text) => {
@@ -1736,7 +1743,6 @@ function ChatInputImpl({
                       ? setBusySendChoice(id as BusySendChoice)
                       : setIdleSendChoice(id as IdleSendChoice)
                   }
-                  hasContent={hasContent}
                   menuLabel={
                     busy ? 'More ways to send while the run continues' : 'More ways to send'
                   }
@@ -1789,7 +1795,7 @@ function ChatInputImpl({
               type="button"
               onClick={() => void handleFollowUp(submission.intent, submission)}
               disabled={disabled || !!pendingFollowUpId}
-              className="shrink-0 rounded-md border border-border px-2 py-1 font-medium text-text-primary transition-colors hover:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 disabled:cursor-not-allowed disabled:opacity-40"
+              className="shrink-0 rounded-md border border-border px-2 py-1 font-medium text-text-primary transition-colors hover:bg-bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Retry same message
             </button>
@@ -1797,11 +1803,10 @@ function ChatInputImpl({
         ))}
       </ChatComposerSurface>
 
-      {hasContent && selectedSendOption && (
-        <p className="mt-1.5 px-1 text-right text-xs text-text-tertiary">
-          {busy
-            ? busyEnterHint(busyEnterAction, canGuide, canQueue)
-            : 'Enter to send · Shift Enter for a new line'}
+      {/* Enter-to-send is universal; only the busy meaning of Enter needs saying out loud. */}
+      {busy && hasContent && selectedSendOption && (
+        <p className="mt-1.5 px-4 text-right text-xs text-text-tertiary">
+          {busyEnterHint(busyEnterAction, canGuide, canQueue)}
         </p>
       )}
 
@@ -2556,21 +2561,7 @@ export function getRunSettingsLabel(
     .join(' · ');
 }
 
-function RunSettingsDropdown({
-  model,
-  modelProvider,
-  executionStrategy,
-  onExecutionStrategyChange,
-  reasoningLevel,
-  reasoningOptions = REASONING_EFFORT_OPTIONS.map((option) => option.level),
-  onReasoningChange,
-  collaborationMode,
-  onCollaborationModeChange,
-  fastMode,
-  fastModeAvailable,
-  onFastModeChange,
-  compact,
-}: {
+interface RunSettingsProps {
   model: string;
   modelProvider: AgentProvider;
   executionStrategy: ExecutionStrategy;
@@ -2583,11 +2574,258 @@ function RunSettingsDropdown({
   fastMode: boolean;
   fastModeAvailable: boolean;
   onFastModeChange?: (enabled: boolean) => void;
-  compact: boolean;
+}
+
+/** The reasoning effort the current model actually runs at, if it has one. */
+function resolveRunEffort(
+  model: string,
+  modelProvider: AgentProvider,
+  reasoningLevel: ReasoningEffort,
+  reasoningOptions: ReasoningEffort[],
+): ReasoningEffort | undefined {
+  if (isAcpAgentProvider(modelProvider)) return getCursorModelReasoningEffort(model);
+  return reasoningOptions.includes(reasoningLevel) ? reasoningLevel : undefined;
+}
+
+/**
+ * Short trailing detail for the combined model chip. Build is the default mode
+ * and is not named; ACP model labels already carry their reasoning level.
+ */
+export function getRunSettingsDetail({
+  model,
+  modelProvider,
+  reasoningLevel,
+  reasoningOptions = REASONING_EFFORT_OPTIONS.map((option) => option.level),
+  collaborationMode,
+  fastMode,
+  fastModeAvailable,
+}: Pick<
+  RunSettingsProps,
+  | 'model'
+  | 'modelProvider'
+  | 'reasoningLevel'
+  | 'reasoningOptions'
+  | 'collaborationMode'
+  | 'fastMode'
+  | 'fastModeAvailable'
+>): string {
+  const effort = isAcpAgentProvider(modelProvider)
+    ? undefined
+    : resolveRunEffort(model, modelProvider, reasoningLevel, reasoningOptions);
+  return [
+    collaborationMode === 'plan' ? 'Plan' : null,
+    effort ? formatReasoningLabel(effort) : null,
+    fastMode && fastModeAvailable ? 'Fast' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+export function hasRunSettings(
+  props: Pick<
+    RunSettingsProps,
+    | 'onExecutionStrategyChange'
+    | 'onReasoningChange'
+    | 'onCollaborationModeChange'
+    | 'onFastModeChange'
+  >,
+): boolean {
+  return Boolean(
+    props.onExecutionStrategyChange ||
+    props.onReasoningChange ||
+    props.onCollaborationModeChange ||
+    props.onFastModeChange,
+  );
+}
+
+const settingsSelectClass =
+  'h-8 w-full rounded-lg border border-border-subtle bg-bg-secondary px-2 text-xs text-text-primary outline-none transition-colors hover:border-border focus:border-accent focus:ring-2 focus:ring-accent/30';
+
+function SettingsRow({
+  label,
+  hint,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  htmlFor?: string;
+  children: ReactNode;
 }) {
+  return (
+    <div>
+      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2">
+        {htmlFor ? (
+          <label htmlFor={htmlFor} className="text-xs font-medium text-text-secondary">
+            {label}
+          </label>
+        ) : (
+          <span className="text-xs font-medium text-text-secondary">{label}</span>
+        )}
+        {children}
+      </div>
+      {hint && (
+        <p className="mt-1 pl-[calc(5.5rem+0.5rem)] text-xs leading-4 text-text-tertiary">{hint}</p>
+      )}
+    </div>
+  );
+}
+
+/** Mode, reasoning, subagents and fast mode. Rendered inside the model panel. */
+function RunSettingsFields({
+  model,
+  modelProvider,
+  executionStrategy,
+  onExecutionStrategyChange,
+  reasoningLevel,
+  reasoningOptions = REASONING_EFFORT_OPTIONS.map((option) => option.level),
+  onReasoningChange,
+  collaborationMode,
+  onCollaborationModeChange,
+  fastMode,
+  fastModeAvailable,
+  onFastModeChange,
+}: RunSettingsProps) {
+  const fieldId = useId();
   const availableOptions = REASONING_EFFORT_OPTIONS.filter((option) =>
     reasoningOptions.includes(option.level),
   );
+  const acpName = modelProvider === 'devin' ? 'Devin' : 'Cursor';
+  const segment = (active: boolean, tone: 'neutral' | 'info' = 'neutral') =>
+    `flex h-7 items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 ${
+      active
+        ? tone === 'info'
+          ? 'bg-info/12 text-info'
+          : 'bg-bg-elevated text-text-primary shadow-sm'
+        : 'text-text-tertiary hover:text-text-primary'
+    }`;
+
+  return (
+    <div className="space-y-2.5">
+      {onCollaborationModeChange && (
+        <SettingsRow label="Mode">
+          <div
+            className="grid grid-cols-2 gap-0.5 rounded-lg bg-text-primary/[0.06] p-0.5"
+            role="group"
+            aria-label="Collaboration mode"
+          >
+            <button
+              type="button"
+              onClick={() => onCollaborationModeChange('default')}
+              className={segment(collaborationMode === 'default')}
+              aria-pressed={collaborationMode === 'default'}
+            >
+              <Hammer size={12} />
+              Build
+            </button>
+            <button
+              type="button"
+              onClick={() => onCollaborationModeChange('plan')}
+              className={segment(collaborationMode === 'plan', 'info')}
+              aria-pressed={collaborationMode === 'plan'}
+            >
+              <ListChecks size={12} />
+              Plan
+            </button>
+          </div>
+        </SettingsRow>
+      )}
+
+      {isAcpAgentProvider(modelProvider) ? (
+        <SettingsRow
+          label="Reasoning"
+          hint={`${acpName} model IDs include their reasoning level where supported.`}
+        >
+          <span className="text-xs text-text-secondary">
+            {(() => {
+              const effort = getCursorModelReasoningEffort(model);
+              return effort ? formatReasoningLabel(effort) : `Set by the ${acpName} model`;
+            })()}
+          </span>
+        </SettingsRow>
+      ) : (
+        onReasoningChange &&
+        availableOptions.length > 0 && (
+          <SettingsRow
+            label="Reasoning"
+            htmlFor={`${fieldId}-reasoning`}
+            hint={availableOptions.find((option) => option.level === reasoningLevel)?.description}
+          >
+            <select
+              id={`${fieldId}-reasoning`}
+              value={reasoningLevel}
+              onChange={(event) => onReasoningChange(event.target.value as ReasoningEffort)}
+              className={settingsSelectClass}
+            >
+              {availableOptions.map((option) => (
+                <option key={option.level} value={option.level}>
+                  {formatReasoningLabel(option.level)}
+                </option>
+              ))}
+            </select>
+          </SettingsRow>
+        )
+      )}
+
+      {onExecutionStrategyChange && (
+        <SettingsRow
+          label="Subagents"
+          htmlFor={`${fieldId}-strategy`}
+          hint={
+            EXECUTION_STRATEGIES.find((strategy) => strategy.id === executionStrategy)?.description
+          }
+        >
+          <select
+            id={`${fieldId}-strategy`}
+            value={executionStrategy}
+            onChange={(event) => onExecutionStrategyChange(event.target.value as ExecutionStrategy)}
+            className={settingsSelectClass}
+          >
+            {EXECUTION_STRATEGIES.map((strategy) => (
+              <option key={strategy.id} value={strategy.id}>
+                {strategy.label}
+              </option>
+            ))}
+          </select>
+        </SettingsRow>
+      )}
+
+      {onFastModeChange && (
+        <SettingsRow
+          label="Fast mode"
+          hint={
+            fastModeAvailable
+              ? "Use the provider's faster service tier."
+              : 'Not available for this model.'
+          }
+        >
+          <button
+            type="button"
+            role="switch"
+            aria-checked={fastMode}
+            aria-label="Fast mode"
+            onClick={() => onFastModeChange(!fastMode)}
+            disabled={!fastModeAvailable}
+            className={`flex h-7 w-fit items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 disabled:cursor-not-allowed disabled:opacity-45 ${
+              fastMode
+                ? 'bg-warning/12 text-warning'
+                : 'bg-text-primary/[0.06] text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            <Zap size={12} fill={fastMode ? 'currentColor' : 'none'} />
+            {fastMode ? 'On' : 'Off'}
+          </button>
+        </SettingsRow>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Standalone run settings, used only when the model cannot be changed here
+ * (for example a remote run target). Otherwise the fields live in the model panel.
+ */
+function RunSettingsDropdown({ compact, ...props }: RunSettingsProps & { compact: boolean }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -2611,21 +2849,22 @@ function RunSettingsDropdown({
     }
   };
 
-  const effort = isAcpAgentProvider(modelProvider)
-    ? getCursorModelReasoningEffort(model)
-    : reasoningOptions.includes(reasoningLevel)
-      ? reasoningLevel
-      : undefined;
+  const effort = resolveRunEffort(
+    props.model,
+    props.modelProvider,
+    props.reasoningLevel,
+    props.reasoningOptions ?? REASONING_EFFORT_OPTIONS.map((option) => option.level),
+  );
   const label = [
-    collaborationMode === 'plan' ? 'Plan' : 'Build',
+    props.collaborationMode === 'plan' ? 'Plan' : 'Build',
     effort ? formatReasoningLabel(effort) : null,
   ]
     .filter(Boolean)
     .join(' · ');
   const accessibleSummary = [
-    getRunSettingsLabel(`${modelProvider} · ${model}`, collaborationMode, effort),
-    `Execution strategy: ${executionStrategy}`,
-    fastModeAvailable ? `Fast mode ${fastMode ? 'on' : 'off'}` : null,
+    getRunSettingsLabel(`${props.modelProvider} · ${props.model}`, props.collaborationMode, effort),
+    `Execution strategy: ${props.executionStrategy}`,
+    props.fastModeAvailable ? `Fast mode ${props.fastMode ? 'on' : 'off'}` : null,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -2640,8 +2879,8 @@ function RunSettingsDropdown({
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className={`flex h-9 min-w-0 items-center gap-1.5 rounded-full text-xs font-medium text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 ${
-          compact ? 'h-9 w-9 shrink-0 justify-center px-0' : 'max-w-64 px-2.5'
+        className={`flex h-8 min-w-0 items-center gap-1.5 rounded-full text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 ${
+          compact ? 'w-8 shrink-0 justify-center px-0' : 'max-w-64 px-2.5'
         }`}
         title={`Run settings: ${accessibleSummary}`}
         aria-label={`Run settings: ${accessibleSummary}`}
@@ -2649,12 +2888,12 @@ function RunSettingsDropdown({
         aria-expanded={open}
         aria-controls={open ? RUN_SETTINGS_MENU_ID : undefined}
       >
-        <SlidersHorizontal size={13} className="shrink-0 text-text-tertiary" />
+        <SlidersHorizontal size={14} strokeWidth={1.75} className="shrink-0 text-text-tertiary" />
         {!compact && <span className="truncate">{label}</span>}
         {!compact && (
           <ChevronDown
             size={12}
-            className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+            className={`shrink-0 text-text-tertiary transition-transform ${open ? 'rotate-180' : ''}`}
           />
         )}
       </button>
@@ -2662,136 +2901,11 @@ function RunSettingsDropdown({
       {open && (
         <div
           id={RUN_SETTINGS_MENU_ID}
-          className={`absolute bottom-full right-0 z-50 mb-2 max-h-[min(38rem,calc(100vh-8rem))] w-72 overflow-y-auto rounded-xl border border-border bg-bg-elevated p-3 shadow-lg ring-1 ring-overlay ${compact ? 'max-w-full' : ''}`}
+          className={`absolute bottom-full right-0 z-50 mb-2 max-h-[min(38rem,calc(100vh-8rem))] w-80 overflow-y-auto rounded-xl border border-border bg-bg-elevated p-3 shadow-lg ring-1 ring-overlay ${compact ? 'max-w-full' : ''}`}
           role="dialog"
           aria-label="Run settings"
         >
-          <div className="space-y-3">
-            {onCollaborationModeChange && (
-              <div>
-                <span className="mb-1 block text-xs font-medium text-text-muted">Mode</span>
-                <div
-                  className="grid grid-cols-2 gap-1 rounded-lg bg-bg-secondary p-1"
-                  role="group"
-                  aria-label="Collaboration mode"
-                >
-                  <button
-                    type="button"
-                    onClick={() => onCollaborationModeChange('default')}
-                    className={`flex h-8 items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors ${
-                      collaborationMode === 'default'
-                        ? 'bg-bg-elevated text-text-primary'
-                        : 'text-text-tertiary hover:text-text-primary'
-                    }`}
-                    aria-pressed={collaborationMode === 'default'}
-                  >
-                    <Hammer size={12} />
-                    Build
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onCollaborationModeChange('plan')}
-                    className={`flex h-8 items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors ${
-                      collaborationMode === 'plan'
-                        ? 'bg-info/12 text-info'
-                        : 'text-text-tertiary hover:text-text-primary'
-                    }`}
-                    aria-pressed={collaborationMode === 'plan'}
-                  >
-                    <ListChecks size={12} />
-                    Plan
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {isAcpAgentProvider(modelProvider) ? (
-              <div>
-                <span className="mb-1 block text-xs font-medium text-text-muted">Reasoning</span>
-                <div className="rounded-lg border border-border-subtle bg-bg-secondary px-2.5 py-2 text-xs text-text-secondary">
-                  Set by the {modelProvider === 'devin' ? 'Devin' : 'Cursor'} model
-                </div>
-                <span className="mt-1 block text-xs leading-4 text-text-tertiary">
-                  {modelProvider === 'devin' ? 'Devin' : 'Cursor'} model IDs include their reasoning
-                  level where supported.
-                </span>
-              </div>
-            ) : (
-              onReasoningChange &&
-              availableOptions.length > 0 && (
-                <label className="block">
-                  <span className="mb-1 block text-xs font-medium text-text-muted">Reasoning</span>
-                  <select
-                    value={reasoningLevel}
-                    onChange={(event) => onReasoningChange(event.target.value as ReasoningEffort)}
-                    className="h-9 w-full rounded-lg border border-border bg-bg-secondary px-2.5 text-xs capitalize text-text-primary outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-                  >
-                    {availableOptions.map((option) => (
-                      <option key={option.level} value={option.level}>
-                        {option.level}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="mt-1 block text-xs leading-4 text-text-tertiary">
-                    {
-                      availableOptions.find((option) => option.level === reasoningLevel)
-                        ?.description
-                    }
-                  </span>
-                </label>
-              )
-            )}
-
-            {onExecutionStrategyChange && (
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-text-muted">Subagents</span>
-                <select
-                  value={executionStrategy}
-                  onChange={(event) =>
-                    onExecutionStrategyChange(event.target.value as ExecutionStrategy)
-                  }
-                  className="h-9 w-full rounded-lg border border-border bg-bg-secondary px-2.5 text-xs text-text-primary outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-                >
-                  {EXECUTION_STRATEGIES.map((strategy) => (
-                    <option key={strategy.id} value={strategy.id}>
-                      {strategy.label}
-                    </option>
-                  ))}
-                </select>
-                <span className="mt-1 block text-xs leading-4 text-text-tertiary">
-                  {
-                    EXECUTION_STRATEGIES.find((strategy) => strategy.id === executionStrategy)
-                      ?.description
-                  }
-                </span>
-              </label>
-            )}
-
-            {onFastModeChange && (
-              <button
-                type="button"
-                onClick={() => onFastModeChange(!fastMode)}
-                disabled={!fastModeAvailable}
-                className={`flex w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 disabled:cursor-not-allowed disabled:opacity-45 ${
-                  fastMode
-                    ? 'border-warning/30 bg-warning/10 text-warning'
-                    : 'border-border-subtle bg-bg-secondary text-text-secondary hover:border-border hover:text-text-primary'
-                }`}
-                aria-pressed={fastMode}
-              >
-                <span>
-                  <span className="flex items-center gap-1.5 font-medium">
-                    <Zap size={12} fill={fastMode ? 'currentColor' : 'none'} />
-                    Fast mode
-                  </span>
-                  <span className="mt-1 block text-xs leading-4 text-text-tertiary">
-                    Use the provider's faster service tier.
-                  </span>
-                </span>
-                <span aria-hidden="true">{fastMode ? 'On' : 'Off'}</span>
-              </button>
-            )}
-          </div>
+          <RunSettingsFields {...props} />
         </div>
       )}
     </div>

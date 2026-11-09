@@ -8,12 +8,49 @@ import {
   getCursorModelReasoningEffort,
   getSkillMentionResults,
   getSlashCommandResults,
+  getRunSettingsDetail,
   getRunSettingsLabel,
   shouldSendChatMessageFromKey,
   resolveComposerEnter,
   busyEnterHint,
   type ChatSlashCommand,
 } from '../ChatInput';
+
+describe('getRunSettingsDetail', () => {
+  const base = {
+    model: 'gpt-6.1-sol',
+    modelProvider: 'codex' as const,
+    reasoningLevel: 'high' as const,
+    collaborationMode: 'default' as const,
+    fastMode: false,
+    fastModeAvailable: true,
+  };
+
+  it('names only what differs from the default build run', () => {
+    expect(getRunSettingsDetail(base)).toBe('High');
+    expect(getRunSettingsDetail({ ...base, reasoningLevel: 'xhigh' })).toBe('Extra high');
+    expect(getRunSettingsDetail({ ...base, collaborationMode: 'plan', fastMode: true })).toBe(
+      'Plan · High · Fast',
+    );
+  });
+
+  it('omits effort the model does not support and fast mode that is unavailable', () => {
+    expect(
+      getRunSettingsDetail({
+        ...base,
+        reasoningOptions: ['medium'],
+        fastMode: true,
+        fastModeAvailable: false,
+      }),
+    ).toBe('');
+  });
+
+  it('leaves reasoning to ACP model labels, which already carry it', () => {
+    expect(getRunSettingsDetail({ ...base, model: 'gpt-5-high', modelProvider: 'cursor' })).toBe(
+      '',
+    );
+  });
+});
 
 describe('getRunSettingsLabel', () => {
   it('summarises mode, model, and reasoning in one compact label', () => {

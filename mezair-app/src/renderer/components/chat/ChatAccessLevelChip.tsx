@@ -11,6 +11,7 @@ import {
 import type { CodexMode } from '../../../shared/types';
 import { ConfirmDialog, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '../ui';
 import {
+  DEFAULT_CHAT_ACCESS_LEVEL,
   chatAccessLevelIsElevated,
   chatAccessLevelLabel,
   chatAccessLevelShortLabel,
@@ -73,8 +74,18 @@ export function ChatAccessLevelChip({
     ? 'Choose access'
     : appliedMode
       ? resolveChatAccessChipLabel(resolvedOptions, value, appliedMode)
-      : `Next: ${requestedLabel}`;
+      : requestedLabel;
+  // Until the provider confirms a mode the chip shows the requested level as-is;
+  // the menu header spells out that it applies from the next turn.
+  const pendingProviderConfirmation = !selectionError && !appliedMode;
   const elevated = selectedOption?.elevated ?? chatAccessLevelIsElevated(value);
+  // The default level is the expected state, so the chip collapses to an icon.
+  // Anything that differs (read only, plan, elevated, or an error) names itself.
+  const quiet =
+    !selectionError &&
+    !elevated &&
+    value === DEFAULT_CHAT_ACCESS_LEVEL &&
+    (selectedOption ? selectedOption.level === DEFAULT_CHAT_ACCESS_LEVEL : true);
 
   const select = (option: ChatAccessOption) => {
     if (onSelectOption) {
@@ -109,27 +120,40 @@ export function ChatAccessLevelChip({
             type="button"
             disabled={disabled}
             className={cx(
-              `flex h-9 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors ${compact ? 'max-w-36' : 'max-w-48'}`,
+              quiet
+                ? 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors'
+                : `flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors ${compact ? 'max-w-48' : 'max-w-56'}`,
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55',
               'disabled:cursor-not-allowed disabled:opacity-50',
               elevated
                 ? 'bg-warning/10 text-warning'
-                : 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary',
+                : selectionError
+                  ? 'text-error hover:bg-error/10'
+                  : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary',
             )}
             title={
               disabled
                 ? 'Thread access is locked for the current run or persona'
-                : `Thread access: ${chipLabel}`
+                : `Thread access: ${chipLabel}${pendingProviderConfirmation ? ' (applies next turn)' : ''}`
             }
-            aria-label={`Thread access: ${chipLabel}`}
+            aria-label={`Thread access: ${chipLabel}${pendingProviderConfirmation ? ', applies next turn' : ''}`}
           >
             {elevated ? (
-              <ShieldAlert size={12} className="shrink-0" aria-hidden="true" />
+              <ShieldAlert size={14} strokeWidth={1.75} className="shrink-0" aria-hidden="true" />
             ) : (
-              <Shield size={12} className="shrink-0 text-text-tertiary" aria-hidden="true" />
+              <Shield
+                size={14}
+                strokeWidth={1.75}
+                className="shrink-0 text-text-tertiary"
+                aria-hidden="true"
+              />
             )}
-            <span className="truncate">{chipLabel}</span>
-            <ChevronDown size={11} className="shrink-0 opacity-70" aria-hidden="true" />
+            {!quiet && (
+              <>
+                <span className="truncate">{chipLabel}</span>
+                <ChevronDown size={12} className="shrink-0 text-text-tertiary" aria-hidden="true" />
+              </>
+            )}
           </button>
         )}
         menuClassName="w-80"

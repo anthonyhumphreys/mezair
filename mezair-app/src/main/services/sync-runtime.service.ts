@@ -1,3 +1,4 @@
+import { retireDeferredSyncWork } from './sync-deferred-work.js';
 import type { RemoteCodexAccountAuthChoice } from '../../shared/remote-chat.js';
 import { assertMezairCloudAgentsEnabled } from './mezair-cloud-agents-availability.service.js';
 import {
@@ -2035,6 +2036,7 @@ function publishLocalMeshAttemptLifecycle(
 
 export function resetSyncRuntimeForTests(): void {
   runtimeGeneration += 1;
+  retireDeferredSyncWork();
   stopMeshNetworkMonitoring();
   meshNetworkMonitor = null;
   stopPolling();
@@ -2422,6 +2424,7 @@ export function spikeEnroll(input: SyncSpikeEnrollInput): SyncAuthPublicSnapshot
     throw new Error('The pinned backend changed identity and must be re-reviewed first.');
   }
   runtimeGeneration += 1;
+  retireDeferredSyncWork();
   const session: DeviceSession = {
     accessToken: `spike:${accountId}:${enrollmentId}`,
     accessExpiresAt: new Date(Date.now() + SPIKE_ACCESS_TTL_MS).toISOString(),
@@ -2535,6 +2538,7 @@ export async function signInWithOidc(): Promise<SyncAuthPublicSnapshot> {
     if (snapshot.state !== 'signed-in') throw new Error('Sign-in cancelled.');
     attempt.committed = true;
     runtimeGeneration += 1;
+    retireDeferredSyncWork();
     sessionExpired = false;
     scheduleSessionRefresh();
     ensureCurrentEnrollment();
@@ -2598,6 +2602,7 @@ export async function signInWithWorkOSDevice(
   const service = requireAuth();
   const generation = runtimeGeneration;
   runtimeGeneration += 1;
+  retireDeferredSyncWork();
   const snapshot = await service.enrollWithWorkOSDevice(
     {
       clientId: backend.descriptor.auth.publicClientId,
@@ -2839,6 +2844,7 @@ async function redeemEnrollmentCode(
   const redeemCode = pairing === null ? code : pairing.enrollmentCode;
   pendingPairingRedemption = null;
   runtimeGeneration += 1;
+  retireDeferredSyncWork();
   const snapshot = await requireAuth().enrollWithCode(
     redeemCode,
     async (params) => {
@@ -3493,6 +3499,7 @@ export async function resetEncryptedSyncAccount(
   const fence = securityScope();
   const resumeSyncAfterRejectedReset = isSyncEnabled();
   runtimeGeneration += 1;
+  retireDeferredSyncWork();
   stopPolling();
   clearSessionRefresh();
   teardownLiveChannel();
@@ -4094,11 +4101,18 @@ export function companionAdvertisementScopeKey(): string | null {
   const backend = getActiveBackend() ?? pinnedBackend();
   const fields = auth?.getSessionScopeFields() ?? null;
   if (
-    backend === null || fields === null || auth?.getAccessToken() == null ||
+    backend === null ||
+    fields === null ||
+    auth?.getAccessToken() == null ||
     !sessionBoundToBackend(backend, fields)
-  ) return null;
+  )
+    return null;
   return JSON.stringify([
-    backend.id, fields.accountId, fields.enrollmentId, fields.datasetEpoch, runtimeGeneration,
+    backend.id,
+    fields.accountId,
+    fields.enrollmentId,
+    fields.datasetEpoch,
+    runtimeGeneration,
   ]);
 }
 
@@ -4525,6 +4539,7 @@ export function enableSync(): SyncRuntimeStatus {
     throw new Error('This device session belongs to a different backend. Sign out first.');
   }
   runtimeGeneration += 1;
+  retireDeferredSyncWork();
   stopKeyringOnboardingPoll();
   activateBackend(backend.id);
   meshNetworkBlocked = false;
@@ -4562,6 +4577,7 @@ export async function signOutSync(): Promise<SyncRuntimeStatus> {
   // Fence first: any in-flight engine work from the old session fails its
   // generation check at the next durable write.
   runtimeGeneration += 1;
+  retireDeferredSyncWork();
   stopMeshNetworkMonitoring();
   meshHostPool?.stop();
   deviceIdentityBindings.clear();
@@ -4671,6 +4687,7 @@ export function getRuntimeStatus(): SyncRuntimeStatus {
  */
 export function stopSyncRuntimeForOneShot(): void {
   runtimeGeneration += 1;
+  retireDeferredSyncWork();
   stopMeshNetworkMonitoring();
   stopPolling();
   clearSessionRefresh();
@@ -4705,6 +4722,7 @@ export async function refreshDeviceIdentitiesForOneShot(): Promise<void> {
     // fire-and-forget cycle. Security commands need the same local bootstrap
     // without any of those long-lived activities.
     runtimeGeneration += 1;
+    retireDeferredSyncWork();
     activateBackend(backend.id);
     ensureCurrentEnrollment();
     initializeSyncCrypto();
@@ -5149,6 +5167,7 @@ export async function requestSync(): Promise<void> {
 
 export function onBackendDisconnected(): void {
   runtimeGeneration += 1;
+  retireDeferredSyncWork();
   stopMeshNetworkMonitoring();
   stopPolling();
   teardownLiveChannel();

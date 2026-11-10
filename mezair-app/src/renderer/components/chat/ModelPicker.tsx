@@ -1,6 +1,14 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Search, Settings2, SlidersHorizontal } from 'lucide-react';
+import { ChevronDown, Lock, Search, Settings2, SlidersHorizontal } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
   DEFAULT_MODEL_PICKER_PREFERENCES,
@@ -31,6 +39,9 @@ export function ModelPicker({
   hideProvider = false,
   disabled = false,
   disabledReason,
+  triggerDetail,
+  settings,
+  modelLockedReason,
 }: {
   model: string;
   provider: AgentProvider;
@@ -47,6 +58,15 @@ export function ModelPicker({
   hideProvider?: boolean;
   disabled?: boolean;
   disabledReason?: string;
+  /** Short run detail shown after the model name, e.g. "High" or "Plan · High". */
+  triggerDetail?: string;
+  /** Extra run settings rendered under the model list in the same panel. */
+  settings?: ReactNode;
+  /**
+   * When set, the panel still opens (for `settings`) but model selection is
+   * replaced by this explanation. Use instead of `disabled` when settings stay editable.
+   */
+  modelLockedReason?: string;
 }) {
   const id = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -113,16 +133,24 @@ export function ModelPicker({
         setOpen(false);
     };
     document.addEventListener('pointerdown', outside);
-    if (slider) panelRef.current?.querySelector<HTMLInputElement>('input[type="range"]')?.focus();
+    if (modelLockedReason) {
+      // The model search unmounts when a run starts. Keep keyboard users in the
+      // replacement settings panel so Tab and Escape continue to work.
+      panelRef.current
+        ?.querySelector<HTMLElement>('button:not([disabled]), select:not([disabled]), a[href]')
+        ?.focus();
+    } else if (slider) {
+      panelRef.current?.querySelector<HTMLInputElement>('input[type="range"]')?.focus();
+    }
     return () => document.removeEventListener('pointerdown', outside);
-  }, [menuOpen, slider]);
+  }, [menuOpen, slider, modelLockedReason]);
 
   return (
     <>
       <button
         ref={triggerRef}
         type="button"
-        aria-label={`Choose model: ${MODEL_PROVIDER_LABELS[provider]}, ${selected?.label ?? model}${disabled && disabledReason ? `. ${disabledReason}` : ''}`}
+        aria-label={`${settings ? 'Model and run settings' : 'Choose model'}: ${MODEL_PROVIDER_LABELS[provider]}, ${selected?.label ?? model}${triggerDetail ? `, ${triggerDetail}` : ''}${disabled && disabledReason ? `. ${disabledReason}` : ''}`}
         aria-expanded={menuOpen}
         aria-haspopup="dialog"
         aria-controls={menuOpen ? id : undefined}
@@ -130,7 +158,9 @@ export function ModelPicker({
         title={
           disabled && disabledReason
             ? disabledReason
-            : `${MODEL_PROVIDER_LABELS[provider]} · ${selected?.label ?? model}`
+            : [MODEL_PROVIDER_LABELS[provider], selected?.label ?? model, triggerDetail]
+                .filter(Boolean)
+                .join(' · ')
         }
         onClick={() => {
           if (disabled) return;
@@ -139,7 +169,7 @@ export function ModelPicker({
         }}
         className={`flex min-w-0 items-center gap-2 text-left text-xs text-text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent aria-disabled:cursor-not-allowed aria-disabled:opacity-60 ${
           variant === 'inline'
-            ? `h-9 min-w-0 rounded-full px-2 text-text-secondary hover:bg-bg-tertiary hover:text-text-primary ${compact ? 'w-full max-w-none flex-1' : 'max-w-52'}`
+            ? `h-8 min-w-0 gap-1.5 rounded-full px-2.5 font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary ${compact ? 'max-w-full' : 'max-w-60'}`
             : `rounded-lg border border-border-subtle bg-bg-secondary px-2.5 hover:border-border hover:bg-bg-hover ${fullWidth ? 'min-h-10 w-full' : 'h-8 max-w-64'}`
         }`}
       >
@@ -148,19 +178,19 @@ export function ModelPicker({
         ) : null}
         {!hideProvider && (
           <>
-            <span className="shrink-0 text-text-secondary">
+            <span className="shrink-0 font-normal text-text-tertiary">
               {MODEL_PROVIDER_LABELS[provider].replace(' CLI', '')}
-            </span>
-            <span aria-hidden="true" className="text-text-secondary">
-              ·
             </span>
           </>
         )}
         <span className="min-w-0 flex-1 truncate">
           {preferences.style === 'slider' && active >= 0 ? `${presets[active].label} · ` : ''}
           {selected?.label ?? (model || 'Choose model')}
+          {triggerDetail && (
+            <span className="font-normal text-text-tertiary"> · {triggerDetail}</span>
+          )}
         </span>
-        <ChevronDown size={12} className="shrink-0 text-text-secondary" />
+        <ChevronDown size={12} className="shrink-0 text-text-tertiary" />
       </button>
       {menuOpen &&
         createPortal(
@@ -168,7 +198,7 @@ export function ModelPicker({
             ref={panelRef}
             id={id}
             role="dialog"
-            aria-label="Choose model"
+            aria-label={settings ? 'Model and run settings' : 'Choose model'}
             style={position}
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
@@ -188,7 +218,17 @@ export function ModelPicker({
             }}
             className="fixed z-[100] flex flex-col overflow-hidden rounded-xl border border-border bg-bg-elevated text-text-primary shadow-lg"
           >
-            {slider ? (
+            {modelLockedReason ? (
+              <p className="flex shrink-0 items-center gap-2 border-b border-border-subtle px-4 py-3 text-xs text-text-secondary">
+                <Lock size={13} className="shrink-0 text-text-tertiary" aria-hidden="true" />
+                <span>
+                  <span className="font-medium text-text-primary">
+                    {MODEL_PROVIDER_LABELS[provider]} · {selected?.label ?? model}
+                  </span>
+                  <span className="block text-text-tertiary">{modelLockedReason}</span>
+                </span>
+              </p>
+            ) : slider ? (
               <>
                 <div className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
                   <span className="text-sm font-medium">Model presets</span>
@@ -230,6 +270,9 @@ export function ModelPicker({
                   close();
                 }}
               />
+            )}
+            {settings && (
+              <div className="shrink-0 border-t border-border-subtle p-3">{settings}</div>
             )}
             {settingsLink && (
               <Link

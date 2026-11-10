@@ -953,6 +953,8 @@ export type PublicWorkflowRun = Omit<
 };
 
 export interface ChatSendOptions {
+  /** Visible user entry; main commits on-device exchanges before draining queued turns. */
+  visibleUserMessage?: { id: string; content: string; timestamp: string };
   collaborationMode?: ChatCollaborationMode;
   reasoningEffort?: ReasoningEffort;
   model?: string;
@@ -960,7 +962,46 @@ export interface ChatSendOptions {
   permissionMode?: CodexMode;
   permissionProfile?: import('./agent-access.js').PermissionProfile;
   serviceTier?: string | null;
+  /**
+   * The renderer's id for the user message this send starts. When present,
+   * main records a working-tree checkpoint of the thread's repositories
+   * under this key before the provider sees the message (rewind).
+   */
+  checkpointKey?: string;
 }
+
+/** What restoring a checkpoint does to one file. */
+export interface ChatCheckpointFileChange {
+  path: string;
+  /** remove = created after the checkpoint; recreate = deleted since; restore = edited since. */
+  effect: 'remove' | 'recreate' | 'restore';
+}
+
+export interface ChatCheckpointSummary {
+  messageId: string;
+  repoId: string;
+  createdAt: string;
+  /** `restore` checkpoints are the automatic "undo rewind" snapshots. */
+  kind: 'turn' | 'restore';
+}
+
+export interface ChatCheckpointPreview {
+  messageId: string;
+  /** Binds confirmation to the exact current working-tree contents and target paths. */
+  fingerprint: string;
+  repos: Array<{ repoId: string; createdAt: string; changes: ChatCheckpointFileChange[] }>;
+}
+
+export interface ChatCheckpointRestoreResult {
+  /** Recovery remains available if a file write fails partway through. */
+  warning?: string;
+  filesChanged: number;
+  /** Checkpoint key holding the pre-restore state; restore it to undo. */
+  undoKey: string;
+}
+
+/** What Enter does in the composer while an agent turn is running. */
+export type ChatBusyEnterAction = 'guide' | 'queue' | 'newline';
 
 /** Explicit intent for a composer send made while a chat session is running. */
 export type ChatFollowUpIntent = 'guide' | 'queue';
@@ -977,6 +1018,8 @@ export interface ChatFollowUpRequest {
 }
 
 export interface ChatFollowUpResult {
+  /** Main-process time when this queued request began delivery. */
+  startedAt?: string;
   requestId: string;
   intent: ChatFollowUpIntent;
   /**
@@ -1293,7 +1336,7 @@ export interface CodexEvent {
     permissionProfile: import('./agent-access.js').PermissionProfile;
     appliedMode: string;
   };
-  /** Browser-owned sessions are persisted by the main process before broadcast. */
+  /** Main owns persistence for this event/item; renderer must not write competing copies. */
   persistedBy?: 'main';
   /** App routing metadata attached to live provider events. */
   sessionId?: string;
@@ -1310,6 +1353,7 @@ export interface CodexEvent {
   followUpRequestId?: string;
   followUpIntent?: ChatFollowUpIntent;
   followUpStatus?: ChatFollowUpStatus;
+  followUpStartedAt?: string;
   followUpQueueDepth?: number;
   followUpError?: string;
   contextUsage?: { used: number; size: number };
@@ -1418,6 +1462,7 @@ export type CodexSessionContinuity =
 export interface CodexSession {
   id: string;
   repoId?: string;
+  repoIds?: string[];
   workspaceId?: string;
   appThreadId?: string;
   kind?: 'repo' | 'workspace' | 'scaffold';
@@ -1449,6 +1494,8 @@ export interface CodexSession {
 
 /** Result of a mid-turn composer send (`chat:steer`). */
 export interface ChatSteerResult {
+  requestId?: string;
+  startedAt?: string;
   /**
    * 'steered' — delivered in-band via Codex turn/steer.
    * 'sent' — session was idle; delivered immediately as a new prompt.
@@ -2847,6 +2894,8 @@ export interface AppSettings {
   reasoningLevel: ReasoningEffort;
   codexMode: CodexMode;
   chatLayout: ChatLayout;
+  /** What Enter does while an agent turn is running. Local to this device. */
+  chatBusyEnter: ChatBusyEnterAction;
 
   /** Composer control and named provider/model/reasoning presets. */
   modelPicker?: import('./model-picker.js').ModelPickerPreferences;
@@ -3753,6 +3802,8 @@ export interface GitFileChange {
   path: string;
   status: GitFileStatus;
   staged: boolean;
+  /** The working tree differs from the index (unstaged edits or untracked). */
+  workingTreeChanged?: boolean;
   oldPath?: string; // for renames
 }
 
@@ -3809,6 +3860,8 @@ export interface GitDiffResult {
   oldContent: string;
   newContent: string;
   hunks: string; // raw unified diff
+  /** Main-process fingerprint of the entire reviewed patch, including binary/mode changes. */
+  reviewFingerprint?: string;
 }
 
 export type {

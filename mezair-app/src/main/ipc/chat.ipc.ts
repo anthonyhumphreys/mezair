@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { assertNoManagedWorkerWrites } from '../services/managed-worker-paths.js';
+import { guardLocalChatStream } from '../services/local-chat-stream.js';
 import {
   createThreadWithPullRequest,
   linkThreadPullRequest,
@@ -63,6 +66,9 @@ import {
   emitLocalAssistantTurnEnd,
   getSessionStatus,
   getCodexSession,
+  getCodexSessionExecutionPaths,
+  getCodexSessionCheckpointBindings,
+  assertCodexSessionScope,
   isTemporaryChatSession,
   stopAllSessions,
   getSessionForRepo,
@@ -75,6 +81,14 @@ import {
   restoreAgentUIIntentAndBroadcast,
   updateAgentUIIntentPresentationAndBroadcast,
 } from '../services/codex-session.service.js';
+import {
+  captureTurnCheckpoints,
+  checkpointPathsOverlap,
+  deleteThreadCheckpoints,
+  listThreadCheckpoints,
+  previewCheckpointRestore,
+  restoreCheckpoint,
+} from '../services/chat-checkpoint.service.js';
 import {
   callPreferredLocalModel,
   classifyPromptForLocalModel,
@@ -97,6 +111,7 @@ import {
   listChatThreads,
   listWorkItemChatThreads,
   saveChatEntry,
+  saveLocalChatExchange,
   saveChatThreadGoal,
   saveChatThreadPlan,
   setChatThreadProviderThreadId,
@@ -204,9 +219,25 @@ async function tryLocalLlmChatReply(
   sessionId: string,
   message: string,
   attachments?: ChatAttachment[],
+  options?: ChatSendOptions,
 ): Promise<boolean> {
   const settings = getSettings();
   if (settings.localLlmMode !== 'prefer-simple') return false;
+  const user = options?.visibleUserMessage;
+  const session = getCodexSession(sessionId);
+  if (
+    !session?.appThreadId ||
+    !user ||
+    typeof user.id !== 'string' ||
+    !user.id ||
+    user.id.length > 120 ||
+    typeof user.content !== 'string' ||
+    typeof user.timestamp !== 'string' ||
+    !Number.isFinite(Date.parse(user.timestamp)) ||
+    (options?.checkpointKey && user.id !== options.checkpointKey)
+  )
+    return false;
+  const assistantId = `local:${randomUUID()}`;
   if (message.length > LOCAL_LLM_CHAT_MAX_PROMPT_CHARS) return false;
 
   let imagePaths: string[] | undefined;
@@ -222,9 +253,8 @@ async function tryLocalLlmChatReply(
 
   const route = await classifyPromptForLocalModel(message, (imagePaths?.length ?? 0) > 0);
   if (route !== 'local') return false;
-  const threadId = isTemporaryChatSession(sessionId)
-    ? undefined
-    : getCodexSession(sessionId)?.appThreadId;
+  const threadId = session.appThreadId;
+  assertCodexSessionScope(sessionId);
   const localPrompt = prependThreadContinuation(
     threadId ? captureThreadContinuation(threadId).context : undefined,
     message,
@@ -240,21 +270,31 @@ async function tryLocalLlmChatReply(
       started = true;
     }
   };
-  const result = await callPreferredLocalModel(localPrompt, 4096, {
-    images: imagePaths,
-    onPartial: (delta) => {
+  const stream = guardLocalChatStream(
+    () => assertCodexSessionScope(sessionId),
+    (delta) => {
       pending += delta;
       // Check the buffered prefix for refusal phrasing on every delta so a
       // refusal is caught before its text ever reaches the transcript.
       if (isLikelyLocalModelRefusal(pending)) return;
       if (pending.length > LOCAL_LLM_STREAM_HOLDBACK_CHARS) {
         start();
-        emitLocalAssistantText(sessionId, pending);
+        emitLocalAssistantText(sessionId, pending, assistantId);
         emittedChars += pending.length;
         pending = '';
       }
     },
+  );
+  const result = await callPreferredLocalModel(localPrompt, 4096, {
+    images: imagePaths,
+    onPartial: stream.onPartial,
   });
+  try {
+    stream.finish();
+  } catch (error) {
+    if (started) emitLocalAssistantTurnEnd(sessionId, 'interrupted');
+    throw error;
+  }
   const full = result.ok ? (result.content ?? '') : '';
   const content = full.trim();
   if (!result.ok || !content || isLikelyLocalModelRefusal(content)) {
@@ -263,12 +303,39 @@ async function tryLocalLlmChatReply(
     return false;
   }
 
+  assertCodexSessionScope(sessionId);
   console.log(`[Chat] Answered via local model (${content.length} chars)`);
+  try {
+    saveLocalChatExchange(
+      threadId,
+      session.repoId ?? null,
+      sessionId,
+      { ...user, role: 'user', personaId: session.personaId, threadId, attachments },
+      {
+        id: assistantId,
+        role: 'assistant',
+        content: emittedChars > 0 ? full : content,
+        timestamp: new Date().toISOString(),
+        personaId: session.personaId,
+        threadId,
+        event: {
+          type: 'text',
+          text: content,
+          itemId: assistantId,
+          assistantPhase: 'final',
+          persistedBy: 'main',
+        },
+      },
+    );
+  } catch (error) {
+    if (started) emitLocalAssistantTurnEnd(sessionId, 'interrupted');
+    throw error;
+  }
   start();
   // Streamed text is already on screen; emit only the unstreamed remainder (or
   // the trimmed body when the backend didn't stream at all).
   const remainder = emittedChars > 0 ? full.slice(emittedChars) : content;
-  if (remainder) emitLocalAssistantText(sessionId, remainder);
+  if (remainder) emitLocalAssistantText(sessionId, remainder, assistantId);
   emitLocalAssistantTurnEnd(sessionId);
   return true;
 }
@@ -340,6 +407,15 @@ export function registerChatHandlers(): void {
       personaId: string,
       options?: ChatStartOptions,
     ): Promise<CodexSession> => {
+      const originWorkspaceId =
+        repoIds.length && !options?.threadId
+          ? (options?.workspace?.workspaceId ?? getSettings().activeWorkspaceId)
+          : undefined;
+      if (originWorkspaceId)
+        options = {
+          ...options,
+          workspace: { ...options?.workspace, workspaceId: originWorkspaceId },
+        };
       const assertStartAccess = captureThreadAccessFence(options?.threadId);
       const provider = options?.provider ?? getSettings().llmProvider;
       await assertChatProviderAvailable(provider);
@@ -488,14 +564,87 @@ export function registerChatHandlers(): void {
         enrichedMessage = `[Work Item ${parsed.workItemId}] ${parsed.command}: ${message}`;
       }
 
-      // Plain messages — and, on macOS 27+, image-only attachments — may be
-      // answerable on-device.
-      if (!parsed.command) {
-        const handledLocally = await tryLocalLlmChatReply(sessionId, enrichedMessage, attachments);
-        if (handledLocally) return;
-      }
+      await sendMessage(sessionId, enrichedMessage, attachments, options, undefined, async () => {
+        assertCodexSessionScope(sessionId);
+        const checkpointKey = options?.checkpointKey;
+        if (
+          typeof checkpointKey === 'string' &&
+          checkpointKey &&
+          !isTemporaryChatSession(sessionId)
+        ) {
+          const threadId = getCodexSession(sessionId)?.appThreadId;
+          const thread = threadId ? getChatThread(threadId) : null;
+          if (thread && !thread.temporary && thread.purpose !== 'side-question') {
+            // A changed provider binding must fail closed; snapshot I/O remains best effort.
+            const bindings = getCodexSessionCheckpointBindings(sessionId);
+            await captureTurnCheckpoints(
+              thread.id,
+              checkpointKey.slice(0, 120),
+              [...bindings.keys()],
+              'turn',
+              false,
+              bindings,
+            ).catch((error) => console.warn('[Checkpoints] skipped', error));
+          }
+        }
 
-      await sendMessage(sessionId, enrichedMessage, attachments, options);
+        // Plain messages — and, on macOS 27+, image-only attachments — may be
+        // answerable on-device.
+        if (!parsed.command) {
+          const handledLocally = await tryLocalLlmChatReply(
+            sessionId,
+            enrichedMessage,
+            attachments,
+            options,
+          );
+          if (handledLocally) return true;
+        }
+
+        return false;
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'chat:thread-exists',
+    (_event, threadId: string, workspaceId: string | null): boolean => {
+      if (typeof threadId !== 'string' || (workspaceId !== null && typeof workspaceId !== 'string'))
+        throw new Error('Invalid conversation scope.');
+      const thread = getChatThread(threadId);
+      return Boolean(thread && (thread.workspaceId ?? null) === workspaceId);
+    },
+  );
+
+  ipcMain.handle('chat:list-checkpoints', (_event, threadId: string) => {
+    if (typeof threadId !== 'string' || !threadId) throw new Error('A thread is required.');
+    return listThreadCheckpoints(threadId);
+  });
+  ipcMain.handle('chat:preview-checkpoint', (_event, threadId: string, messageId: string) => {
+    if (typeof threadId !== 'string' || !threadId || typeof messageId !== 'string' || !messageId)
+      throw new Error('A thread and message are required.');
+    return previewCheckpointRestore(threadId, messageId);
+  });
+  ipcMain.handle(
+    'chat:restore-checkpoint',
+    (_event, threadId: string, messageId: string, fingerprint: string) => {
+      if (typeof threadId !== 'string' || !threadId || typeof messageId !== 'string' || !messageId)
+        throw new Error('A thread and message are required.');
+      if (typeof fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(fingerprint))
+        throw new Error('Review the current checkpoint preview before rewinding files.');
+      const thread = getChatThread(threadId);
+      if (!thread) throw new Error('Thread not found.');
+      const assertCanRestore = (paths: string[]) => {
+        assertNoManagedWorkerWrites(paths);
+        const active = listActiveCodexSessions().some(
+          (session) =>
+            session.status === 'busy' &&
+            (session.appThreadId === threadId ||
+              checkpointPathsOverlap(paths, getCodexSessionExecutionPaths(session.id))),
+        );
+        if (active)
+          throw new Error('Stop running turns in these repositories before rewinding files.');
+      };
+      return restoreCheckpoint(threadId, messageId, { assertCanRestore, fingerprint });
     },
   );
 
@@ -736,6 +885,9 @@ export function registerChatHandlers(): void {
 
   ipcMain.handle('chat:delete-thread', async (_event, threadId: string): Promise<void> => {
     await assertChatDelegationsFinished(threadId);
+    await deleteThreadCheckpoints(threadId).catch((error) =>
+      console.warn('[Checkpoints] cleanup failed', error),
+    );
     deleteChatThread(threadId);
   });
 

@@ -2,6 +2,7 @@ import { simpleGit, type SimpleGit } from 'simple-git';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type {
@@ -14,8 +15,16 @@ import type {
   GitDiffResult,
   GitPullRequestCreateResult,
 } from '../../shared/types.js';
+import {
+  buildSingleHunkPatch,
+  parseFileDiff,
+  selectHunk,
+  type GitHunkAction,
+} from '../../shared/git-hunks.js';
 import { parseAdoRemoteUrl, parseGitHubRemoteUrl } from './code-review-pr.service.js';
 import { getSettings } from './settings.service.js';
+import { acquireCheckpointPaths } from './chat-checkpoint-locks.js';
+import { runReviewedGit, type ReviewedGitOptions } from './git-reviewed-command.js';
 import { callLlm } from './llm.service.js';
 
 const execFileAsync = promisify(execFile);
@@ -194,6 +203,7 @@ export async function getFullStatus(repoPath: string): Promise<GitStatusResult> 
     path: f.path,
     status: mapFileStatus(f.index, f.working_dir),
     staged: f.index !== ' ' && f.index !== '?' && f.index !== '!',
+    workingTreeChanged: f.working_dir !== ' ',
     oldPath: (f as unknown as { from?: string }).from || undefined,
   }));
 
@@ -278,29 +288,45 @@ export async function createPullRequestFromChanges(
 
 export async function stageFiles(repoPath: string, paths: string[]): Promise<void> {
   const git = gitClient(repoPath);
-  await git.add(paths);
+  paths.forEach((value) => assertRepoRelativePath(repoPath, value));
+  await git.raw(['--literal-pathspecs', 'add', '--', ...paths]);
 }
 
 export async function unstageFiles(repoPath: string, paths: string[]): Promise<void> {
   const git = gitClient(repoPath);
-  await git.reset(['HEAD', '--', ...paths]);
+  const status = await git.status();
+  const targets = new Set(paths);
+  for (const rename of status.renamed) if (targets.has(rename.to)) targets.add(rename.from);
+  await git.raw(['--literal-pathspecs', 'reset', 'HEAD', '--', ...targets]);
 }
 
-export async function discardFiles(repoPath: string, paths: string[]): Promise<void> {
-  const git = gitClient(repoPath);
-  // Separate untracked from tracked
-  const status = await git.status();
-  const untracked = new Set(status.not_added);
+export async function discardFiles(
+  repoPath: string,
+  paths: string[],
+  assertCanDiscard?: () => void,
+): Promise<void> {
+  paths.forEach((value) => assertRepoRelativePath(repoPath, value));
+  const release = acquireCheckpointPaths([repoPath]);
+  try {
+    assertCanDiscard?.();
+    const git = gitClient(repoPath);
+    // Separate untracked from tracked
+    const status = await git.status();
+    const untracked = new Set(status.not_added);
 
-  const tracked = paths.filter((p) => !untracked.has(p));
-  const untrackedToRemove = paths.filter((p) => untracked.has(p));
+    const tracked = paths.filter((p) => !untracked.has(p));
+    const untrackedToRemove = paths.filter((p) => untracked.has(p));
 
-  if (tracked.length > 0) {
-    await git.checkout(['--', ...tracked]);
-  }
-  for (const f of untrackedToRemove) {
-    const fullPath = path.join(repoPath, f);
-    if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    assertCanDiscard?.();
+    if (tracked.length > 0) {
+      await git.raw(['--literal-pathspecs', 'checkout', '--', ...tracked]);
+    }
+    for (const f of untrackedToRemove) {
+      const fullPath = path.join(repoPath, f);
+      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    }
+  } finally {
+    release();
   }
 }
 
@@ -326,16 +352,35 @@ export async function pushBranch(
   return result?.pushed?.[0]?.local ?? branch ?? 'pushed';
 }
 
+async function runCheckoutCommand(
+  repoPath: string,
+  args: string[],
+  options?: ReviewedGitOptions,
+): Promise<string> {
+  const result = await runReviewedGit(repoPath, args, options);
+  if (result.code !== 0)
+    throw new Error(
+      result.stderr.trim() || result.stdout.trim() || 'Git checkout operation failed.',
+    );
+  return result.stdout.trim() || 'Completed';
+}
+
 export async function pullBranch(
   repoPath: string,
   remote = 'origin',
   branch?: string,
 ): Promise<string> {
-  const git = gitClient(repoPath);
-  const args: string[] = [remote];
-  if (branch) args.push(branch);
-  const result = await git.pull(args);
-  return `${result.summary.changes} changes, ${result.summary.insertions} insertions, ${result.summary.deletions} deletions`;
+  const release = acquireCheckpointPaths([repoPath]);
+  try {
+    const args = ['pull', '--progress', remote, ...(branch ? [branch] : [])];
+    return await runCheckoutCommand(repoPath, args, {
+      timeoutMs: 30 * 60_000,
+      idleTimeoutMs: 5 * 60_000,
+      label: 'Git pull',
+    });
+  } finally {
+    release();
+  }
 }
 
 export async function fetchRemote(repoPath: string, remote = 'origin'): Promise<void> {
@@ -386,17 +431,26 @@ export async function createBranch(
   name: string,
   startPoint?: string,
 ): Promise<void> {
-  const git = gitClient(repoPath);
-  if (startPoint) {
-    await git.checkoutBranch(name, startPoint);
-  } else {
-    await git.checkoutLocalBranch(name);
+  const release = acquireCheckpointPaths([repoPath]);
+  try {
+    await runCheckoutCommand(repoPath, [
+      'checkout',
+      '-b',
+      name,
+      ...(startPoint ? [startPoint] : []),
+    ]);
+  } finally {
+    release();
   }
 }
 
 export async function switchBranch(repoPath: string, name: string): Promise<void> {
-  const git = gitClient(repoPath);
-  await git.checkout(name);
+  const release = acquireCheckpointPaths([repoPath]);
+  try {
+    await runCheckoutCommand(repoPath, ['checkout', name]);
+  } finally {
+    release();
+  }
 }
 
 export async function deleteBranch(repoPath: string, name: string, force = false): Promise<void> {
@@ -424,6 +478,90 @@ export async function removeWorktree(repoPath: string, worktreePath: string): Pr
   }
 }
 
+async function reviewedFilePatch(
+  repoPath: string,
+  filePath: string,
+  staged: boolean,
+): Promise<string> {
+  assertRepoRelativePath(repoPath, filePath);
+  const git = gitClient(repoPath);
+  const tracked = await git
+    .raw(['--literal-pathspecs', 'ls-files', '--error-unmatch', '--', filePath])
+    .then(
+      () => true,
+      () => false,
+    );
+  const args = [
+    '--literal-pathspecs',
+    'diff',
+    '--no-color',
+    '--no-ext-diff',
+    '--no-textconv',
+    '--binary',
+    '--unified=3',
+    '--src-prefix=a/',
+    '--dst-prefix=b/',
+    ...(!tracked && !staged ? ['--no-index'] : []),
+    ...(staged ? ['--cached'] : []),
+    '--',
+    ...(!tracked && !staged ? ['/dev/null'] : []),
+    filePath,
+  ];
+  const result = await runReviewedGit(repoPath, args);
+  if (result.code !== 0 && !(!tracked && !staged && result.code === 1))
+    throw new Error('Could not read the reviewed diff.');
+  return result.stdout;
+}
+
+async function assertNotSubmodulePath(repoPath: string, filePath: string): Promise<void> {
+  const entry = await runReviewedGit(repoPath, [
+    '--literal-pathspecs',
+    'ls-files',
+    '--stage',
+    '-z',
+    '--',
+    filePath,
+  ]);
+  if (entry.stdout.split('\0').some((line) => line.startsWith('160000 ')))
+    throw new Error(
+      'Review and discard submodule files inside the submodule. Its working files were not changed.',
+    );
+}
+
+/** Reverse exactly the reviewed patch. Git rejects overlapping concurrent edits. */
+export async function discardReviewedFile(
+  repoPath: string,
+  filePath: string,
+  fingerprint: string,
+  assertCanDiscard?: () => void,
+): Promise<void> {
+  const release = acquireCheckpointPaths([repoPath]);
+  try {
+    assertCanDiscard?.();
+    const patch = await reviewedFilePatch(repoPath, filePath, false);
+    await assertNotSubmodulePath(repoPath, filePath);
+    if (!patch || crypto.createHash('sha256').update(patch).digest('hex') !== fingerprint)
+      throw new Error(
+        'This file changed since it was shown. Refresh and review it before discarding.',
+      );
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mezair-discard-'));
+    try {
+      const patchPath = path.join(dir, 'reviewed.patch');
+      fs.writeFileSync(patchPath, patch);
+      assertCanDiscard?.();
+      await execFileAsync(
+        'git',
+        ['apply', '--reverse', '--binary', '--whitespace=nowarn', patchPath],
+        { cwd: repoPath, timeout: 30000 },
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  } finally {
+    release();
+  }
+}
+
 export async function getFileDiff(
   repoPath: string,
   filePath: string,
@@ -431,8 +569,7 @@ export async function getFileDiff(
 ): Promise<GitDiffResult> {
   const git = gitClient(repoPath);
 
-  const args = staged ? ['diff', '--cached', '--', filePath] : ['diff', '--', filePath];
-  const hunks = await git.raw(args);
+  const hunks = await reviewedFilePatch(repoPath, filePath, staged);
 
   // Get old/new content for the diff viewer
   let oldContent = '';
@@ -451,13 +588,90 @@ export async function getFileDiff(
     // New/deleted files won't have both versions
   }
 
-  return { filePath, oldContent, newContent, hunks };
+  return {
+    filePath,
+    oldContent,
+    newContent,
+    hunks,
+    reviewFingerprint: crypto.createHash('sha256').update(hunks).digest('hex'),
+  };
+}
+
+/** Rejects absolute paths and paths that escape the repository root. */
+export function assertRepoRelativePath(repoPath: string, filePath: string): void {
+  if (!filePath || path.isAbsolute(filePath))
+    throw new Error('A repository-relative path is required.');
+  const resolved = path.resolve(repoPath, filePath);
+  const root = path.resolve(repoPath);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+    throw new Error('The path is outside the repository.');
+  }
+}
+
+/**
+ * Applies one hunk of a file's current diff: `stage` copies it into the index,
+ * `unstage` removes it from the index, and `discard` reverts it in the working
+ * tree. The renderer passes the fingerprint it rendered; a hunk that changed
+ * since is refused rather than applied to the wrong lines.
+ */
+export async function applyFileHunk(
+  repoPath: string,
+  filePath: string,
+  hunkIndex: number,
+  fingerprint: string,
+  action: GitHunkAction,
+  assertCanDiscard?: () => void,
+): Promise<void> {
+  const release = action === 'discard' ? acquireCheckpointPaths([repoPath]) : () => undefined;
+  try {
+    if (action === 'discard') assertCanDiscard?.();
+    assertRepoRelativePath(repoPath, filePath);
+    if (!Number.isInteger(hunkIndex) || hunkIndex < 0) throw new Error('Invalid hunk.');
+    if (action !== 'stage' && action !== 'unstage' && action !== 'discard') {
+      throw new Error('Invalid hunk action.');
+    }
+    const git = gitClient(repoPath);
+    if (
+      action === 'unstage' &&
+      (await git.status()).renamed.some(
+        (rename) => rename.to === filePath || rename.from === filePath,
+      )
+    )
+      throw new Error('Unstage renamed files as a whole file to preserve both paths.');
+    const diff = await reviewedFilePatch(repoPath, filePath, action === 'unstage');
+    if (action === 'discard') await assertNotSubmodulePath(repoPath, filePath);
+    const parsed = parseFileDiff(diff);
+    if (parsed.binary) throw new Error('Binary changes cannot be split into hunks.');
+    const hunk = selectHunk(parsed, hunkIndex, fingerprint);
+    const patch = buildSingleHunkPatch(parsed, hunk);
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mezair-hunk-'));
+    const patchFile = path.join(dir, 'hunk.patch');
+    try {
+      fs.writeFileSync(patchFile, patch, 'utf-8');
+      const args =
+        action === 'stage'
+          ? ['apply', '--cached', '--whitespace=nowarn', patchFile]
+          : action === 'unstage'
+            ? ['apply', '--cached', '-R', '--whitespace=nowarn', patchFile]
+            : ['apply', '-R', '--whitespace=nowarn', patchFile];
+      if (action === 'discard') assertCanDiscard?.();
+      await execFileAsync('git', args, { cwd: repoPath, timeout: 30_000 });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  } finally {
+    release();
+  }
 }
 
 export async function mergeBranch(repoPath: string, branch: string): Promise<string> {
-  const git = gitClient(repoPath);
-  const result = await git.merge([branch]);
-  return result.result ?? 'merged';
+  const release = acquireCheckpointPaths([repoPath]);
+  try {
+    return await runCheckoutCommand(repoPath, ['merge', branch]);
+  } finally {
+    release();
+  }
 }
 
 function generateHeuristicConventionalCommitMessage(files: CommitStatusFile[]): string {

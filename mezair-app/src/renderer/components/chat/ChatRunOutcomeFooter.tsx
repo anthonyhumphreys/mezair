@@ -38,11 +38,14 @@ export function ChatRunOutcomeFooter({
   repos,
   preferredRepoId,
   onReviewFile,
+  hideChanges = false,
 }: {
   summary: ChatRunSummary;
   repos: RepoInfo[];
   preferredRepoId?: string | null;
   onReviewFile?: (filePath: string) => void;
+  /** Set when the turn's changes row already lists these files. */
+  hideChanges?: boolean;
 }) {
   const Icon = STATE_ICON[summary.state];
   const changePaths = useMemo(() => {
@@ -103,7 +106,7 @@ export function ChatRunOutcomeFooter({
           </div>
         </div>
 
-        {summary.changes && changePaths.length > 0 && (
+        {!hideChanges && summary.changes && changePaths.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 px-3 text-xs">
             <FileDiff size={12} className="shrink-0 text-info" aria-hidden="true" />
             <span className="text-text-tertiary">

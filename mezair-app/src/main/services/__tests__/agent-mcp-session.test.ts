@@ -54,14 +54,21 @@ const mocks = vi.hoisted(() => ({
     reasoningLevel: 'medium',
     userRole: 'ba-brm',
   } as Record<string, unknown>,
+  membershipAllowed: true,
+  onSpawn: undefined as (() => void) | undefined,
+  runtime: vi.fn(async () => '/bin/codex'),
   spawnResults: [] as FakeProcess[],
-  threads: new Map<string, { temporary?: boolean; purpose?: string }>(),
+  threads: new Map<
+    string,
+    { id?: string; repoIds?: string[]; temporary?: boolean; purpose?: string; workspaceId?: string }
+  >(),
 }));
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(() => {
     const proc = mocks.spawnResults.shift();
     if (!proc) throw new Error('No fake process queued');
+    mocks.onSpawn?.();
     return proc;
   }),
 }));
@@ -77,6 +84,11 @@ vi.mock('../chat-continuation.service.js', () => ({
   }),
   prependThreadContinuation: (context: string | undefined, message: string) =>
     context ? `${context}\nNewest user request:\n${message}` : message,
+}));
+vi.mock('../chat-session-scope.js', () => ({
+  assertWorkspaceRepositoryMembership: () => {
+    if (!mocks.membershipAllowed) throw new Error('repository is no longer in this workspace');
+  },
 }));
 vi.mock('../settings.service.js', () => ({ getSettings: () => mocks.settings }));
 vi.mock('../persona.service.js', () => ({
@@ -117,11 +129,14 @@ vi.mock('../llm-gateway-runtime.service.js', () => ({
   syncGatewayCodexIntegrations: vi.fn(),
   writeGatewayCodexCatalog: vi.fn(async () => []),
 }));
-vi.mock('../codex-runtime.service.js', () => ({ resolveCodexRuntime: async () => '/bin/codex' }));
+vi.mock('../codex-runtime.service.js', () => ({ resolveCodexRuntime: mocks.runtime }));
 
 import { spawn } from 'node:child_process';
 import {
   getAgentToolSessionContext,
+  followUpTurn,
+  steerTurn,
+  emitLocalAssistantTurn,
   invalidateThreadAccess,
   captureThreadAccessFence,
   sendMessage,
@@ -158,7 +173,14 @@ async function startCodex(
   const proc = createFakeProcess();
   mocks.spawnResults.push(proc);
   const before = vi.mocked(spawn).mock.calls.length;
-  const started = startSession(['/repo'], repoIds, personaId, { provider: 'codex', ...options });
+  if (options.threadId && !mocks.threads.has(options.threadId))
+    mocks.threads.set(options.threadId, { id: options.threadId, repoIds });
+  const started = startSession(
+    repoIds.map((_, index) => (index === 0 ? '/repo' : `/repo-${index}`)),
+    repoIds,
+    personaId,
+    { provider: 'codex', ...options },
+  );
   await vi.waitFor(() => expect(vi.mocked(spawn).mock.calls.length).toBeGreaterThan(before));
   emit(proc, { jsonrpc: '2.0', method: 'thread/started', params: { thread: { id: 'th-1' } } });
   return { proc, session: await started };
@@ -167,6 +189,7 @@ async function startCodex(
 async function startAcp(provider: 'cursor' | 'devin', mcpCapabilities?: Record<string, boolean>) {
   const proc = createFakeProcess();
   mocks.spawnResults.push(proc);
+  mocks.threads.set('thread-1', { id: 'thread-1', repoIds: ['r1'] });
   const started = startSession(['/repo'], ['r1'], 'coder', { provider, threadId: 'thread-1' });
   await vi.waitFor(() => expect(vi.mocked(spawn)).toHaveBeenCalled());
   expect(requests(proc, 'session/new')).toHaveLength(0);
@@ -181,6 +204,10 @@ async function startAcp(provider: 'cursor' | 'devin', mcpCapabilities?: Record<s
 
 describe('codex-session agent MCP wiring', () => {
   beforeEach(() => {
+    mocks.membershipAllowed = true;
+    mocks.settings.activeWorkspaceId = undefined;
+    mocks.onSpawn = undefined;
+    mocks.runtime.mockResolvedValue('/bin/codex');
     resetAgentMcpRegistryForTests();
     setAgentMcpEndpoint({ url: URL, port: 45555, shimPath: '/app/scripts/mezair-mcp-shim.mjs' });
     mocks.settings.userRole = 'ba-brm';
@@ -190,6 +217,143 @@ describe('codex-session agent MCP wiring', () => {
   afterEach(() => {
     stopAllSessions();
     vi.clearAllMocks();
+  });
+
+  it.each(['codex', 'cursor'] as const)(
+    'fences threadless %s restarts in their originating workspace',
+    async (provider) => {
+      mocks.settings.activeWorkspaceId = 'origin-workspace';
+      const proc = createFakeProcess();
+      mocks.spawnResults.push(proc);
+      const started = startSession(['/repo'], ['r1'], 'design', { provider, designMode: 'design' });
+      const rejected = expect(started).rejects.toThrow('no longer in this workspace');
+      if (provider === 'codex')
+        mocks.onSpawn = () => {
+          mocks.membershipAllowed = false;
+        };
+      await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+      mocks.settings.activeWorkspaceId = 'other-workspace';
+      mocks.membershipAllowed = false;
+      if (provider === 'cursor') {
+        emit(proc, {
+          jsonrpc: '2.0',
+          id: 'init',
+          result: { protocolVersion: 1, agentCapabilities: {} },
+        });
+        emit(proc, { jsonrpc: '2.0', id: 's1', result: { sessionId: 'native' } });
+      } else
+        emit(proc, {
+          jsonrpc: '2.0',
+          method: 'thread/started',
+          params: { thread: { id: 'native' } },
+        });
+      await rejected;
+      expect(requests(proc, provider === 'codex' ? 'thread/start' : 'session/new')).toHaveLength(0);
+      mocks.settings.activeWorkspaceId = undefined;
+    },
+  );
+
+  it('rechecks membership after asynchronous runtime resolution, before spawning', async () => {
+    mocks.threads.set('startup', { repoIds: ['r1'], workspaceId: 'ws' });
+    let release!: (runtime: string) => void;
+    mocks.runtime.mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    const started = startSession(['/repo'], ['r1'], 'coder', {
+      threadId: 'startup',
+      provider: 'codex',
+    });
+    const rejected = expect(started).rejects.toThrow('no longer in this workspace');
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    mocks.membershipAllowed = false;
+    release('/bin/codex');
+    await rejected;
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it.each([{}, { providerThreadId: 'native' }, { forkFromProviderThreadId: 'native' }])(
+    'fences Codex startup content and cleans up after a scope change: %j',
+    async (options) => {
+      const proc = createFakeProcess();
+      mocks.spawnResults.push(proc);
+      mocks.threads.set('startup', { repoIds: ['r1'], workspaceId: 'ws' });
+      mocks.onSpawn = () => {
+        mocks.membershipAllowed = false;
+      };
+      await expect(
+        startSession(['/repo'], ['r1'], 'coder', {
+          threadId: 'startup',
+          provider: 'codex',
+          ...options,
+        }),
+      ).rejects.toThrow('no longer in this workspace');
+      for (const method of ['thread/start', 'thread/resume', 'thread/fork'])
+        expect(requests(proc, method)).toHaveLength(0);
+      expect(proc.kill).toHaveBeenCalled();
+    },
+  );
+
+  it.each(['cursor', 'devin'] as const)(
+    'fences late %s new/load without throwing through stdout',
+    async (provider) => {
+      for (const providerThreadId of [undefined, 'native']) {
+        const proc = createFakeProcess();
+        mocks.spawnResults.push(proc);
+        mocks.membershipAllowed = true;
+        mocks.threads.set('startup', { repoIds: ['r1'], workspaceId: 'ws' });
+        const before = vi.mocked(spawn).mock.calls.length;
+        const started = startSession(['/repo'], ['r1'], 'coder', {
+          threadId: 'startup',
+          provider,
+          providerThreadId,
+        });
+        const rejected = expect(started).rejects.toThrow('no longer in this workspace');
+        await vi.waitFor(() => expect(vi.mocked(spawn).mock.calls.length).toBeGreaterThan(before));
+        mocks.membershipAllowed = false;
+        expect(() =>
+          emit(proc, {
+            jsonrpc: '2.0',
+            id: 'init',
+            result: { protocolVersion: 1, agentCapabilities: { loadSession: true } },
+          }),
+        ).not.toThrow();
+        await rejected;
+        expect(requests(proc, 'session/new')).toHaveLength(0);
+        expect(requests(proc, 'session/load')).toHaveLength(0);
+        expect(proc.kill).toHaveBeenCalled();
+      }
+    },
+  );
+
+  it('denies detached-workspace guide, feedback, local output and tool context', async () => {
+    mocks.threads.set('detachable', { repoIds: ['r1', 'r2'], workspaceId: 'ws' });
+    const { proc, session } = await startCodex({ threadId: 'detachable' });
+    await sendMessage(session.id, 'Allowed before removal');
+    const request = requests(proc, 'turn/start').at(-1)!;
+    emit(proc, { jsonrpc: '2.0', id: request.id, result: { turn: { id: 'active-turn' } } });
+    emit(proc, { jsonrpc: '2.0', method: 'turn/started', params: { turn: { id: 'active-turn' } } });
+    mocks.membershipAllowed = false;
+    await expect(steerTurn(session.id, 'Not allowed after removal')).rejects.toThrow(
+      'no longer in this workspace',
+    );
+    expect(
+      await followUpTurn({
+        sessionId: session.id,
+        requestId: 'detached-guide',
+        intent: 'guide',
+        message: 'Not allowed',
+      }),
+    ).toMatchObject({ status: 'failed' });
+    await expect(deliverStructuredAgentFeedback(session.id, 'Not allowed')).rejects.toThrow(
+      'no longer in this workspace',
+    );
+    expect(() => emitLocalAssistantTurn(session.id, 'Do not emit')).toThrow(
+      'no longer in this workspace',
+    );
+    expect(getAgentToolSessionContext(session.id)).toBeUndefined();
+    expect(requests(proc, 'turn/steer')).toHaveLength(0);
   });
 
   it('injects the mezair server into Codex app-server args and the token into env only', async () => {

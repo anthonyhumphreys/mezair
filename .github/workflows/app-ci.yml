@@ -91,6 +91,13 @@ jobs:
           pnpm exec tsc --noEmit -p tsconfig.node.json
           pnpm exec tsc --noEmit -p tsconfig.web.json
 
+      - name: Verify chat review and resend regressions
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: |
+          pnpm exec vite build --config scripts/chat-review.vite.config.ts
+          node scripts/chat-review-checks.mjs
+
       - name: Verify mobile Mesh connections
         run: |
           pnpm --dir mobile test:mesh-session

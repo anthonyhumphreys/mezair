@@ -57,6 +57,7 @@ export class ClaudeAgentProcess extends EventEmitter implements AgentProcess {
   constructor(
     private readonly env: Record<string, string>,
     private readonly model: string,
+    private readonly assertScope: () => void = () => undefined,
   ) {
     super();
     this.stdin = new Writable({
@@ -189,6 +190,7 @@ export class ClaudeAgentProcess extends EventEmitter implements AgentProcess {
       throw new Error('Sign in to Claude Code in Settings or run claude auth login.');
     const { query } = await import('@anthropic-ai/claude-agent-sdk');
     if (this.closed) throw new Error('Claude Code session was stopped.');
+    this.assertScope();
     const cwd = String(params.cwd);
     this.sessionId = resume ? String(params.sessionId) : randomUUID();
     const mcpServers: Record<string, McpServerConfig> = {};
@@ -274,6 +276,7 @@ export class ClaudeAgentProcess extends EventEmitter implements AgentProcess {
         },
         spawnClaudeCodeProcess: (options) => {
           if (this.closed) throw new Error('Claude Code session was stopped.');
+          this.assertScope();
           const child = spawn(options.command, options.args, {
             cwd: options.cwd,
             env: options.env,

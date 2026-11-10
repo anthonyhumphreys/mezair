@@ -1,6 +1,12 @@
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
-import { LEGACY_SCHEMA_REPAIR_SQL, MIGRATIONS, SCHEMA_SQL, SCHEMA_VERSION } from '../schema';
+import {
+  CHECKPOINT_CLEANUP_TRIGGER_SQL,
+  LEGACY_SCHEMA_REPAIR_SQL,
+  MIGRATIONS,
+  SCHEMA_SQL,
+  SCHEMA_VERSION,
+} from '../schema';
 import {
   MAIN_V67_SCHEMA_SQL,
   MERGE_BASE_V66_SCHEMA_SQL,
@@ -65,6 +71,33 @@ it('adds local custom theme storage without disturbing the selected built-in the
       theme: 'light',
       custom_themes: '[]',
     });
+  } finally {
+    db.close();
+  }
+});
+
+it('adds turn checkpoints and the busy-Enter preference with Guide as the default', () => {
+  const db = new Database(':memory:');
+  try {
+    db.exec(
+      "CREATE TABLE settings (id INTEGER PRIMARY KEY, theme TEXT); INSERT INTO settings VALUES (1, 'dark');" +
+        'CREATE TABLE chat_threads (id TEXT PRIMARY KEY);',
+    );
+    for (const statement of MIGRATIONS[120]!
+      .split(';')
+      .map((part) => part.trim())
+      .filter(Boolean))
+      db.exec(statement);
+    expect(db.prepare('SELECT chat_busy_enter FROM settings WHERE id = 1').get()).toEqual({
+      chat_busy_enter: 'guide',
+    });
+    db.exec("INSERT INTO chat_threads VALUES ('t1')");
+    const insert = db.prepare(
+      `INSERT INTO chat_checkpoints (id, thread_id, message_id, repo_id, commit_sha, ref_name, created_at)
+       VALUES (?, 't1', 'm1', 'r1', 'abc', 'refs/mezair/checkpoints/t1/m1', 'now')`,
+    );
+    insert.run('c1');
+    expect(() => insert.run('c2')).toThrow(/UNIQUE/);
   } finally {
     db.close();
   }
@@ -545,7 +578,7 @@ describe('fresh database schema', () => {
         ).map((column) => column.name),
       );
 
-      expect(SCHEMA_VERSION).toBe(119);
+      expect(SCHEMA_VERSION).toBe(122);
       for (const column of [
         'local_llm_mode',
         'local_llm_provider',
@@ -1155,6 +1188,8 @@ describe('fresh database schema', () => {
           const migration = MIGRATIONS[version];
           if (migration) applyMigration(db, migration);
         }
+        // Startup installs compound triggers after the column migrations.
+        db.exec(CHECKPOINT_CLEANUP_TRIGGER_SQL);
 
         expect(schemaShape(db)).toEqual(freshShape());
         expect(db.prepare('SELECT id, llm_provider FROM settings WHERE id = 1').get()).toEqual({
@@ -1278,4 +1313,29 @@ it('migration 117 preserves publication receipts and permits GitHub without losi
       .get(),
   ).toBeDefined();
   db.close();
+});
+
+it('migrates v121 cleanup and retains independent submodule ref metadata across cascades', () => {
+  const db = new Database(':memory:');
+  try {
+    db.exec(SCHEMA_SQL);
+    db.exec('DROP TRIGGER queue_chat_checkpoint_cleanup; DROP TABLE chat_checkpoint_ref_manifest');
+    applyMigration(db, MIGRATIONS[122]!);
+    db.exec(CHECKPOINT_CLEANUP_TRIGGER_SQL);
+    db.exec(`INSERT INTO repos(id,name,path) VALUES('r','Repo','/legacy');
+      INSERT INTO chat_threads(id,persona_id,title) VALUES('t','coder','Thread');
+      INSERT INTO chat_checkpoints(id,thread_id,message_id,repo_id,commit_sha,ref_name,created_at)
+        VALUES('parent','t','m','r','sha','refs/mezair/checkpoints/p','now');
+      INSERT INTO chat_checkpoint_ref_manifest VALUES('child','parent','/legacy/child','child-sha','refs/mezair/checkpoints/c');
+      DELETE FROM repos WHERE id='r'; DELETE FROM chat_threads WHERE id='t';`);
+    expect(
+      db.prepare('SELECT id, repo_path FROM chat_checkpoint_cleanup ORDER BY id').all(),
+    ).toEqual([
+      { id: 'child', repo_path: '/legacy/child' },
+      { id: 'parent', repo_path: '/legacy' },
+    ]);
+    expect(db.prepare('SELECT * FROM chat_checkpoint_ref_manifest').all()).toEqual([]);
+  } finally {
+    db.close();
+  }
 });

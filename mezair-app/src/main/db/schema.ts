@@ -1,4 +1,21 @@
-export const SCHEMA_VERSION = 119;
+export const SCHEMA_VERSION = 122;
+
+export const CHECKPOINT_CLEANUP_TRIGGER_SQL = `
+DROP TRIGGER IF EXISTS queue_chat_checkpoint_cleanup;
+CREATE TRIGGER queue_chat_checkpoint_cleanup BEFORE DELETE ON chat_checkpoints
+BEGIN
+  INSERT OR IGNORE INTO chat_checkpoint_cleanup (id, repo_path, commit_sha, ref_name)
+  SELECT OLD.id, COALESCE(OLD.repo_path, repos.path), OLD.commit_sha, OLD.ref_name
+  FROM (SELECT 1) LEFT JOIN repos ON repos.id = OLD.repo_id
+  WHERE COALESCE(OLD.repo_path, repos.path) IS NOT NULL;
+  INSERT OR IGNORE INTO chat_checkpoint_cleanup (id, repo_path, commit_sha, ref_name)
+  SELECT id, repo_path, commit_sha, ref_name FROM chat_checkpoint_ref_manifest WHERE checkpoint_id = OLD.id;
+END;
+CREATE TRIGGER IF NOT EXISTS retain_legacy_checkpoint_path BEFORE DELETE ON repos
+BEGIN
+  UPDATE chat_checkpoints SET repo_path = OLD.path WHERE repo_id = OLD.id AND repo_path IS NULL;
+END;
+`;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS factory_definitions (
@@ -235,6 +252,36 @@ CREATE INDEX IF NOT EXISTS idx_chat_threads_workspace_work_item
 
 CREATE INDEX IF NOT EXISTS idx_chat_threads_side_question_parent
   ON chat_threads(side_question_of_thread_id);
+
+CREATE TABLE IF NOT EXISTS chat_checkpoints (
+  id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+  message_id TEXT NOT NULL,
+  repo_id TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  ref_name TEXT NOT NULL,
+  repo_path TEXT,
+  kind TEXT NOT NULL DEFAULT 'turn' CHECK (kind IN ('turn', 'restore')),
+  created_at TEXT NOT NULL,
+  UNIQUE(thread_id, message_id, repo_id)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_checkpoints_thread ON chat_checkpoints(thread_id, created_at);
+
+CREATE TABLE IF NOT EXISTS chat_checkpoint_cleanup (
+  id TEXT PRIMARY KEY,
+  repo_path TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  ref_name TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chat_checkpoint_ref_manifest (
+  id TEXT PRIMARY KEY,
+  checkpoint_id TEXT NOT NULL REFERENCES chat_checkpoints(id) ON DELETE CASCADE,
+  repo_path TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  ref_name TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_checkpoint_ref_manifest_parent ON chat_checkpoint_ref_manifest(checkpoint_id);
+${CHECKPOINT_CLEANUP_TRIGGER_SQL}
 
 CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_timestamp
   ON chat_messages(thread_id, timestamp ASC);
@@ -544,6 +591,7 @@ CREATE TABLE IF NOT EXISTS settings (
   telemetry_enabled INTEGER NOT NULL DEFAULT 0,
   usage_statistics_enabled INTEGER NOT NULL DEFAULT 0,
   custom_themes TEXT NOT NULL DEFAULT '[]',
+  chat_busy_enter TEXT NOT NULL DEFAULT 'guide',
   llm_gateway_api_key BLOB,
   llm_gateway_billing_mode TEXT NOT NULL DEFAULT 'devpass',
   updated_at TEXT DEFAULT (datetime('now'))
@@ -4186,6 +4234,41 @@ CREATE INDEX idx_share_ticket_publications_share ON share_ticket_publications(sh
 `,
   118: `ALTER TABLE settings ADD COLUMN usage_statistics_enabled INTEGER NOT NULL DEFAULT 0;`,
   119: `ALTER TABLE settings ADD COLUMN custom_themes TEXT NOT NULL DEFAULT '[]';`,
+  120: `
+ALTER TABLE settings ADD COLUMN chat_busy_enter TEXT NOT NULL DEFAULT 'guide';
+CREATE TABLE IF NOT EXISTS chat_checkpoints (
+  id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+  message_id TEXT NOT NULL,
+  repo_id TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  ref_name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'turn' CHECK (kind IN ('turn', 'restore')),
+  created_at TEXT NOT NULL,
+  UNIQUE(thread_id, message_id, repo_id)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_checkpoints_thread ON chat_checkpoints(thread_id, created_at);
+`,
+  121: `
+ALTER TABLE chat_checkpoints ADD COLUMN repo_path TEXT;
+CREATE TABLE IF NOT EXISTS chat_checkpoint_cleanup (
+  id TEXT PRIMARY KEY,
+  repo_path TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  ref_name TEXT NOT NULL
+);
+
+`,
+  122: `
+CREATE TABLE IF NOT EXISTS chat_checkpoint_ref_manifest (
+  id TEXT PRIMARY KEY,
+  checkpoint_id TEXT NOT NULL REFERENCES chat_checkpoints(id) ON DELETE CASCADE,
+  repo_path TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  ref_name TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_checkpoint_ref_manifest_parent ON chat_checkpoint_ref_manifest(checkpoint_id);
+`,
 };
 
 // Development builds could stamp v68 or v69 without the sync table migration.

@@ -166,6 +166,13 @@ export const SETTINGS_CATEGORIES: SettingsCategoryMeta[] = [
         keywords: ['slider', 'dropdown', 'search', 'preset', 'picker'],
       },
       {
+        id: 'composer-enter',
+        title: 'Sending while an agent works',
+        description:
+          'Choose whether Enter guides the running turn, queues the next one, or adds a line.',
+        keywords: ['enter', 'guide', 'steer', 'queue', 'composer', 'keyboard', 'send'],
+      },
+      {
         id: 'agent-providers',
         title: 'Agent providers',
         description: 'Primary agent and active providers.',

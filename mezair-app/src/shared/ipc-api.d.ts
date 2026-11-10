@@ -496,6 +496,17 @@ export interface MezairAPI {
     ) => Promise<ChatArtifactAnnotation>;
     deleteArtifactAnnotation: (id: string) => Promise<boolean>;
     listThreads: (workspaceId: string | null) => Promise<ChatThread[]>;
+    threadExists: (threadId: string, workspaceId: string | null) => Promise<boolean>;
+    listCheckpoints: (threadId: string) => Promise<import('./types').ChatCheckpointSummary[]>;
+    previewCheckpoint: (
+      threadId: string,
+      messageId: string,
+    ) => Promise<import('./types').ChatCheckpointPreview>;
+    restoreCheckpoint: (
+      threadId: string,
+      messageId: string,
+      fingerprint: string,
+    ) => Promise<import('./types').ChatCheckpointRestoreResult>;
     listWorkItemThreads: (workspaceId: string | null) => Promise<ChatThread[]>;
     createThread: (input: {
       pullRequest?: ChatThreadPullRequestInput;
@@ -1309,6 +1320,15 @@ export interface MezairAPI {
     stage(repoId: string, paths: string[]): Promise<void>;
     unstage(repoId: string, paths: string[]): Promise<void>;
     discard(repoId: string, paths: string[]): Promise<void>;
+    discardReviewed(repoId: string, filePath: string, fingerprint: string): Promise<void>;
+    /** Stage, unstage or discard one hunk of a file's current diff (see shared/git-hunks). */
+    applyHunk(
+      repoId: string,
+      filePath: string,
+      hunkIndex: number,
+      fingerprint: string,
+      action: import('./git-hunks').GitHunkAction,
+    ): Promise<void>;
     commit(repoId: string, message: string): Promise<string>;
     generateCommitMessage(repoId: string): Promise<string>;
     createPullRequest(repoId: string): Promise<GitPullRequestCreateResult>;

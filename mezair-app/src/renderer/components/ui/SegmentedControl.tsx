@@ -44,6 +44,9 @@ export function SegmentedControl<T extends string = string>({
   className,
 }: SegmentedControlProps<T>) {
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const selectedIndex = options.findIndex((option) => option.value === value && !option.disabled);
+  const tabStop =
+    selectedIndex >= 0 ? selectedIndex : options.findIndex((option) => !option.disabled);
 
   const selectIndex = (index: number) => {
     const option = options[index];
@@ -54,10 +57,8 @@ export function SegmentedControl<T extends string = string>({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const currentIndex = Math.max(
-      0,
-      options.findIndex((option) => option.value === value),
-    );
+    const focused = optionRefs.current.findIndex((element) => element === document.activeElement);
+    const currentIndex = Math.max(0, focused >= 0 ? focused : tabStop);
     const count = options.length;
 
     const step = (direction: 1 | -1) => {
@@ -123,7 +124,7 @@ export function SegmentedControl<T extends string = string>({
             aria-checked={selected}
             aria-label={option.ariaLabel}
             title={option.title}
-            tabIndex={selected ? 0 : -1}
+            tabIndex={index === tabStop ? 0 : -1}
             disabled={option.disabled}
             onClick={() => selectIndex(index)}
             className={cx(

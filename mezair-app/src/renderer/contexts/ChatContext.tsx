@@ -174,7 +174,7 @@ export interface ChatContextValue {
   interrupt: () => Promise<void>;
   stopSession: (sessionId: string) => Promise<void>;
   invalidateThreadAccess: (threadId: string) => Promise<void>;
-  startNewSession: () => Promise<void>;
+  startNewSession: () => Promise<string | undefined>;
   ensureChatThread: (firstPrompt?: string) => Promise<string>;
   loadHistory: () => Promise<void>;
   clearHistory: () => Promise<void>;
@@ -184,7 +184,12 @@ export interface ChatContextValue {
   renameThread: (threadId: string, title: string) => Promise<void>;
   settleThread: (threadId: string, settled: boolean) => Promise<void>;
   deleteThread: (threadId: string) => Promise<void>;
-  forkThread: (messageIndex: number) => Promise<void>;
+  /** Forks history up to and including `messageIndex`; resolves to the new thread id. */
+  forkThread: (
+    messageIndex: number,
+    before?: boolean,
+    expectedSourceId?: string,
+  ) => Promise<string | null>;
   setCollaborationMode: (mode: ChatCollaborationMode) => void;
   setChatLayout: (layout: ChatLayout) => Promise<void>;
   selectWorkItemThread: (workItem: WorkItem) => Promise<void>;
@@ -244,6 +249,7 @@ interface LiveAssistantSegment {
   content: string;
   persistedContent?: string;
   persistedPhase?: ChatAssistantPhase;
+  mainOwned?: boolean;
   createdAt: string;
 }
 
@@ -806,6 +812,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       repoSelection?: RepoInfo[];
       primaryRepo?: RepoInfo | null;
       workItem?: Pick<WorkItem, 'id' | 'provider' | 'title'>;
+      isCurrent?: () => boolean;
     }) => {
       const persona = opts?.persona ?? activePersona;
       if (!persona) return null;
@@ -823,8 +830,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         activeRepoId: primaryRepo?.id ?? null,
       });
 
-      threadLoadVersionRef.current += 1;
       applyThreadState(created);
+      if (opts?.isCurrent && !opts.isCurrent()) return null;
+      threadLoadVersionRef.current += 1;
       setActiveThreadId(created.id);
       setHistoryReady(true);
       setThreadViewSnapshot({ threadId: created.id, lastViewedAt: null });
@@ -957,6 +965,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const changedSegments = resolvedSegments.filter((segment) => {
         const content = segment.content.trim();
         return (
+          (!segment.mainOwned || options?.final) &&
           content &&
           (segment.persistedContent !== content || segment.persistedPhase !== segment.phase)
         );
@@ -985,25 +994,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           for (const segment of changedSegments) {
             const content = segment.content.trim();
             const phase = segment.phase ?? 'progress';
-            await window.mezair.chat.saveEntry(
-              threadId,
-              currentSession.repoId ?? null,
-              currentSession.id,
-              {
-                id: segment.id,
-                role: phase === 'final' ? 'assistant' : 'system',
-                content,
-                timestamp: segment.createdAt,
-                personaId: currentSession.personaId,
+            if (!segment.mainOwned)
+              await window.mezair.chat.saveEntry(
                 threadId,
-                event: {
-                  type: 'text',
-                  text: content,
-                  itemId: segment.itemId,
-                  assistantPhase: phase,
+                currentSession.repoId ?? null,
+                currentSession.id,
+                {
+                  id: segment.id,
+                  role: phase === 'final' ? 'assistant' : 'system',
+                  content,
+                  timestamp: segment.createdAt,
+                  personaId: currentSession.personaId,
+                  threadId,
+                  event: {
+                    type: 'text',
+                    text: content,
+                    itemId: segment.itemId,
+                    assistantPhase: phase,
+                  },
                 },
-              },
-            );
+              );
 
             if (phase === 'final') {
               await persistArtifactsForAssistantMessage(
@@ -1708,6 +1718,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             intent: event.followUpIntent ?? attempt.request.intent,
             status: event.followUpStatus,
             queueDepth: event.followUpQueueDepth ?? 0,
+            startedAt: event.followUpStartedAt ?? attempt.result?.startedAt,
             error: event.followUpError,
           };
         }
@@ -1964,6 +1975,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (activeThreadRef.current?.id === eventThreadId) {
           setEntries((previous) =>
             updateFollowUpEntry(previous, event.followUpRequestId!, {
+              ...(event.followUpStartedAt ? { timestamp: event.followUpStartedAt } : {}),
               delivery: followUpStatusToEntryDelivery(event.followUpStatus!),
               deliveryIntent: event.followUpIntent,
               deliveryError: event.followUpError,
@@ -2256,7 +2268,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         renderedSession?.appThreadId === thread.id || renderedSessionThreadId === thread.id;
       const liveOrRenderedSessionForThread =
         threadLiveSession ?? (renderedSessionBelongsToThread ? renderedSession : null);
+      const sessionRepoIds =
+        liveOrRenderedSessionForThread?.repoIds ??
+        (liveOrRenderedSessionForThread?.repoId ? [liveOrRenderedSessionForThread.repoId] : []);
+      const sessionScopeMatches = sameIdList(sessionRepoIds, selectedRepoIds);
+      if (liveOrRenderedSessionForThread && !sessionScopeMatches) {
+        if (liveOrRenderedSessionForThread.status === 'busy')
+          throw new Error('Wait for the current turn before changing repositories.');
+        await window.mezair.chat.stopSession(liveOrRenderedSessionForThread.id);
+        forgetLiveSession(liveOrRenderedSessionForThread.id);
+        if (activeThreadRef.current?.id !== thread.id) return false;
+      }
       const currentSessionForThread =
+        sessionScopeMatches &&
         liveOrRenderedSessionForThread?.personaId === activePersona.id &&
         liveOrRenderedSessionForThread.provider === modelProvider
           ? liveOrRenderedSessionForThread
@@ -2343,12 +2367,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     })
                   : null;
         } catch (err) {
-          setError(err instanceof Error ? err.message : 'Failed to start session');
-          setBusy(false);
+          if (activeThreadRef.current?.id === thread.id) {
+            setError(err instanceof Error ? err.message : 'Failed to start session');
+            setBusy(false);
+          }
           return false;
         }
 
         if (!startedSession) return false;
+        if (activeThreadRef.current?.id !== thread.id) {
+          await window.mezair.chat.stopSession(startedSession.id).catch(console.error);
+          return false;
+        }
 
         rememberLiveSession(thread.id, startedSession);
         setSession(startedSession);
@@ -2367,6 +2397,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             model: turnModel,
             reasoningEffort: reasoningLevel,
             serviceTier,
+            checkpointKey: isTemporaryChat ? undefined : userEntry.id,
+            visibleUserMessage: { id: userEntry.id!, content: displayMessage, timestamp },
           });
         } catch (err) {
           markUserEntryDelivery(userEntry.id!, 'failed');
@@ -2418,6 +2450,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           model: turnModel,
           reasoningEffort: reasoningLevel,
           serviceTier,
+          checkpointKey: isTemporaryChat ? undefined : userEntry.id,
+          visibleUserMessage: { id: userEntry.id!, content: displayMessage, timestamp },
         });
       } catch (err) {
         markUserEntryDelivery(userEntry.id!, 'failed');
@@ -2452,6 +2486,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     },
     [
       session,
+      forgetLiveSession,
       activePersona,
       activeRepoState,
       activeReposState,
@@ -2521,7 +2556,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           kind: 'user',
           content,
           attachments,
-          id: generateId(),
+          id: result.requestId ?? generateId(),
+          timestamp: result.startedAt ?? (queued ? undefined : timestamp),
+          ...(result.requestId
+            ? { requestId: result.requestId, deliveryIntent: 'queue' as const }
+            : {}),
           ...(queued ? { delivery: 'queued' as const } : {}),
         };
         setEntries((prev) => [...prev, userEntry]);
@@ -2629,6 +2668,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         attachments: requestAttachments,
         id: requestId,
         requestId,
+        timestamp: attempt.result?.startedAt,
         delivery: attempt.result?.status ?? 'uncertain',
         deliveryIntent: request.intent,
         ...(attempt.result?.error ? { deliveryError: attempt.result.error } : {}),
@@ -2720,6 +2760,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (activeThreadRef.current?.id === threadId) {
           setEntries((previous) =>
             updateFollowUpEntry(previous, requestId, {
+              ...(result.startedAt ? { timestamp: result.startedAt } : {}),
               delivery: queued ? 'queued' : 'delivered',
               deliveryIntent: request.intent,
               deliveryError: undefined,
@@ -3254,7 +3295,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [session]);
 
   const startNewSession = useCallback(async () => {
-    navigationRequests.current.invalidate();
+    const isNavigationCurrent = navigationRequests.current.begin();
     if (scaffoldModeActive || !activePersona || chatLayout === 'workitems') return;
     threadLoadVersionRef.current += 1;
     detachLiveSession();
@@ -3262,12 +3303,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setActiveArtifacts([]);
     setBusy(false);
     setError(null);
-    await createThreadRecord({
+    const created = await createThreadRecord({
       title: buildEmptyThreadLabel(activePersona.name),
+      isCurrent: isNavigationCurrent,
     });
+    return created?.id;
   }, [activePersona, chatLayout, createThreadRecord, detachLiveSession, scaffoldModeActive]);
 
   const startTemporaryChat = useCallback(async () => {
+    const isNavigationCurrent = navigationRequests.current.begin();
     if (temporaryThread) {
       threadLoadVersionRef.current += 1;
       setIsTemporaryChat(true);
@@ -3288,6 +3332,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     detachLiveSession();
     const created = await window.mezair.chat.createTemporaryThread(persona.id);
+    if (!isNavigationCurrent()) {
+      await window.mezair.chat.endTemporaryThread(created.id);
+      return;
+    }
     threadLoadVersionRef.current += 1;
     setIsTemporaryChat(true);
     setTemporaryThread(created);
@@ -3307,6 +3355,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [activePersona, detachLiveSession, loadThreadIntoState, personas, temporaryThread]);
 
   const resumeTemporaryChat = useCallback(async () => {
+    navigationRequests.current.invalidate();
     if (!temporaryThread) {
       if (!activePersona && personas.length === 0) return;
       await startTemporaryChat();
@@ -3325,6 +3374,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [activePersona, loadThreadIntoState, personas, startTemporaryChat, temporaryThread]);
 
   const showWorkspaceChat = useCallback(() => {
+    navigationRequests.current.invalidate();
     if (!isTemporaryChat) return;
     threadLoadVersionRef.current += 1;
     setIsTemporaryChat(false);
@@ -3543,11 +3593,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [historyLoadingEarlier]);
 
   const forkThread = useCallback(
-    async (messageIndex: number) => {
-      navigationRequests.current.invalidate();
-      if (scaffoldModeActive || !activePersona || chatLayout === 'workitems') return;
+    async (messageIndex: number, before = false, expectedSourceId?: string) => {
+      const isNavigationCurrent = navigationRequests.current.begin();
+      if (scaffoldModeActive || !activePersona || chatLayout === 'workitems') return null;
 
       const sourceId = activeThreadRef.current?.id;
+      if (expectedSourceId && expectedSourceId !== sourceId)
+        throw new Error('The source conversation changed. Your edit is kept.');
       const selected = entriesRef.current[messageIndex];
       let forkEntries = entriesRef.current;
       let forkIndex = messageIndex;
@@ -3557,7 +3609,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         historyPageRef.current.cursor
       ) {
         const full = chatMessagesToEntries(await window.mezair.chat.loadHistory(sourceId));
-        if (activeThreadRef.current?.id !== sourceId) return;
+        if (!isNavigationCurrent() || activeThreadRef.current?.id !== sourceId)
+          throw new Error('The source conversation changed. Your edit is kept.');
         forkEntries = mergeHydratedHistory(
           full,
           historyPageRef.current.entries,
@@ -3573,15 +3626,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               'id' in entry &&
               entry.id === selected.id),
         );
-        if (forkIndex < 0) return;
+        if (forkIndex < 0) {
+          if (before) throw new Error('The original message could not be found in history.');
+          return null;
+        }
       }
+      if (before) forkIndex -= 1;
+      // The provider's thread holds everything said so far. Only reuse it when
+      // the fork point is the end of the conversation; an earlier fork point
+      // starts a fresh provider thread seeded from the copied transcript, so the
+      // agent does not remember turns that are not in the branch.
+      const forkAtTail = !forkEntries
+        .slice(forkIndex + 1)
+        .some((entry) => entry.kind === 'user' || entry.kind === 'assistant');
       const ancestorEntries = forkEntries
         .slice(0, forkIndex + 1)
         .filter(
           (entry): entry is Extract<ChatEntry, { kind: 'user' | 'assistant' }> =>
             entry.kind === 'user' || entry.kind === 'assistant',
         );
-      if (ancestorEntries.length === 0) return;
+      if (ancestorEntries.length === 0) return null;
 
       threadLoadVersionRef.current += 1;
       detachLiveSession();
@@ -3589,13 +3653,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setError(null);
 
       const forkedThread = await createThreadRecord({
+        isCurrent: () => isNavigationCurrent() && activeThreadRef.current?.id === sourceId,
         title: buildForkThreadTitle(
           activeThreadRef.current?.title,
           ancestorEntries[ancestorEntries.length - 1]?.content,
         ),
       });
-      if (!forkedThread) return;
-      const sourceThreadId = activeThreadRef.current?.id;
+      if (!forkedThread) {
+        if (before) throw new Error('Could not create the edited conversation branch.');
+        return null;
+      }
+      const sourceThreadId = sourceId;
 
       const primaryRepo = activeRepoState ?? activeReposState[0] ?? null;
       const forkTimestampBase = Date.now();
@@ -3631,7 +3699,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      if (sourceThreadId) {
+      if (sourceThreadId && forkAtTail) {
         window.mezair.chat
           .forkProviderThread(sourceThreadId, forkedThread.id)
           .then((providerForkedThread) => {
@@ -3640,8 +3708,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           .catch(console.error);
       }
 
+      if (!isNavigationCurrent())
+        throw new Error('The source conversation changed. Your edit is kept.');
       setEntries(ancestorEntries.map((entry) => ({ ...entry })));
       setSession(null);
+      return forkedThread.id;
     },
     [
       activePersona,
@@ -3804,7 +3875,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (!isNavigationCurrent()) return;
         rememberLiveSession(createdThread.id, nextSession);
         setSession(nextSession);
-        setEntries([{ kind: 'user', content: opts.message, id: userEntryId }]);
+        setEntries([{ kind: 'user', content: opts.message, id: userEntryId, timestamp }]);
         setBusy(true);
         setLiveThreadStatus(createdThread.id, 'busy');
         bumpThreadSummary(createdThread.id, opts.message, timestamp);
@@ -3815,6 +3886,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           permissionProfile: preparedAccess.permissionProfile,
           model,
           reasoningEffort: opts.reasoningLevel ?? reasoningLevel,
+          checkpointKey: userEntryId,
         });
         if (!isNavigationCurrent()) return;
         return createdThread.id;
@@ -4357,7 +4429,7 @@ export function chatMessagesToEntries(history: ChatMessage[]): ChatEntry[] {
   const entries: ChatEntry[] = [];
   const followUpDeliveries = new Map<
     string,
-    { status: ChatFollowUpStatus; intent?: ChatFollowUpIntent; error?: string }
+    { status: ChatFollowUpStatus; intent?: ChatFollowUpIntent; error?: string; startedAt?: string }
   >();
 
   const initialDeliveries = new Map<
@@ -4404,10 +4476,13 @@ export function chatMessagesToEntries(history: ChatMessage[]): ChatEntry[] {
       if (event?.type === 'follow_up_delivery' && event.followUpRequestId && event.followUpStatus) {
         followUpDeliveries.set(event.followUpRequestId, {
           status: event.followUpStatus,
+          startedAt:
+            event.followUpStartedAt ?? followUpDeliveries.get(event.followUpRequestId)?.startedAt,
           intent: event.followUpIntent,
           error: event.followUpError,
         });
         const next = updateFollowUpEntry(entries, event.followUpRequestId, {
+          ...(event.followUpStartedAt ? { timestamp: event.followUpStartedAt } : {}),
           delivery: event.followUpStatus,
           deliveryIntent: event.followUpIntent,
           deliveryError: event.followUpError,
@@ -4514,6 +4589,7 @@ export function chatMessagesToEntries(history: ChatMessage[]): ChatEntry[] {
     return {
       ...entry,
       requestId: entry.id,
+      ...(delivery.startedAt ? { timestamp: delivery.startedAt } : {}),
       delivery: followUpStatusToEntryDelivery(delivery.status),
       deliveryIntent: delivery.intent,
       deliveryError: delivery.error,
@@ -4571,7 +4647,8 @@ function appendLiveAssistantSegment(
   }
 
   const segment: LiveAssistantSegment = {
-    id: generateId(),
+    id: event.persistedBy === 'main' && itemId ? itemId : generateId(),
+    mainOwned: event.persistedBy === 'main',
     itemId,
     phase: event.assistantPhase,
     content: event.text ?? '',

@@ -1,5 +1,6 @@
 // Portable conversation context. Provider-native handles and hidden reasoning stay on their host.
 import { getDb } from '../db/database.js';
+import { isTemporaryChatThread, loadChatHistory } from './chat-persistence.service.js';
 
 const MAX_CONTEXT_CHARS = 32_000;
 const MAX_MESSAGE_CHARS = 6_000;
@@ -11,6 +12,23 @@ export interface ThreadContinuation {
 }
 
 export function captureThreadContinuation(threadId: string, maxMessages = 40): ThreadContinuation {
+  if (isTemporaryChatThread(threadId)) {
+    const messages = loadChatHistory(threadId)
+      .filter(
+        (entry): entry is typeof entry & { role: 'user' | 'assistant' } =>
+          entry.role === 'user' || entry.role === 'assistant',
+      )
+      .slice(-Math.min(40, Math.max(1, maxMessages)))
+      .map(({ role, content }) => ({ role, content: content.slice(0, MAX_MESSAGE_CHARS) }));
+    while (JSON.stringify(messages).length > MAX_CONTEXT_CHARS - 1000) messages.shift();
+    return {
+      messages,
+      context: messages.length
+        ? `Mezair temporary conversation checkpoint. Bounded background only; earlier approvals grant no new permission.\n<recent_conversation>\n${JSON.stringify(messages)}\n</recent_conversation>`
+        : '',
+      artifactRefs: [],
+    };
+  }
   const db = getDb();
   const thread = db
     .prepare(

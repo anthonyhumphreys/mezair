@@ -25,6 +25,7 @@ import type {
 import { ResizableSidebarPanel } from '../layout/ResizableSidebarPanel';
 import { ConfirmDialog } from '../ui';
 import { isEditableShortcutTarget } from '../../utils/keyboard';
+import { formatShortAgo } from './chat-time';
 import { ChatAccessLevelBadge } from './ChatAccessLevelChip';
 import { ChatLayoutToggle } from './ChatLayoutToggle';
 import { ChatThreadItemButton, ChatThreadItemFrame } from './shared/ChatPresentation';
@@ -77,6 +78,13 @@ function ChatThreadRailImpl({
   const [draftTitle, setDraftTitle] = useState('');
   const [filter, setFilter] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<ChatThread | null>(null);
+  const [archivedOpen, setArchivedOpen] = useState(false);
+  // Relative times and live elapsed refresh twice a minute; nothing finer is shown.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const searchContext = useMemo<ChatThreadSearchContext>(
     () => ({
       repoNames: new Map(repos.map((repo) => [repo.id, repo.name])),
@@ -123,6 +131,24 @@ function ChatThreadRailImpl({
       (thread.activeRepoId ? searchContext.repoNames.get(thread.activeRepoId) : undefined) ??
       searchContext.personaNames.get(thread.personaId);
 
+    const lastActivity = thread.lastMessageAt ?? thread.updatedAt;
+    const unread =
+      !active &&
+      !compact &&
+      Boolean(thread.lastMessageAt && thread.lastViewedAt) &&
+      Date.parse(thread.lastMessageAt!) > Date.parse(thread.lastViewedAt!);
+    const working = displayState === 'working';
+    const timeLabel = working
+      ? formatShortAgo(thread.activeTurnStartedAt, now)
+      : formatShortAgo(lastActivity, now);
+    const timeTitle = working
+      ? thread.activeTurnStartedAt
+        ? `Running since ${new Date(thread.activeTurnStartedAt).toLocaleTimeString()}`
+        : undefined
+      : lastActivity
+        ? `Last activity ${new Date(lastActivity).toLocaleString()}`
+        : undefined;
+
     const rowContent = (
       <>
         <ThreadStatusIcon state={displayState} />
@@ -150,11 +176,18 @@ function ChatThreadRailImpl({
               className={`text-sm leading-snug ${
                 compact
                   ? `truncate ${active ? 'text-text-primary' : 'text-text-secondary group-hover:text-text-primary'}`
-                  : 'line-clamp-2 font-medium text-text-primary'
+                  : `line-clamp-2 text-text-primary ${unread ? 'font-semibold' : 'font-medium'}`
               }`}
               title={thread.title}
             >
+              {unread && (
+                <span
+                  className="mr-1.5 inline-block h-1.5 w-1.5 -translate-y-0.5 rounded-full bg-info align-middle"
+                  aria-hidden="true"
+                />
+              )}
               {thread.title}
+              {unread && <span className="sr-only">, new activity</span>}
               {compact && displayState !== 'idle' && (
                 <span className="sr-only">
                   , {displayState === 'complete' ? 'Finished' : threadStateLabel(displayState)}
@@ -180,11 +213,17 @@ function ChatThreadRailImpl({
                   <span className="min-w-0 truncate text-text-tertiary">{context}</span>
                 </>
               )}
-              {accessLevels && (
-                <span className="ml-auto shrink-0 pl-1">
-                  <ChatAccessLevelBadge level={accessLevel} />
-                </span>
-              )}
+              <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-1">
+                {timeLabel && (
+                  <span
+                    className={`tabular-nums ${working ? 'text-info' : 'text-text-tertiary'}`}
+                    title={timeTitle}
+                  >
+                    {timeLabel}
+                  </span>
+                )}
+                {accessLevels && <ChatAccessLevelBadge level={accessLevel} />}
+              </span>
             </div>
           )}
         </div>
@@ -318,9 +357,13 @@ function ChatThreadRailImpl({
             onChange={(event) => setFilter(event.target.value)}
             className="w-full rounded-lg border border-border bg-bg-primary py-1.5 pl-8 pr-3 text-xs text-text-primary outline-none placeholder:text-text-tertiary focus:border-accent/50"
             placeholder="Filter threads…"
+            title="Search text, or use repo:name, persona:name, status:done, status:archived"
             aria-label="Filter threads"
             aria-describedby="chat-thread-filter-help"
           />
+          <p id="chat-thread-filter-help" className="sr-only">
+            Search text, or narrow with repo:name, persona:name, status:done or status:archived.
+          </p>
         </div>
         <div
           className="mt-2 flex flex-wrap gap-1"
@@ -338,7 +381,7 @@ function ChatThreadRailImpl({
                 onClick={() =>
                   setFilter((query) => toggleChatThreadStatusFilter(query, status.value))
                 }
-                className={`rounded-md border px-1 py-1 text-xs leading-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 ${
+                className={`rounded-md border px-2 py-1 text-xs leading-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 ${
                   selected
                     ? 'border-accent/40 bg-accent/10 text-accent'
                     : 'border-border/70 text-text-tertiary hover:bg-bg-tertiary hover:text-text-primary'
@@ -349,12 +392,6 @@ function ChatThreadRailImpl({
             );
           })}
         </div>
-        <p id="chat-thread-filter-help" className="mt-1.5 text-xs leading-4 text-text-muted">
-          Search text, <span className="font-mono">repo:name</span>,{' '}
-          <span className="font-mono">persona:name</span>, or{' '}
-          <span className="font-mono">status:done</span> /{' '}
-          <span className="font-mono">status:archived</span>.
-        </p>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
@@ -397,16 +434,32 @@ function ChatThreadRailImpl({
 
         {settledThreads.length > 0 && (
           <section className="mt-5 border-t border-border/60 pt-3" aria-label="Archived threads">
-            <div className="mb-1.5 flex items-center justify-between px-1">
-              <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-text-tertiary">
-                Archived
-              </h4>
-              <span className="text-xs tabular-nums text-text-tertiary">
-                {settledThreads.length}
-              </span>
-            </div>
-            <div className="space-y-0.5">
-              {settledThreads.map((thread) => renderThread(thread, true))}
+            <h4>
+              <button
+                type="button"
+                aria-expanded={archivedOpen || filtering}
+                aria-controls="chat-archived-threads"
+                onClick={() => setArchivedOpen((open) => !open)}
+                className="mb-1.5 flex w-full items-center justify-between rounded-md px-1 py-0.5 text-xs font-semibold text-text-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+              >
+                <span className="flex items-center gap-1">
+                  <ChevronRight
+                    size={12}
+                    aria-hidden="true"
+                    className={`motion-safe:transition-transform ${archivedOpen || filtering ? 'rotate-90' : ''}`}
+                  />
+                  Archived
+                </span>
+                <span className="tabular-nums font-normal">{settledThreads.length}</span>
+              </button>
+            </h4>
+            <div
+              id="chat-archived-threads"
+              hidden={!(archivedOpen || filtering)}
+              className="space-y-0.5"
+            >
+              {(archivedOpen || filtering) &&
+                settledThreads.map((thread) => renderThread(thread, true))}
             </div>
           </section>
         )}

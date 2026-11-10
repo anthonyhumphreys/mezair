@@ -1,3 +1,4 @@
+import { acquireCheckpointLifecycle } from './chat-checkpoint-lifecycle.js';
 import { randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { dialog, BrowserWindow } from 'electron';
@@ -226,8 +227,7 @@ export function listWorkspaces(): WorkspaceSummary[] {
 export function getWorkspace(id: string): WorkspaceWithRepos {
   const db = getDb();
   const row = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(id) as
-    | WorkspaceRow
-    | undefined;
+    WorkspaceRow | undefined;
 
   if (!row) {
     throw new Error(`Workspace not found: ${id}`);
@@ -441,26 +441,31 @@ export function updateWorkspace(id: string, opts: WorkspaceUpdateOptions): Works
  * Throws if the workspace does not exist.
  */
 export function deleteWorkspace(id: string): void {
-  revokeWorkspaceSharesInBackground(id);
-  const db = getDb();
-  if (!isWorkspaceSyncSelected(id)) {
-    deleteWorkspaceRows(id);
-    return;
-  }
-  const deleteWorkspaceTxn = db.transaction(() => {
-    withSyncedEntityWrite(
-      SYNC_ENTITY_WORKSPACE_DEFINITION,
-      id,
-      SYNC_ENTITY_SCHEMA_VERSIONS[SYNC_ENTITY_WORKSPACE_DEFINITION],
-      'delete',
-      () => null,
-      () => {
-        deleteWorkspaceRows(id);
-      },
-    );
-  });
+  const releaseCheckpointScope = acquireCheckpointLifecycle({ workspaceId: id });
+  try {
+    revokeWorkspaceSharesInBackground(id);
+    const db = getDb();
+    if (!isWorkspaceSyncSelected(id)) {
+      deleteWorkspaceRows(id);
+      return;
+    }
+    const deleteWorkspaceTxn = db.transaction(() => {
+      withSyncedEntityWrite(
+        SYNC_ENTITY_WORKSPACE_DEFINITION,
+        id,
+        SYNC_ENTITY_SCHEMA_VERSIONS[SYNC_ENTITY_WORKSPACE_DEFINITION],
+        'delete',
+        () => null,
+        () => {
+          deleteWorkspaceRows(id);
+        },
+      );
+    });
 
-  deleteWorkspaceTxn();
+    deleteWorkspaceTxn();
+  } finally {
+    releaseCheckpointScope();
+  }
 }
 
 function deleteWorkspaceRows(id: string): void {
@@ -551,8 +556,7 @@ export function mapWorkspaceRepoToCheckout(
 ): void {
   const db = getDb();
   const repo = db.prepare('SELECT id FROM repos WHERE id = ?').get(repoId) as
-    | { id: string }
-    | undefined;
+    { id: string } | undefined;
   if (!repo) throw new Error(`Repo not found: ${repoId}`);
   const txn = db.transaction(() => {
     const result = db
@@ -582,26 +586,33 @@ export function mapWorkspaceRepoToCheckout(
  * repos rows and index data are kept (other workspaces may use the repo).
  */
 export function removeReposFromWorkspace(workspaceId: string, repoIds: string[]): void {
-  const db = getDb();
-  const del = db.prepare(`DELETE FROM workspace_repos WHERE workspace_id = ? AND repo_id = ?`);
-  const delDef = db.prepare(
-    `DELETE FROM workspace_repo_definitions WHERE workspace_id = ? AND mapped_repo_id = ?`,
-  );
+  const releaseCheckpointScope = acquireCheckpointLifecycle({ workspaceId, repoIds });
+  try {
+    const db = getDb();
+    const del = db.prepare(`DELETE FROM workspace_repos WHERE workspace_id = ? AND repo_id = ?`);
+    const delDef = db.prepare(
+      `DELETE FROM workspace_repo_definitions WHERE workspace_id = ? AND mapped_repo_id = ?`,
+    );
 
-  for (const repoId of repoIds) {
-    cancelIndexJobs(repoId);
-  }
-
-  const txn = db.transaction(() => {
     for (const repoId of repoIds) {
-      del.run(workspaceId, repoId);
-      delDef.run(workspaceId, repoId);
+      cancelIndexJobs(repoId);
     }
-    db.prepare(`UPDATE workspaces SET updated_at = datetime('now') WHERE id = ?`).run(workspaceId);
-    recomputeWorkspaceDefinitionState(workspaceId);
-    emitWorkspaceSyncIntent(workspaceId);
-  });
-  txn();
+
+    const txn = db.transaction(() => {
+      for (const repoId of repoIds) {
+        del.run(workspaceId, repoId);
+        delDef.run(workspaceId, repoId);
+      }
+      db.prepare(`UPDATE workspaces SET updated_at = datetime('now') WHERE id = ?`).run(
+        workspaceId,
+      );
+      recomputeWorkspaceDefinitionState(workspaceId);
+      emitWorkspaceSyncIntent(workspaceId);
+    });
+    txn();
+  } finally {
+    releaseCheckpointScope();
+  }
 }
 
 /**
@@ -612,42 +623,46 @@ export function removeReposFromWorkspace(workspaceId: string, repoIds: string[])
  * disk are never touched.
  */
 export function forgetRepo(repoId: string): void {
-  const db = getDb();
-  const repo = db.prepare('SELECT id, name FROM repos WHERE id = ?').get(repoId) as
-    | { id: string; name: string }
-    | undefined;
-  if (!repo) throw new Error(`Repo not found: ${repoId}`);
-
-  const membership = db
-    .prepare(`SELECT COUNT(*) AS c FROM workspace_repos WHERE repo_id = ?`)
-    .get(repoId) as { c: number };
-  const mappedDefinitions = db
-    .prepare(`SELECT COUNT(*) AS c FROM workspace_repo_definitions WHERE mapped_repo_id = ?`)
-    .get(repoId) as { c: number };
-  if (membership.c + mappedDefinitions.c > 0) {
-    throw new Error(
-      `"${repo.name}" is still used by a workspace. Remove it from every workspace before forgetting it.`,
-    );
-  }
-
-  cancelIndexJobs(repoId);
-
-  // FK enforcement is suspended for this delete so history rows (reviews,
-  // audits, chat references) survive orphaned instead of cascading or
-  // blocking the delete.
-  const foreignKeys = db.pragma('foreign_keys', { simple: true }) as number;
-  db.pragma('foreign_keys = OFF');
+  const releaseCheckpointScope = acquireCheckpointLifecycle({ repoIds: [repoId] });
   try {
-    db.transaction(() => {
-      db.prepare('DELETE FROM module_summaries WHERE repo_id = ?').run(repoId);
-      db.prepare('DELETE FROM repo_summaries WHERE repo_id = ?').run(repoId);
-      db.prepare('DELETE FROM repository_map_graphs WHERE repo_id = ?').run(repoId);
-      db.prepare('DELETE FROM repo_index_jobs WHERE repo_id = ?').run(repoId);
-      db.prepare('DELETE FROM workspace_repos WHERE repo_id = ?').run(repoId);
-      db.prepare('DELETE FROM repos WHERE id = ?').run(repoId);
-    })();
+    const db = getDb();
+    const repo = db.prepare('SELECT id, name FROM repos WHERE id = ?').get(repoId) as
+      { id: string; name: string } | undefined;
+    if (!repo) throw new Error(`Repo not found: ${repoId}`);
+
+    const membership = db
+      .prepare(`SELECT COUNT(*) AS c FROM workspace_repos WHERE repo_id = ?`)
+      .get(repoId) as { c: number };
+    const mappedDefinitions = db
+      .prepare(`SELECT COUNT(*) AS c FROM workspace_repo_definitions WHERE mapped_repo_id = ?`)
+      .get(repoId) as { c: number };
+    if (membership.c + mappedDefinitions.c > 0) {
+      throw new Error(
+        `"${repo.name}" is still used by a workspace. Remove it from every workspace before forgetting it.`,
+      );
+    }
+
+    cancelIndexJobs(repoId);
+
+    // FK enforcement is suspended for this delete so history rows (reviews,
+    // audits, chat references) survive orphaned instead of cascading or
+    // blocking the delete.
+    const foreignKeys = db.pragma('foreign_keys', { simple: true }) as number;
+    db.pragma('foreign_keys = OFF');
+    try {
+      db.transaction(() => {
+        db.prepare('DELETE FROM module_summaries WHERE repo_id = ?').run(repoId);
+        db.prepare('DELETE FROM repo_summaries WHERE repo_id = ?').run(repoId);
+        db.prepare('DELETE FROM repository_map_graphs WHERE repo_id = ?').run(repoId);
+        db.prepare('DELETE FROM repo_index_jobs WHERE repo_id = ?').run(repoId);
+        db.prepare('DELETE FROM workspace_repos WHERE repo_id = ?').run(repoId);
+        db.prepare('DELETE FROM repos WHERE id = ?').run(repoId);
+      })();
+    } finally {
+      db.pragma(`foreign_keys = ${foreignKeys ? 'ON' : 'OFF'}`);
+    }
   } finally {
-    db.pragma(`foreign_keys = ${foreignKeys ? 'ON' : 'OFF'}`);
+    releaseCheckpointScope();
   }
 }
 

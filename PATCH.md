@@ -989,3 +989,116 @@ Verify the Desktop usage-statistics, telemetry, metrics and schema suites, both
 TypeScript projects, lint and build. Verify website `test:analytics`, share URL
 tests, typecheck and build, plus browser requests before consent, after consent,
 after withdrawal and on excluded routes.
+
+
+### C17: Reviewed local chat checkpoints and hunk actions
+
+Status: active
+Owner project: `mezair-app`
+
+Pre-turn checkpoints are best effort and never run a provider or mutate the
+user's index, branches or stash. Normal, prepared and queued turns use their
+stable user-message/request identity; queued captures happen at delivery, after
+the previous turn. Use main-process delivery time when associating delegated
+work with queued turns, including after history hydration.
+
+Rewind validates every target and requires a durable undo checkpoint for every
+repository before overwriting files. Snapshot initialized submodule working
+files recursively, pin their commits in their own Git stores, preserve child
+HEAD/index, and remove retained child refs with the parent. Refuse an unavailable
+or changed submodule layout and legacy snapshots without child evidence rather
+than reporting a false match. Bound nesting and repository count. Capture failures
+must not leave orphaned refs. This is local file recovery, not an agent permission
+grant or a Git branch reset. Fence concurrent rewinds and managed turns by
+canonical checkout paths, including aliases and nested repositories. Recheck
+active turns before mutation; releasing the lease is mandatory on failure.
+Capture and destructive Git review share the checkout lease with rewind.
+Reserve each provider session before asynchronous send preparation so concurrent
+idle follow-ups queue in order; release preparation on failure and retain the
+authoritative delivery timestamp across retries and later events.
+Bind confirmation to the complete current tree, including submodules, and check
+it again after saving undo. A changed preview requires a fresh confirmation for
+rewind, undo and edit/resend. Persist the exact validated execution checkout;
+repair recovery must never fall back to the ordinary checkout. Validate current
+thread/repository/workspace membership before preview and restore. Keep Undo
+scoped to its source workspace. Before cascaded deletion loses checkpoint rows,
+retain local cleanup metadata transactionally and retry unavailable Git-ref
+cleanup in the background, including after restart. Never delete a newer ref
+that reused a checkpoint name.
+
+Review actions use the repository/status/diff snapshot actually displayed.
+Repository switches immediately invalidate actionable files; stale hunk
+fingerprints fail closed. Generate apply-compatible literal-path diffs regardless
+of user prefix settings, leave executable-bit changes out of content-hunk
+patches, and unstage both sides of a rename. Whole-file discard reverses the
+reviewed patch and refuses changed contents; disable it while the agent is
+working. Keep a failed edited
+request and its attachments recoverable; resolve a branch point against complete
+history before excluding the edited message. Delegation draft controls belong to
+the transcript's thread/run identity and survive turn-list remounts.
+Verification operations remain in flight across those remounts and reconcile
+their completion through the same shared state. Keep inline edits mounted while
+a thread is busy, allow retained attachments without text, and scope failed
+composer recovery to its original workspace, thread and persona. Refresh the
+current repository after mutations even if a manual refresh raced completion.
+Disable Git color for machine-parsed diffs and require whole-file unstaging for
+renames. Panel controls always retain one enabled keyboard tab stop.
+
+Recovery scope changes, local/synced workspace deletion and ref cleanup must share
+those leases so cascades cannot remove an in-flight undo. Include the provider's
+canonical cwd when checking active work, including repo-less workspace sessions.
+Checkpoint the provider's immutable repo/path bindings and restart stale sessions
+when the thread's repository selection changes. Missing secondary checkouts are
+best-effort omissions, never a reason to silently retarget execution or bypass
+membership checks. Retain recovery by insertion order, independent of wall clocks.
+Schema 122 independently retains child-ref cleanup manifests and backfills legacy
+paths before a repository is forgotten. Cleanup batches advance past offline rows.
+Bound reviewed Git subprocesses and their filters; branch checkout, creation, pull
+and merge share the recovery lease. Force positive diff context, apply untracked
+hunks using the same no-index patch, and refuse parent-level submodule discard.
+Refresh open Review after recovery and disable hunk discard during active work.
+Queue every failed composer action until its own scoped composer acknowledges
+applying it. First-message edits use the explicitly created destination thread.
+Keyboard arrows begin at the focused enabled option after a panel is toggled off.
+Rendered regressions fail on uncaught browser exceptions.
+
+Ordinary sends reserve the provider before checkpoint and local-reply preparation;
+queue admission sees that reservation and preparation completion drains or fails
+pending work deterministically. Preserve explicit repo-less scaffold and headless
+Mesh execution roots while validating repo-bound path cardinality. Current
+workspace membership is authoritative at every new content delivery, including
+post-acknowledgement ACP prompts, guides, structured feedback, pending answers,
+accepted approvals and local output; do not consume a denied pending request.
+Keep cancellation available. Resolve explicit provider approval options by their
+actual grant, and cancel automatic grants safely after scope removal. Native
+stream callbacks retain scope failures for the awaited send rather than throwing
+through an EventEmitter. Live MCP context fails closed for detached scope.
+Quarantined workspace projection and binding updates commit atomically; lease
+contention keeps the sealed update retryable and schedules a bounded retry.
+Main-process discard checks overlapping active sessions inside the checkout lease.
+Forks and replacement-session startup respect navigation from their source thread.
+Recovery acknowledges text separately from attachments, keeps overflow available
+without repeating text, and persists current scoped attachment drafts through
+composer remounts. Reject a blocked /new instead of clearing its text. Release
+pending payloads for destinations the local thread catalogue confirms deleted.
+
+Pin the thread workspace identity at session creation as well as its repository
+bindings. A workspace reset that leaves a thread unassigned cannot turn an old
+workspace grant into an unrestricted legacy-thread session.
+
+For C17, delegated worker ownership begins before asynchronous startup and lasts
+through native process close. Destructive review and rewind reject overlapping
+worker paths even if the coordinating chat is idle. POSIX Git timeout cleanup
+waits for child and live process-group termination; progressing pulls have a
+separate hard/idle deadline. Retire deferred quarantine work with its sync
+session. Validate startup content at Codex/ACP dispatch and Claude SDK child
+creation, including deferred startup retries. Main commits visible local-model
+exchanges before queued continuation capture; temporary history stays in memory.
+Composer drafts include workspace identity, and renderer-owned recovery survives
+route unmounts and checks both normal and work-item destinations. Completed
+optional prefills cannot resurrect removed files or prevent sending. Temporary
+navigation invalidates earlier normal-thread creation requests.
+
+The combined model/run-settings panel retains keyboard focus when a run starts
+and replaces model selection with locked-state settings. Opening it while busy
+focuses an editable setting; Escape closes it and returns focus to the trigger.

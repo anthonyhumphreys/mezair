@@ -8,10 +8,49 @@ import {
   getCursorModelReasoningEffort,
   getSkillMentionResults,
   getSlashCommandResults,
+  getRunSettingsDetail,
   getRunSettingsLabel,
   shouldSendChatMessageFromKey,
+  resolveComposerEnter,
+  busyEnterHint,
   type ChatSlashCommand,
 } from '../ChatInput';
+
+describe('getRunSettingsDetail', () => {
+  const base = {
+    model: 'gpt-6.1-sol',
+    modelProvider: 'codex' as const,
+    reasoningLevel: 'high' as const,
+    collaborationMode: 'default' as const,
+    fastMode: false,
+    fastModeAvailable: true,
+  };
+
+  it('names only what differs from the default build run', () => {
+    expect(getRunSettingsDetail(base)).toBe('High');
+    expect(getRunSettingsDetail({ ...base, reasoningLevel: 'xhigh' })).toBe('Extra high');
+    expect(getRunSettingsDetail({ ...base, collaborationMode: 'plan', fastMode: true })).toBe(
+      'Plan · High · Fast',
+    );
+  });
+
+  it('omits effort the model does not support and fast mode that is unavailable', () => {
+    expect(
+      getRunSettingsDetail({
+        ...base,
+        reasoningOptions: ['medium'],
+        fastMode: true,
+        fastModeAvailable: false,
+      }),
+    ).toBe('');
+  });
+
+  it('leaves reasoning to ACP model labels, which already carry it', () => {
+    expect(getRunSettingsDetail({ ...base, model: 'gpt-5-high', modelProvider: 'cursor' })).toBe(
+      '',
+    );
+  });
+});
 
 describe('getRunSettingsLabel', () => {
   it('summarises mode, model, and reasoning in one compact label', () => {
@@ -188,5 +227,45 @@ describe('getSkillMentionResults', () => {
     expect(getSkillMentionResults(skills, 'project').map((skill) => skill.name)).toEqual([
       'add-feature',
     ]);
+  });
+});
+
+describe('resolveComposerEnter', () => {
+  const enter = (busy: boolean, extra: { shiftKey?: boolean; metaKey?: boolean } = {}) => ({
+    key: 'Enter',
+    shiftKey: false,
+    busy,
+    ...extra,
+  });
+
+  it('sends the selected option when idle', () => {
+    expect(resolveComposerEnter(enter(false), 'guide')).toBe('selected');
+    expect(resolveComposerEnter(enter(false, { shiftKey: true }), 'guide')).toBeNull();
+  });
+
+  it('guides on Enter and queues on the modifier by default', () => {
+    expect(resolveComposerEnter(enter(true), 'guide')).toBe('guide');
+    expect(resolveComposerEnter(enter(true, { metaKey: true }), 'guide')).toBe('queue');
+  });
+
+  it('honours the queue preference', () => {
+    expect(resolveComposerEnter(enter(true), 'queue')).toBe('queue');
+    expect(resolveComposerEnter(enter(true, { metaKey: true }), 'queue')).toBe('guide');
+  });
+
+  it('keeps the legacy newline behaviour when chosen', () => {
+    expect(resolveComposerEnter(enter(true), 'newline')).toBeNull();
+    expect(resolveComposerEnter(enter(true, { metaKey: true }), 'newline')).toBe('selected');
+  });
+
+  it('never sends on Shift+Enter or during IME composition', () => {
+    expect(resolveComposerEnter(enter(true, { shiftKey: true }), 'guide')).toBeNull();
+    expect(resolveComposerEnter({ ...enter(true), isComposing: true }, 'guide')).toBeNull();
+  });
+
+  it('describes only the modes the provider supports', () => {
+    expect(busyEnterHint('guide', true, true)).toMatch(/Enter to guide now · .* to queue next/);
+    expect(busyEnterHint('guide', false, true)).toBe('Enter to queue next');
+    expect(busyEnterHint('queue', true, false)).toBe('Enter to guide now');
   });
 });

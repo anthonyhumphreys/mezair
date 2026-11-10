@@ -33,7 +33,7 @@ export function useChatWorkflowAction({
     executionStrategyPrompt?: string,
     fastMode?: boolean,
   ) => Promise<boolean>;
-  startNewSession: () => Promise<void> | void;
+  startNewSession: () => Promise<string | undefined>;
 }) {
   const navigate = useNavigate();
   const [pendingWorkflowAction, setPendingWorkflowAction] = useState<PendingWorkflowAction | null>(
@@ -45,8 +45,7 @@ export function useChatWorkflowAction({
   const handleComposerSend = useCallback(
     async (message: string, attachments: ChatAttachment[] = []): Promise<boolean> => {
       if (attachments.length === 0 && message.trim().toLowerCase() === '/new') {
-        await startNewSession();
-        return true;
+        return Boolean(await startNewSession());
       }
       const strategyPrompt = buildExecutionStrategyPrompt(executionStrategy) ?? undefined;
       if (attachments.length === 0 && activeWorkspace && hasExplicitWorkflowCommand(message)) {

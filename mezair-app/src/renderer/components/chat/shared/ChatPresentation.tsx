@@ -51,7 +51,7 @@ export function ChatComposerSurface({
 }: ChatComposerSurfaceProps) {
   return (
     <div
-      className={`relative rounded-[28px] border bg-bg-tertiary transition-[border-color,background-color] duration-200 focus-within:border-accent/55 ${
+      className={`relative rounded-[24px] border bg-bg-tertiary transition-[border-color,background-color] duration-200 focus-within:border-border ${
         disabled ? 'opacity-60' : ''
       } ${
         draggingFiles
@@ -66,7 +66,7 @@ export function ChatComposerSurface({
       onDrop={onDrop}
     >
       {draggingFiles && (
-        <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-[22px] border border-dashed border-accent bg-bg-primary/80 backdrop-blur-sm">
+        <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-[18px] border border-dashed border-accent bg-bg-primary/80 backdrop-blur-sm">
           <div className="flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-4 py-2 text-sm font-medium text-text-primary">
             {draggingIcon}
             Drop files to attach
@@ -113,7 +113,7 @@ export interface ChatComposerFooterProps {
 export function ChatComposerFooter({ children, className = '' }: ChatComposerFooterProps) {
   return (
     <div
-      className={`flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 pb-3 pt-1.5 ${className}`}
+      className={`flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-2.5 pb-2.5 pt-1 ${className}`}
     >
       {children}
     </div>

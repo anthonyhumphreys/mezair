@@ -8,10 +8,11 @@ import type { PreviewMode } from '../browser/BrowserPanel';
  * surfaces, so there is no canvas pane.
  */
 
-export type ChatPanelId = 'activity' | 'preview';
+export type ChatPanelId = 'activity' | 'preview' | 'review';
 
 export function useChatPanels() {
   const [activityOpen, setActivityOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [previewMode, setPreviewMode] = useState<PreviewMode | null>(null);
   const [previewInitialUrl, setPreviewInitialUrl] = useState('');
   const [itsmWorkbenchOpen, setItsmWorkbenchOpen] = useState(true);
@@ -26,15 +27,19 @@ export function useChatPanels() {
     ? 'preview'
     : activityOpen
       ? 'activity'
-      : null;
+      : reviewOpen
+        ? 'review'
+        : null;
 
   /** CH4 close-others: opening one panel closes every other surface. */
   const setActivePanel = useCallback((panel: ChatPanelId | null) => {
     setActivityOpen(false);
+    setReviewOpen(false);
     setPreviewMode(null);
     setItsmWorkbenchOpen(false);
     setGoalPopoverOpen(false);
     if (panel === 'activity') setActivityOpen(true);
+    else if (panel === 'review') setReviewOpen(true);
     else if (panel === 'preview') setPreviewMode(lastPreviewModeRef.current);
   }, []);
 
@@ -44,17 +49,21 @@ export function useChatPanels() {
     setPreviewInitialUrl(initialUrl);
     setItsmWorkbenchOpen(false);
     setActivityOpen(false);
+    setReviewOpen(false);
   }, []);
 
   const toggleItsmWorkbench = useCallback(() => {
     setItsmWorkbenchOpen((open) => {
       if (!open) {
         setActivityOpen(false);
+        setReviewOpen(false);
         setPreviewMode(null);
       }
       return !open;
     });
   }, []);
+
+  const closeReview = useCallback(() => setReviewOpen(false), []);
 
   const closeActivity = useCallback(() => {
     setActivityOpen(false);
@@ -67,6 +76,8 @@ export function useChatPanels() {
     openPreview,
     activityOpen,
     closeActivity,
+    reviewOpen,
+    closeReview,
     previewMode,
     previewInitialUrl,
     itsmWorkbenchOpen,

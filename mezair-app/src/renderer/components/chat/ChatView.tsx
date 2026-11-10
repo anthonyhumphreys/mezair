@@ -10,6 +10,8 @@ import type { AgentUIPlanIntent, AgentUIQuestionIntent } from '../../../shared/a
 import type {
   AgentProvider,
   ChatAttachment,
+  ChatBusyEnterAction,
+  ChatCheckpointRestoreResult,
   ChatLayout,
   Persona,
   ReasoningEffort,
@@ -31,7 +33,16 @@ import {
 } from './chat-review-feedback';
 import { useChatScroll } from './useChatScroll';
 import { buildFindingFollowUpPrompt } from './ChatFindingCard';
-import { PendingQuestionPrompt, PlanChip, WorkflowActionConfirmation } from './ChatPromptOverlays';
+import {
+  PendingQuestionPrompt,
+  PendingRequestPointer,
+  PlanChip,
+  WorkflowActionConfirmation,
+} from './ChatPromptOverlays';
+import { ChatAttentionSlot, type ChatAttentionItem } from './ChatAttentionSlot';
+import { CheckpointRewindDialog, useThreadCheckpoints } from './turn-changes/CheckpointRewind';
+import { adjacentThreadId, nextThreadNeedingYou } from './chat-thread-nav';
+import { isEditableShortcutTarget } from '../../utils/keyboard';
 import { useChatErrorRecovery } from './useChatErrorRecovery';
 import { createChatTurnComposer } from './chat-turns';
 import { buildChatRequestTargetDomId, getPendingQuestionTarget } from './chat-run-outcome';
@@ -73,6 +84,7 @@ import { isAcpAgentProvider } from '../../../shared/agent-providers';
 import { agentProviderLabel } from '../../utils/agent-display';
 import { buildMessageReusePrefill, shouldFocusChatComposerFromKey } from './chat-view-utils';
 import { WORKSPACE_REPOSITORIES_PATH } from '../../utils/sidebar-navigation';
+import { composerRecoveryScope, useScopedComposerRecovery } from './useScopedComposerRecovery';
 
 // Re-exported for the existing `../ChatView` import path used by tests.
 export {
@@ -213,11 +225,21 @@ export function ChatView({ userRole }: ChatViewProps) {
 
   const [showFindings, setShowFindings] = useState(true);
   const [dismissedFindings, setDismissedFindings] = useState<Set<number>>(new Set());
-  const [composerPrefill, setComposerPrefill] = useState<{
-    id: string;
-    text: string;
-    attachments?: ChatAttachment[];
-  } | null>(null);
+  const recoveryPersona =
+    !isTemporaryChat && chatLayout === 'workitems'
+      ? 'workitem-layout'
+      : (activePersona?.id ?? 'no-persona');
+  const composerScope = composerRecoveryScope(activeWorkspace?.id, activeThreadId, recoveryPersona);
+  const composerScopeRef = useRef(composerScope);
+  composerScopeRef.current = composerScope;
+  const {
+    prefill: composerPrefill,
+    setPrefill: setComposerPrefill,
+    recover: recoverComposer,
+    acknowledge: acknowledgePrefill,
+    markTextApplied: markPrefillTextApplied,
+  } = useScopedComposerRecovery(composerScope);
+  const [reviewRevision, setReviewRevision] = useState(0);
   const [executionStrategy, setExecutionStrategy] = useState<ExecutionStrategy>('auto');
   const [fastMode, setFastMode] = useState(false);
   const [composerFocusRequest, setComposerFocusRequest] = useState(0);
@@ -228,21 +250,39 @@ export function ChatView({ userRole }: ChatViewProps) {
       text: string;
       threadId?: string;
       personaId?: string;
+      attachments?: ChatAttachment[];
+      complete?: (success: boolean) => void;
+      scope: string;
     }>
   >([]);
   const pendingChatAction = pendingChatActions[0] ?? null;
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const actionInFlight = useRef(false);
-  const requestChatAction = useCallback((text: string, threadId?: string, personaId?: string) => {
-    const action = { id: crypto.randomUUID(), text, threadId, personaId };
-    setPendingChatActions((pending) =>
-      pending.some(
-        (item) => item.text === text && item.threadId === threadId && item.personaId === personaId,
-      )
-        ? pending
-        : [...pending, action],
-    );
-  }, []);
+  const requestChatAction = useCallback(
+    (
+      text: string,
+      threadId?: string,
+      personaId?: string,
+      attachments: ChatAttachment[] = [],
+      complete?: (success: boolean) => void,
+    ) => {
+      const action = {
+        id: crypto.randomUUID(),
+        text,
+        threadId,
+        personaId,
+        attachments,
+        complete,
+        scope: composerRecoveryScope(
+          activeWorkspace?.id,
+          threadId ?? activeThreadId,
+          recoveryPersona === 'workitem-layout' ? recoveryPersona : (personaId ?? recoveryPersona),
+        ),
+      };
+      setPendingChatActions((pending) => [...pending, action]);
+    },
+    [activeWorkspace?.id, activeThreadId, recoveryPersona],
+  );
   const [sendNotice, setSendNotice] = useState<string | null>(null);
   const [designSidebarCollapsed, setDesignSidebarCollapsed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -409,6 +449,138 @@ export function ChatView({ userRole }: ChatViewProps) {
     (control ?? target).focus({ preventScroll: true });
   }, []);
 
+  // --- Composer preference ---------------------------------------------------
+  const [busyEnterAction, setBusyEnterAction] = useState<ChatBusyEnterAction>('guide');
+  useEffect(() => {
+    let cancelled = false;
+    window.mezair.settings
+      .get()
+      .then((settings) => {
+        if (!cancelled) setBusyEnterAction(settings.chatBusyEnter ?? 'guide');
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // --- Checkpoints, rewind, edit-and-resend, retry ---------------------------
+  const { checkpointIds, refresh: refreshCheckpoints } = useThreadCheckpoints(
+    isTemporaryChat ? null : activeThreadId,
+    busy,
+  );
+  const workspaceKey = activeWorkspace?.id ?? null;
+  const [rewindTarget, setRewindTarget] = useState<{
+    threadId: string;
+    messageId: string;
+    workspaceId: string | null;
+    undo?: boolean;
+    complete?: (result: ChatCheckpointRestoreResult | null) => void;
+  } | null>(null);
+  const rewindTargetRef = useRef(rewindTarget);
+  rewindTargetRef.current = rewindTarget;
+  useEffect(() => () => rewindTargetRef.current?.complete?.(null), []);
+  const [rewindUndo, setRewindUndo] = useState<{
+    threadId: string;
+    workspaceId: string | null;
+    undoKey: string;
+    filesChanged: number;
+    warning?: string;
+  } | null>(null);
+  const closeRewind = useCallback(() => {
+    rewindTarget?.complete?.(null);
+    setRewindTarget(null);
+  }, [rewindTarget]);
+  useEffect(() => {
+    if (rewindTarget && rewindTarget.workspaceId !== workspaceKey) closeRewind();
+  }, [workspaceKey, rewindTarget, closeRewind]);
+
+  const handleRewind = useCallback(
+    (messageId: string) => {
+      if (activeThreadId)
+        setRewindTarget({ threadId: activeThreadId, messageId, workspaceId: workspaceKey });
+    },
+    [activeThreadId, workspaceKey],
+  );
+
+  const undoRewind = useCallback(() => {
+    if (!rewindUndo || rewindUndo.workspaceId !== workspaceKey) return;
+    setRewindTarget({
+      threadId: rewindUndo.threadId,
+      messageId: rewindUndo.undoKey,
+      workspaceId: workspaceKey,
+      undo: true,
+    });
+  }, [rewindUndo, workspaceKey]);
+
+  const handleEditResend = useCallback(
+    async (
+      sourceIndex: number,
+      messageId: string | undefined,
+      text: string,
+      restoreFiles: boolean,
+      attachments: ChatAttachment[] = [],
+    ): Promise<boolean> => {
+      if (busy || (!text.trim() && !attachments.length)) return false;
+      const sourceThreadId = activeThreadId;
+      const sourceScope = composerScope;
+      const retainAfterNavigation = () => {
+        if (composerScopeRef.current !== sourceScope)
+          recoverComposer(sourceScope, { id: crypto.randomUUID(), text, attachments });
+      };
+      try {
+        if (restoreFiles && messageId && sourceThreadId) {
+          const result = await new Promise<ChatCheckpointRestoreResult | null>((complete) =>
+            setRewindTarget({
+              threadId: sourceThreadId,
+              messageId,
+              workspaceId: workspaceKey,
+              complete,
+            }),
+          );
+          if (!result || result.warning) {
+            retainAfterNavigation();
+            return false;
+          }
+        }
+        // The edited message replaces this one in a new branch; the original
+        // conversation stays as it was.
+        if (composerScopeRef.current !== sourceScope)
+          throw new Error('The source conversation changed. Your edit is kept.');
+        const forkId = await forkThread(sourceIndex, true, sourceThreadId ?? undefined);
+        if (!forkId && composerScopeRef.current !== sourceScope)
+          throw new Error('The source conversation changed. Your edit is kept.');
+        const branchId = forkId ?? (await startNewSession());
+        if (!branchId) throw new Error('Could not create the new conversation. Your edit is kept.');
+        return await new Promise<boolean>((resolve) =>
+          requestChatAction(text, branchId ?? undefined, undefined, attachments, resolve),
+        );
+      } catch (err) {
+        retainAfterNavigation();
+        setSendNotice(err instanceof Error ? err.message : 'Could not resend the edited message.');
+        return false;
+      }
+    },
+    [
+      activeThreadId,
+      busy,
+      composerScope,
+      recoverComposer,
+      forkThread,
+      requestChatAction,
+      startNewSession,
+      workspaceKey,
+    ],
+  );
+
+  const handleRetry = useCallback(
+    (content: string, attachments: ChatAttachment[] = []) => {
+      if (!busy && (content.trim() || attachments.length))
+        requestChatAction(content, activeThreadId ?? undefined, undefined, attachments);
+    },
+    [activeThreadId, busy, requestChatAction],
+  );
+
   const { showJumpToLatest, jumpToLatest: handleJumpToLatest } = useChatScroll({
     containerRef: messagesContainerRef,
     scopeKey: activeThreadId ? `${activeWorkspace?.id ?? 'no-workspace'}:${activeThreadId}` : null,
@@ -449,7 +621,7 @@ export function ChatView({ userRole }: ChatViewProps) {
     };
     window.addEventListener(CHAT_PREFILL_EVENT, handlePrefill);
     return () => window.removeEventListener(CHAT_PREFILL_EVENT, handlePrefill);
-  }, []);
+  }, [setComposerPrefill]);
 
   // --- Handlers ---------------------------------------------------------------
 
@@ -521,6 +693,78 @@ export function ChatView({ userRole }: ChatViewProps) {
       runTarget.devices,
     ],
   );
+  // --- Keyboard: stop, jump to request, move between threads -----------------
+  const keyboardStateRef = useRef({
+    busy,
+    threads,
+    activeThreadId,
+    pendingQuestionTarget,
+    remote: runTarget.remote,
+  });
+  keyboardStateRef.current = {
+    busy,
+    threads,
+    activeThreadId,
+    pendingQuestionTarget,
+    remote: runTarget.remote,
+  };
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return;
+      const state = keyboardStateRef.current;
+      const mod = event.metaKey || event.ctrlKey;
+      const overlayOpen = Boolean(document.querySelector('[role="dialog"], [role="menu"]'));
+
+      if (event.key === 'Escape' && !mod && !event.shiftKey && !event.altKey) {
+        if (!state.busy || overlayOpen) return;
+        const target = event.target as HTMLElement | null;
+        const inComposerOrPage =
+          !target ||
+          target === document.body ||
+          target.closest('[data-chat-scroll-container]') !== null ||
+          target.getAttribute('aria-label') === 'Chat message';
+        if (!inComposerOrPage) return;
+        event.preventDefault();
+        if (state.remote) void runTarget.stop();
+        else interrupt();
+        return;
+      }
+      if (!mod || event.altKey || overlayOpen) return;
+
+      if (event.shiftKey && event.key.toLowerCase() === 'a') {
+        const pending = state.pendingQuestionTarget;
+        if (!pending) return;
+        event.preventDefault();
+        handleJumpToQuestion(pending.id);
+        return;
+      }
+      if (event.shiftKey && event.key.toLowerCase() === 'j') {
+        const next = nextThreadNeedingYou(state.threads, state.activeThreadId);
+        if (!next) return;
+        event.preventDefault();
+        void selectThread(next);
+        return;
+      }
+      if (!event.shiftKey && (event.key === '[' || event.key === ']')) {
+        if (
+          isEditableShortcutTarget(event.target) &&
+          (event.target as HTMLElement).tagName !== 'TEXTAREA'
+        )
+          return;
+        const next = adjacentThreadId(
+          state.threads,
+          state.activeThreadId,
+          event.key === ']' ? 1 : -1,
+        );
+        if (!next || next === state.activeThreadId) return;
+        event.preventDefault();
+        void selectThread(next);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleJumpToQuestion, interrupt, runTarget.stop, selectThread]);
+
   const leadingControls = useMemo(
     () =>
       !scaffoldModeActive && !isTemporaryChat ? (
@@ -733,13 +977,16 @@ export function ChatView({ userRole }: ChatViewProps) {
     [forkThread],
   );
 
-  const handleReuseMessage = useCallback((messageIndex: number, content: string) => {
-    setComposerPrefill({
-      id: `reuse-${messageIndex}-${Date.now()}`,
-      text: buildMessageReusePrefill(content),
-    });
-    setComposerFocusRequest((prev) => prev + 1);
-  }, []);
+  const handleReuseMessage = useCallback(
+    (messageIndex: number, content: string) => {
+      setComposerPrefill({
+        id: `reuse-${messageIndex}-${Date.now()}`,
+        text: buildMessageReusePrefill(content),
+      });
+      setComposerFocusRequest((prev) => prev + 1);
+    },
+    [setComposerPrefill],
+  );
 
   const availableChatModelOptions = useMemo(
     () =>
@@ -790,12 +1037,18 @@ export function ChatView({ userRole }: ChatViewProps) {
   useEffect(() => {
     if (!pendingChatAction || actionInFlight.current || !historyReady) return;
     if (
-      (pendingChatAction.threadId && pendingChatAction.threadId !== activeThreadId) ||
+      pendingChatAction.scope !== composerScope ||
       (pendingChatAction.personaId && pendingChatAction.personaId !== activePersona?.id)
     ) {
       setPendingChatActions((pending) =>
         pending.filter((action) => action.id !== pendingChatAction.id),
       );
+      pendingChatAction.complete?.(false);
+      recoverComposer(pendingChatAction.scope, {
+        id: pendingChatAction.id,
+        text: pendingChatAction.text,
+        attachments: pendingChatAction.attachments,
+      });
       setSendNotice(
         'The requested conversation could not be opened or is no longer active. No prompt was sent. Open it and try the action again.',
       );
@@ -809,17 +1062,31 @@ export function ChatView({ userRole }: ChatViewProps) {
           throw new Error('Chat is not ready. The requested prompt is in the composer.');
         }
         if (!runTarget.remote && busy && session?.capabilities?.followUp.queue) {
-          const result = await followUp('queue', pendingChatAction.text, [], pendingChatAction.id);
+          const result = await followUp(
+            'queue',
+            pendingChatAction.text,
+            pendingChatAction.attachments ?? [],
+            pendingChatAction.id,
+          );
           if (result.status === 'failed')
             throw new Error(result.error ?? 'The action could not be queued.');
           setSendNotice(result.status === 'queued' ? 'Queued after the current run.' : null);
         } else {
-          const accepted = await handleChatInputSend(pendingChatAction.text);
+          const accepted = await handleChatInputSend(
+            pendingChatAction.text,
+            pendingChatAction.attachments ?? [],
+          );
           if (!accepted)
             throw new Error('The action was not sent. The requested prompt is in the composer.');
         }
+        pendingChatAction.complete?.(true);
       } catch (error) {
-        setComposerPrefill({ id: pendingChatAction.id, text: pendingChatAction.text });
+        pendingChatAction.complete?.(false);
+        recoverComposer(pendingChatAction.scope, {
+          id: pendingChatAction.id,
+          text: pendingChatAction.text,
+          attachments: pendingChatAction.attachments,
+        });
         setSendNotice(error instanceof Error ? error.message : 'The action could not be sent.');
       } finally {
         actionInFlight.current = false;
@@ -844,13 +1111,11 @@ export function ChatView({ userRole }: ChatViewProps) {
     session?.capabilities?.followUp.queue,
     followUp,
     handleChatInputSend,
+    composerScope,
+    recoverComposer,
   ]);
 
-  const composerDraftKey = [
-    'mezair:chat-draft',
-    activeThreadId ?? 'no-thread',
-    isWorkItemLayout ? 'workitem-layout' : (activePersona?.id ?? 'no-persona'),
-  ].join(':');
+  const composerDraftKey = `mezair:chat-draft:${composerScope}`;
 
   const isEmpty = entries.length === 0 && !error;
   const pendingQuestions = useMemo(
@@ -933,6 +1198,12 @@ export function ChatView({ userRole }: ChatViewProps) {
     showPanelsCluster &&
     !showItsmWorkbench &&
     !panels.previewMode;
+  const reviewRepos = useMemo(
+    () => (isTemporaryChat || scaffoldModeActive || runTarget.remote ? [] : activeRepos),
+    [activeRepos, isTemporaryChat, runTarget.remote, scaffoldModeActive],
+  );
+  const showReviewPanel =
+    panels.reviewOpen && showPanelsCluster && !showItsmWorkbench && reviewRepos.length > 0;
   const sidePanels = useMemo(
     () => (
       <ChatSidePanels
@@ -953,6 +1224,11 @@ export function ChatView({ userRole }: ChatViewProps) {
         workspaceId={isTemporaryChat ? null : (activeWorkspace?.id ?? null)}
         onItsmPrompt={requestChatAction}
         showActivitySidebar={showActivitySidebar}
+        review={
+          showReviewPanel
+            ? { repos: reviewRepos, busy, refreshKey: reviewRevision, onClose: panels.closeReview }
+            : null
+        }
         activity={{
           workspaceName: isTemporaryChat
             ? 'Temporary chat'
@@ -1024,9 +1300,259 @@ export function ChatView({ userRole }: ChatViewProps) {
       setExecutionSessionStates,
       stopSession,
       goalsSupported,
+      showReviewPanel,
+      reviewRevision,
+      reviewRepos,
+      panels.closeReview,
       agentLabel,
     ],
   );
+  // Run-target details live with the run-target picker, not above the composer.
+  const runTargetNotes =
+    runTarget.legacyRecords.length > 0 ||
+    (runTarget.hosted && !runTarget.record && runTarget.sessionLimitSeconds !== null) ||
+    (runTarget.remote && !runTarget.record && modelProvider === 'codex') ? (
+      <>
+        {runTarget.legacyRecords.length > 0 && (
+          <label className="flex basis-full items-center gap-2 text-xs text-text-secondary">
+            Earlier remote chats
+            <select
+              aria-label="Earlier remote chats"
+              value={runTarget.legacyId ?? ''}
+              disabled={runTarget.sending}
+              onChange={(event) => runTarget.setLegacyId(event.target.value || null)}
+              className="max-w-72 rounded-md border border-border bg-bg-secondary px-2 py-1 text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <option value="">Current chat</option>
+              {runTarget.legacyRecords.map((chat) => (
+                <option key={chat.id} value={chat.id}>
+                  {chat.turns[0]?.prompt.slice(0, 60) ?? 'Remote chat'}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {runTarget.hosted && !runTarget.record && runTarget.sessionLimitSeconds !== null && (
+          <p className="basis-full text-xs text-text-secondary">
+            Pauses after 5 idle minutes. Your account allows up to{' '}
+            {runTarget.sessionLimitSeconds >= 3600
+              ? `${runTarget.sessionLimitSeconds / 3600} hours`
+              : `${runTarget.sessionLimitSeconds / 60} minutes`}{' '}
+            per active cloud session.
+          </p>
+        )}
+        {runTarget.remote && !runTarget.record && modelProvider === 'codex' && (
+          <details className="basis-full text-xs text-text-secondary">
+            <summary className="cursor-pointer">Codex sign-in options</summary>
+            <select
+              aria-label="Codex remote authentication"
+              className="mt-2 rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              value={runTarget.credentialChoice}
+              onChange={(event) =>
+                runTarget.setCredentialChoice(
+                  event.target.value as typeof runTarget.credentialChoice,
+                )
+              }
+            >
+              {!runTarget.hosted && (
+                <option value="target-local">Use the destination's existing login</option>
+              )}
+              <option value="codex-host-auth">Use my Codex login from this device</option>
+              <option value="codex-account">Sign in on the destination</option>
+              <option value="openai-api-key">Use my saved OpenAI API key</option>
+            </select>
+          </details>
+        )}
+      </>
+    ) : null;
+  const composerLeadingControls =
+    leadingControls || runTargetNotes ? (
+      <>
+        {leadingControls}
+        {runTargetNotes}
+      </>
+    ) : undefined;
+
+  const contextUsage = useMemo(() => {
+    for (let index = composedTurns.length - 1; index >= 0; index -= 1) {
+      const usage = composedTurns[index].usage;
+      if (
+        usage?.contextUsed !== undefined &&
+        usage.contextSize !== undefined &&
+        usage.contextSize > 0
+      )
+        return { used: usage.contextUsed, size: usage.contextSize };
+    }
+    return null;
+  }, [composedTurns]);
+
+  // --- Composer attention ----------------------------------------------------
+  // One slot, most urgent first: confirmations that gate input, questions,
+  // approvals waiting in the transcript, then blocking errors and notices.
+  const queuedCount = session?.queuedSendCount ?? 0;
+  const attentionItems: ChatAttentionItem[] = [];
+  if (pendingWorkflowAction) {
+    attentionItems.push({
+      id: 'workflow',
+      label: 'Workflow confirmation',
+      node: (
+        <WorkflowActionConfirmation
+          pending={pendingWorkflowAction}
+          confirming={confirmingWorkflowAction}
+          error={workflowActionError}
+          onConfirm={() => void confirmWorkflowAction()}
+          onKeepInChat={keepWorkflowPromptInChat}
+        />
+      ),
+    });
+  }
+  if (pendingQuestions[0]) {
+    attentionItems.push({
+      id: `question:${pendingQuestions[0].id}`,
+      label: pendingQuestions[0].payload.title ?? 'Question',
+      node: (
+        <PendingQuestionPrompt
+          key={pendingQuestions[0].id}
+          intent={pendingQuestions[0]}
+          additionalCount={Math.max(0, pendingQuestions.length - 1)}
+        />
+      ),
+    });
+  }
+  if (pendingQuestionTarget && pendingQuestionTarget.kind !== 'intent') {
+    attentionItems.push({
+      id: `request:${pendingQuestionTarget.id}`,
+      label: pendingQuestionTarget.kind === 'approval' ? 'Approval' : 'Input request',
+      node: (
+        <PendingRequestPointer target={pendingQuestionTarget} onReview={handleJumpToQuestion} />
+      ),
+    });
+  }
+  if (runTarget.remote && runTarget.error) {
+    attentionItems.push({
+      id: 'remote-error',
+      label: 'Remote error',
+      node: (
+        <p
+          role="alert"
+          className="rounded-xl border border-error/30 bg-error/5 px-4 py-2.5 text-sm text-error"
+        >
+          {runTarget.error}
+        </p>
+      ),
+    });
+  }
+  if (runTarget.hosted && !runTarget.record && !runTarget.providerReady) {
+    attentionItems.push({
+      id: 'hosted-provider',
+      label: 'Cloud agent setup',
+      node: (
+        <p className="rounded-xl border border-border bg-bg-secondary px-4 py-2.5 text-xs text-text-secondary">
+          Enable and connect {agentProviderLabel(modelProvider)} in{' '}
+          <SettingsLink to="sync#cloud-agents">Cloud agent settings</SettingsLink> before sending.
+        </p>
+      ),
+    });
+  }
+  if (sendNotice) {
+    attentionItems.push({
+      id: 'send-notice',
+      label: 'Notice',
+      node: (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 rounded-xl border border-info/25 bg-info/5 px-4 py-2.5 text-xs text-text-secondary"
+        >
+          <span className="min-w-0">{sendNotice}</span>
+          <button
+            type="button"
+            onClick={() => setSendNotice(null)}
+            className="shrink-0 rounded-md px-1.5 py-0.5 text-text-tertiary transition-colors hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          >
+            Dismiss
+          </button>
+        </div>
+      ),
+    });
+  }
+
+  if (rewindUndo && rewindUndo.workspaceId === workspaceKey) {
+    attentionItems.push({
+      id: 'rewind-undo',
+      label: 'Rewind',
+      node: (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 rounded-xl border border-border bg-bg-secondary px-4 py-2.5 text-xs text-text-secondary"
+        >
+          <span className="min-w-0">
+            {rewindUndo.warning ??
+              `Rewound ${rewindUndo.filesChanged} file${rewindUndo.filesChanged === 1 ? '' : 's'}. The previous versions were saved first.`}
+          </span>
+          <span className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={undoRewind}
+              className="rounded-md px-2 py-1 font-medium text-text-primary hover:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-50"
+            >
+              Undo rewind
+            </button>
+            <button
+              type="button"
+              onClick={() => setRewindUndo(null)}
+              className="rounded-md px-2 py-1 text-text-tertiary hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            >
+              Dismiss
+            </button>
+          </span>
+        </div>
+      ),
+    });
+  }
+
+  const showPlanChip =
+    !pendingQuestions[0] && !isTemporaryChat && Boolean(stickyPlanIntent || stickyPlanSnapshot);
+  const isSideQuestionThread = activeThread?.purpose === 'side-question';
+  const composerStatus =
+    showPlanChip || queuedCount > 0 || isSideQuestionThread ? (
+      <>
+        {showPlanChip && (
+          <PlanChip
+            key={stickyPlanIntent?.id ?? 'snapshot'}
+            intent={stickyPlanIntent}
+            snapshot={stickyPlanIntent ? null : stickyPlanSnapshot}
+          />
+        )}
+        {queuedCount > 0 && (
+          <span
+            role="status"
+            className="inline-flex items-center gap-1.5 rounded-full border border-info/25 px-2.5 py-1 text-xs text-text-secondary"
+            title={`${agentLabel} will pick ${queuedCount === 1 ? 'it' : 'them'} up when the current turn finishes.`}
+          >
+            <span className="tabular-nums font-medium text-info">{queuedCount}</span>
+            queued for the next turn
+          </span>
+        )}
+        {isSideQuestionThread && (
+          <span
+            role="status"
+            className="inline-flex items-center gap-2 rounded-full border border-border-subtle px-2.5 py-1 text-xs text-text-secondary"
+          >
+            Side question · read-only
+            {sideQuestion?.sideThreadId === activeThreadId && (
+              <button
+                type="button"
+                onClick={() => void returnFromSideQuestion()}
+                className="rounded-md px-1 font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+              >
+                Back to main task
+              </button>
+            )}
+          </span>
+        )}
+      </>
+    ) : null;
+
   const content = (
     <div className="flex h-full flex-col">
       {/* CH4 — title + PR chip + one segmented Panels control. */}
@@ -1053,7 +1579,15 @@ export function ChatView({ userRole }: ChatViewProps) {
             : null
         }
         showPanels={showPanelsCluster}
-        activePanel={showActivitySidebar ? 'activity' : panels.previewMode ? 'preview' : null}
+        activePanel={
+          showActivitySidebar
+            ? 'activity'
+            : panels.previewMode
+              ? 'preview'
+              : showReviewPanel
+                ? 'review'
+                : null
+        }
         onSelectPanel={(panel: ChatPanelId | null) => panels.setActivePanel(panel)}
         goal={isTemporaryChat ? null : activeGoal}
         onOpenGoal={
@@ -1066,6 +1600,7 @@ export function ChatView({ userRole }: ChatViewProps) {
         }
         showSurfaces={!isTemporaryChat && !scaffoldModeActive}
         previewAvailable={browserAvailable}
+        reviewAvailable={reviewRepos.length > 0}
         activityRunningCount={executionTopology.runningCount}
         showItsmToggle={userRole === 'itsm' && isItsmPersona}
         itsmWorkbenchActive={showItsmWorkbench}
@@ -1204,146 +1739,47 @@ export function ChatView({ userRole }: ChatViewProps) {
               messagesEndRef={messagesEndRef}
               showJumpToLatest={showJumpToLatest}
               onJumpToLatest={handleJumpToLatest}
+              checkpointIds={checkpointIds}
+              onRewind={isTemporaryChat ? undefined : handleRewind}
+              onEditResend={
+                isTemporaryChat || isWorkItemLayout || runTarget.remote
+                  ? undefined
+                  : (sourceIndex, messageId, text, restoreFiles, attachments) =>
+                      handleEditResend(sourceIndex, messageId, text, restoreFiles, attachments)
+              }
+              onRetry={runTarget.remote ? undefined : handleRetry}
+            />
+          )}
+          {rewindTarget && rewindTarget.workspaceId === workspaceKey && (
+            <CheckpointRewindDialog
+              open
+              threadId={rewindTarget.threadId}
+              messageId={rewindTarget.messageId}
+              undo={rewindTarget.undo}
+              repos={repos}
+              onClose={closeRewind}
+              onRestored={(result) => {
+                setReviewRevision((value) => value + 1);
+                if (rewindTarget.undo) {
+                  if (result.warning) setSendNotice(result.warning);
+                  else {
+                    setRewindUndo(null);
+                    setSendNotice('Rewind undone. The files are back to how they were before it.');
+                  }
+                } else
+                  setRewindUndo({
+                    threadId: rewindTarget.threadId,
+                    workspaceId: rewindTarget.workspaceId,
+                    ...result,
+                  });
+                rewindTarget.complete?.(result);
+                refreshCheckpoints();
+              }}
             />
           )}
 
-          {/* Input */}
-          {!pendingQuestions[0] && !isTemporaryChat && (stickyPlanIntent || stickyPlanSnapshot) && (
-            <PlanChip
-              key={stickyPlanIntent?.id ?? 'snapshot'}
-              intent={stickyPlanIntent}
-              snapshot={stickyPlanIntent ? null : stickyPlanSnapshot}
-            />
-          )}
-          {pendingQuestions[0] && (
-            <PendingQuestionPrompt
-              key={pendingQuestions[0].id}
-              intent={pendingQuestions[0]}
-              additionalCount={Math.max(0, pendingQuestions.length - 1)}
-            />
-          )}
-          {pendingWorkflowAction && (
-            <WorkflowActionConfirmation
-              pending={pendingWorkflowAction}
-              confirming={confirmingWorkflowAction}
-              error={workflowActionError}
-              onConfirm={() => void confirmWorkflowAction()}
-              onKeepInChat={keepWorkflowPromptInChat}
-            />
-          )}
-          {/* H2 — live queue depth or a transient notice for rejected sends. */}
-          {(() => {
-            const queuedCount = session?.queuedSendCount ?? 0;
-            const composerNotice =
-              sendNotice ??
-              (queuedCount > 0
-                ? `Queued — ${agentLabel} will pick ${
-                    queuedCount === 1 ? 'it' : `all ${queuedCount} messages`
-                  } up when the current turn finishes.`
-                : null);
-            if (!composerNotice) return null;
-            return (
-              <div className="mx-auto w-full max-w-[1040px] px-4 pb-2 xl:px-6">
-                <div
-                  role="status"
-                  className="flex items-center justify-between gap-3 rounded-lg border border-info/25 bg-info/5 px-3 py-2 text-xs text-text-secondary"
-                >
-                  <span className="min-w-0">{composerNotice}</span>
-                  {sendNotice && (
-                    <button
-                      type="button"
-                      onClick={() => setSendNotice(null)}
-                      className="shrink-0 rounded-md px-1.5 py-0.5 text-text-tertiary transition-colors hover:bg-bg-tertiary hover:text-text-primary"
-                      aria-label="Dismiss notice"
-                    >
-                      Dismiss
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-          {activeThread?.purpose === 'side-question' && (
-            <div
-              className="mx-4 mb-2 flex items-center justify-between gap-3 rounded-lg border border-border-subtle px-3 py-2 text-xs text-text-secondary"
-              role="status"
-            >
-              <span>Side question · Read-only conversation.</span>
-              {sideQuestion?.sideThreadId === activeThreadId && (
-                <button
-                  type="button"
-                  onClick={() => void returnFromSideQuestion()}
-                  className="shrink-0 rounded-md px-2 py-1 font-medium text-accent hover:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-                >
-                  Back to main task
-                </button>
-              )}
-            </div>
-          )}
-          {runTarget.legacyRecords.length > 0 && (
-            <label className="mx-4 mb-2 flex items-center gap-2 text-xs text-text-secondary xl:mx-6">
-              Earlier remote chats
-              <select
-                aria-label="Earlier remote chats"
-                value={runTarget.legacyId ?? ''}
-                disabled={runTarget.sending}
-                onChange={(event) => runTarget.setLegacyId(event.target.value || null)}
-                className="max-w-72 rounded-md border border-border bg-bg-secondary px-2 py-1 text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              >
-                <option value="">Current chat</option>
-                {runTarget.legacyRecords.map((chat) => (
-                  <option key={chat.id} value={chat.id}>
-                    {chat.turns[0]?.prompt.slice(0, 60) ?? 'Remote chat'}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          {runTarget.remote && runTarget.error && (
-            <p
-              role="alert"
-              className="mx-auto w-full max-w-[1040px] px-4 pb-2 text-sm text-error xl:px-6"
-            >
-              {runTarget.error}
-            </p>
-          )}
-          {runTarget.hosted && !runTarget.record && !runTarget.providerReady && (
-            <p className="mx-auto w-full max-w-[1040px] px-4 pb-2 text-xs text-text-secondary xl:px-6">
-              Enable and connect {agentProviderLabel(modelProvider)} in{' '}
-              <SettingsLink to="sync#cloud-agents">Cloud agent settings</SettingsLink>.
-            </p>
-          )}
-          {runTarget.hosted && !runTarget.record && runTarget.sessionLimitSeconds !== null && (
-            <p className="mx-auto w-full max-w-[1040px] px-4 pb-2 text-xs text-text-secondary xl:px-6">
-              Pauses after 5 idle minutes. Your account allows up to{' '}
-              {runTarget.sessionLimitSeconds >= 3600
-                ? `${runTarget.sessionLimitSeconds / 3600} hours`
-                : `${runTarget.sessionLimitSeconds / 60} minutes`}{' '}
-              per active cloud session.
-            </p>
-          )}
-          {runTarget.remote && !runTarget.record && modelProvider === 'codex' && (
-            <details className="mx-auto w-full max-w-[1040px] px-4 pb-2 text-xs text-text-secondary xl:px-6">
-              <summary className="cursor-pointer">Codex sign-in options</summary>
-              <select
-                aria-label="Codex remote authentication"
-                className="mt-2 rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                value={runTarget.credentialChoice}
-                onChange={(event) =>
-                  runTarget.setCredentialChoice(
-                    event.target.value as typeof runTarget.credentialChoice,
-                  )
-                }
-              >
-                {!runTarget.hosted && (
-                  <option value="target-local">Use the destination's existing login</option>
-                )}
-                <option value="codex-host-auth">Use my Codex login from this device</option>
-                <option value="codex-account">Sign in on the destination</option>
-                <option value="openai-api-key">Use my saved OpenAI API key</option>
-              </select>
-            </details>
-          )}
+          {/* One attention area above the composer: the most urgent item, then quiet status. */}
+          <ChatAttentionSlot items={attentionItems} status={composerStatus} />
           <ChatInput
             onSend={handleChatInputSend}
             followUpCapabilities={runTarget.remote ? undefined : session?.capabilities?.followUp}
@@ -1431,14 +1867,18 @@ export function ChatView({ userRole }: ChatViewProps) {
                       ?.displayName ?? 'Remote device')
                   : 'This device',
             ].join(' · ')}
-            leadingControls={leadingControls}
+            leadingControls={composerLeadingControls}
             contextControls={contextControls}
             prefill={isTemporaryChat ? null : composerPrefill}
+            onPrefillApplied={acknowledgePrefill}
+            onPrefillTextApplied={markPrefillTextApplied}
             draftKey={isTemporaryChat ? undefined : composerDraftKey}
             allowAttachments={!isTemporaryChat}
             mentionRepoIds={mentionRepoIds}
             slashCommands={isTemporaryChat ? undefined : slashCommands}
             focusRequest={composerFocusRequest}
+            busyEnterAction={busyEnterAction}
+            contextUsage={runTarget.remote ? null : contextUsage}
           />
         </div>
 

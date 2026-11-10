@@ -1,3 +1,9 @@
+import {
+  saveLocalChatExchange,
+  createChatSession,
+  createTemporaryChatThread,
+  endTemporaryChatThread,
+} from '../chat-persistence.service.js';
 import Database from 'better-sqlite3';
 import { beforeEach, afterAll, describe, expect, it, vi } from 'vitest';
 import { SCHEMA_SQL } from '../../db/schema.js';
@@ -16,7 +22,7 @@ import type { AgentUIQuestionIntent } from '../../../shared/agent-ui-intents.js'
 
 beforeEach(() => {
   db.exec(
-    'DELETE FROM workflow_runs; DELETE FROM agent_ui_intent_responses; DELETE FROM agent_ui_intent_events; DELETE FROM agent_ui_intents; DELETE FROM chat_messages; DELETE FROM chat_artifacts; DELETE FROM chat_threads;',
+    'DELETE FROM workflow_runs; DELETE FROM agent_ui_intent_responses; DELETE FROM agent_ui_intent_events; DELETE FROM agent_ui_intents; DELETE FROM chat_messages; DELETE FROM chat_artifacts; DELETE FROM chat_sessions; DELETE FROM chat_threads;',
   );
   db.prepare(
     'INSERT INTO chat_threads(id,persona_id,title,active_plan_json,active_goal_json) VALUES(?,?,?,?,?)',
@@ -35,6 +41,62 @@ function message(id: string, role: string, content: string, kind = role) {
   ).run(id, 'thread', role, kind, content, `2026-10-18T10:00:${id.padStart(2, '0')}.000Z`);
 }
 describe('portable chat context', () => {
+  it('commits both visible local messages before continuation capture, atomically and idempotently', () => {
+    const user = {
+      id: 'local-user',
+      role: 'user' as const,
+      content: 'Visible request',
+      timestamp: '2026-11-09T10:00:00Z',
+    };
+    const assistant = {
+      id: 'local-answer',
+      role: 'assistant' as const,
+      content: 'Local answer',
+      timestamp: '2026-11-09T10:00:01Z',
+    };
+    createChatSession('thread', null, 'coder', 'session');
+    saveLocalChatExchange('thread', null, 'session', user, assistant);
+    saveLocalChatExchange('thread', null, 'session', user, assistant);
+    expect(captureThreadContinuation('thread').messages).toEqual([
+      { role: 'user', content: 'Visible request' },
+      { role: 'assistant', content: 'Local answer' },
+    ]);
+    db.prepare(
+      "INSERT INTO chat_threads(id, persona_id,title) VALUES('other','coder','Other')",
+    ).run();
+    expect(() =>
+      saveLocalChatExchange('other', null, 's', { ...user, id: 'new' }, assistant),
+    ).toThrow('another conversation');
+    expect(db.prepare("SELECT count(*) AS n FROM chat_messages WHERE id='new'").get()).toEqual({
+      n: 0,
+    });
+  });
+  it('keeps temporary local exchanges in memory and available to continuation', () => {
+    const thread = createTemporaryChatThread('coder');
+    saveLocalChatExchange(
+      thread.id,
+      null,
+      'temp',
+      {
+        id: 'temp-user',
+        role: 'user',
+        content: 'Private request',
+        timestamp: '2026-11-09T10:00:00Z',
+      },
+      {
+        id: 'temp-answer',
+        role: 'assistant',
+        content: 'Private answer',
+        timestamp: '2026-11-09T10:00:01Z',
+      },
+    );
+    expect(captureThreadContinuation(thread.id).context).toContain('Private answer');
+    expect(
+      db.prepare('SELECT count(*) AS n FROM chat_messages WHERE thread_id=?').get(thread.id),
+    ).toEqual({ n: 0 });
+    endTemporaryChatThread(thread.id);
+    expect(captureThreadContinuation(thread.id).context).toBe('');
+  });
   it('preserves delegation identities across provider changes and bounds their metadata', () => {
     db.prepare(
       "INSERT INTO workspaces (id, name, created_at, updated_at) VALUES ('ws', 'Test', datetime('now'), datetime('now')) ON CONFLICT DO NOTHING",

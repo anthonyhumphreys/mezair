@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type Ref } from 'react';
-import { Bot, CircleHelp, Globe, LifeBuoy, Target, X } from 'lucide-react';
+import { Bot, CircleHelp, FileDiff, Globe, LifeBuoy, Target, X } from 'lucide-react';
 import type { ChatGoalSnapshot, WorkspaceScaffoldStatus } from '../../../shared/types';
 import { SegmentedControl } from '../ui';
 import { ChatSurfacesPopover } from './ChatSurfacesPopover';
@@ -27,6 +27,7 @@ export function ChatHeader({
   onOpenGoal,
   showSurfaces = true,
   previewAvailable,
+  reviewAvailable = false,
   activityRunningCount,
   showItsmToggle,
   itsmWorkbenchActive,
@@ -52,6 +53,8 @@ export function ChatHeader({
   /** Whether the thread's Surfaces list is offered. */
   showSurfaces?: boolean;
   previewAvailable: boolean;
+  /** The thread has repositories whose changes can be reviewed. */
+  reviewAvailable?: boolean;
   activityRunningCount: number;
   showItsmToggle: boolean;
   itsmWorkbenchActive: boolean;
@@ -60,7 +63,11 @@ export function ChatHeader({
   panelsGroupRef?: Ref<HTMLDivElement>;
 }) {
   type PanelSelection = ChatPanelId | 'none';
-  const panelValue: PanelSelection = activePanel ?? 'none';
+  const panelValue: PanelSelection =
+    (activePanel === 'review' && !reviewAvailable) ||
+    (activePanel === 'preview' && !previewAvailable)
+      ? 'none'
+      : (activePanel ?? 'none');
 
   return (
     <div className="relative z-40 flex min-h-14 items-center gap-2 border-b border-border/60 bg-bg-secondary px-3 py-2 lg:px-4">
@@ -89,7 +96,8 @@ export function ChatHeader({
               </button>
             )}
           </div>
-          <p title={workspaceName} className="truncate text-xs text-text-tertiary">
+          <p title={`Workspace: ${workspaceName}`} className="truncate text-xs text-text-secondary">
+            <span className="sr-only">Workspace: </span>
             {workspaceName}
           </p>
         </div>
@@ -181,6 +189,14 @@ export function ChatHeader({
                       : 'Activity panel',
                 },
                 {
+                  value: 'review',
+                  label: <span className="hidden min-[900px]:inline">Review</span>,
+                  icon: FileDiff,
+                  title: 'Review changes: stage or discard each change',
+                  disabled: !reviewAvailable,
+                  ariaLabel: 'Review panel',
+                },
+                {
                   value: 'preview',
                   label: <span className="hidden min-[900px]:inline">Preview</span>,
                   icon: Globe,
@@ -200,6 +216,12 @@ export function ChatHeader({
 
 const CHAT_NAVIGATION_SHORTCUTS = [
   { keys: '/', action: 'Focus the message composer' },
+  { keys: 'Esc', action: 'Stop the running turn' },
+  { keys: '⌘⇧A / Ctrl+Shift+A', action: 'Go to the approval or question waiting for you' },
+  { keys: 'A · S · D', action: 'In an approval: approve once, for the session, or decline' },
+  { keys: '⌘⇧J / Ctrl+Shift+J', action: 'Next thread that needs you' },
+  { keys: '⌘[ ⌘] / Ctrl+[ Ctrl+]', action: 'Previous or next thread' },
+  { keys: '⌘F / Ctrl+F', action: 'Search this conversation' },
   { keys: '⌘K / Ctrl+K', action: 'Open the command palette' },
   { keys: '⌘` / Ctrl+`', action: 'Toggle the terminal' },
   { keys: '⌘, / Ctrl+,', action: 'Open settings' },
@@ -218,6 +240,8 @@ function ChatShortcutHelp() {
     };
     const closeOnKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
       setOpen(false);
       triggerRef.current?.focus();
     };

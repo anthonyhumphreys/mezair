@@ -8,6 +8,8 @@ import { ResizableSidebarPanel } from '../layout/ResizableSidebarPanel';
 import { AgentActivitySidebar } from './ChatActivityPanel';
 import { ChatFindingCard } from './ChatFindingCard';
 import { ItsmWorkbench } from './ItsmWorkbench';
+import { ChatReviewPanel } from './ChatReviewPanel';
+import type { RepoInfo } from '../../../shared/types';
 
 /**
  * Right-side panel stack — extracted from ChatView (Phase 5 split).
@@ -35,7 +37,10 @@ export function ChatSidePanels({
   onItsmPrompt,
   showActivitySidebar,
   activity,
+  review,
 }: {
+  /** Working-tree review beside the chat; null when closed. */
+  review: { repos: RepoInfo[]; busy: boolean; refreshKey?: number; onClose: () => void } | null;
   previewMode: PreviewMode | null;
   previewInitialUrl: string;
   onClosePreview: () => void;
@@ -151,6 +156,27 @@ export function ChatSidePanels({
             initialUrl={previewInitialUrl}
             presentation="pane"
             onClose={onClosePreview}
+          />
+        </ResizableSidebarPanel>
+      )}
+
+      {review && !previewMode && (
+        <ResizableSidebarPanel
+          storageKey="chat:review"
+          side="right"
+          title="Review"
+          defaultWidth={560}
+          minWidth={420}
+          maxWidth={1000}
+          collapsedWidth={0}
+          collapsible={false}
+          className="border-l border-border/60 bg-bg-secondary/50"
+        >
+          <ChatReviewPanel
+            repos={review.repos}
+            busy={review.busy}
+            refreshKey={review.refreshKey}
+            onClose={review.onClose}
           />
         </ResizableSidebarPanel>
       )}

@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>PR 105 review fixes</title>
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+        line-height: 1.6;
+        color-scheme: light dark;
+        background: #f7f8fa;
+        color: #18212f;
+      }
+      body {
+        max-width: 100ch;
+        margin: 3rem auto;
+        padding: 0 1.25rem 3rem;
+      }
+      h1,
+      h2 {
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        margin-top: 2.5rem;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        padding: 0.7rem;
+        border-bottom: 1px solid #b8c1ce;
+      }
+      th {
+        min-width: 13ch;
+      }
+      a {
+        color: #2459ad;
+      }
+      pre {
+        overflow: auto;
+        padding: 1rem;
+        background: #e9edf2;
+      }
+      code {
+        font-size: 0.9em;
+      }
+      .table {
+        overflow: auto;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          background: #101722;
+          color: #e5eaf2;
+        }
+        pre {
+          background: #1b2636;
+        }
+        a {
+          color: #9fc1ff;
+        }
+        th,
+        td {
+          border-color: #435169;
+        }
+      }
+      :focus-visible {
+        outline: 2px solid #5388d9;
+        outline-offset: 3px;
+      }
+      ::selection {
+        background: #305da8;
+        color: white;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>PR #105: review fixes</h1>
+    <p>
+      9 November 2026 ·
+      <a href="https://github.com/anthonyhumphreys/mezair/pull/105">Chat experience PR</a>
+    </p>
+    <p>
+      The changes address 79 inline review threads (one contains two findings), additional
+      review-summary findings, fifteen test suggestions and independently verified recovery and
+      streaming issues. The PR remains open for the owner to merge.
+    </p>
+    <h2>File recovery and Git safety</h2>
+    <ul>
+      <li>
+        Rewind requires a durable undo snapshot for every affected repository before changing files.
+        Failed snapshot persistence stops the operation and removes its unrecorded refs.
+      </li>
+      <li>
+        Concurrent rewinds and new managed turns are fenced by canonical checkout path, including
+        aliases and nested repositories. Active turns are rechecked before mutation.
+      </li>
+      <li>
+        If a file operation fails after rewind begins, the UI retains a usable Undo action and
+        reports the incomplete operation.
+      </li>
+      <li>
+        Submodule working files have their own pinned snapshots. Rewind preserves the parent and
+        child index, branches and HEAD. Initialization and topology must match; unsupported legacy
+        snapshots fail explicitly. Nesting and snapshot count are bounded.
+      </li>
+      <li>
+        Review actions use the displayed repository snapshot. Stale hunk fingerprints fail closed,
+        mutation errors remain visible, and unstaging a rename includes both paths.
+      </li>
+    </ul>
+    <h2>Original inline review coverage</h2>
+    <div class="table">
+      <table>
+        <thead>
+          <tr>
+            <th>Finding</th>
+            <th>Change</th>
+            <th>Evidence</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>1. Delegation refresh state</th>
+            <td>Clear stopped subscriptions and respect empty/expired cache snapshots.</td>
+            <td>
+              Source review; bounded shared polling cache<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826869"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>2. Queued delegation placement</th>
+            <td>
+              Use the main-process delivery start time in live entries and hydrated history; keep
+              unknown boundaries unplaced.
+            </td>
+            <td>
+              Turn placement and history timing regressions<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826873"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>3. Delegation draft retention</th>
+            <td>
+              Own expanded state, verification selections and command drafts by thread/run outside
+              individual lists.
+            </td>
+            <td>
+              Headless rendered test and Safari<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826875"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>4. Repository-switch safety</th>
+            <td>
+              Scope status and diffs to the selected repository; invalidate actions until matching
+              status is available.
+            </td>
+            <td>
+              Headless rendered test and Safari<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826879"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>5. Unread status</th>
+            <td>
+              Compare lastMessageAt to the last viewed time; renames no longer create unread dots.
+            </td>
+            <td>
+              Source review<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826885"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>6. Context overrun</th>
+            <td>Report the actual percentage while capping the visual bar at 100%.</td>
+            <td>
+              Rendered markup regression<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826895"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>7. Compact processing label</th>
+            <td>Apply the secondary text token directly in compact cards.</td>
+            <td>
+              Source review<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826898"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>8. Context-only usage</th>
+            <td>Fall back to the complete usage label when no token/model summary exists.</td>
+            <td>
+              Usage-format regression<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503826903"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>9. Local-reply checkpoints</th>
+            <td>Capture the pre-turn snapshot before the local-model fast path can return.</td>
+            <td>
+              IPC ordering review<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503829970"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>10. Submodule recovery</th>
+            <td>
+              Snapshot initialized submodule working files recursively, retain child refs and
+              preserve child HEAD/index.
+            </td>
+            <td>
+              Real-Git capture, restore and unchanged-index tests<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503829979"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>11. Git prefix compatibility</th>
+            <td>
+              Generate literal-path, apply-compatible patches with explicit a/ and b/ prefixes.
+            </td>
+            <td>
+              Real-Git diff.noprefix regression<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503829985"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>12. Panel keyboard access</th>
+            <td>Select the enabled None option when the active panel is unavailable.</td>
+            <td>
+              Source review<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503829989"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>13. Escape handling</th>
+            <td>Consume Escape before closing shortcut help so it cannot stop the running turn.</td>
+            <td>
+              Event handling review<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503829996"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>14. Failed edited sends</th>
+            <td>
+              Await send acceptance; preserve text on failure and use thread-wide busy gating.
+            </td>
+            <td>
+              Headless rendered test and Safari<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503830003"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>15. Persistent hunk errors</th>
+            <td>Keep mutation errors separate from transient status refresh errors.</td>
+            <td>
+              Headless rendered test and Safari<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503830010"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>16. Rename unstaging</th>
+            <td>Reset both source and destination paths for a staged rename.</td>
+            <td>
+              Real-Git rename regression<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503830014"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>17. Delegation refresh errors</th>
+            <td>Show refresh failure and retry controls even when runs are placed inside turns.</td>
+            <td>
+              Source review<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503830021"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>18. Paginated edit history</th>
+            <td>
+              Resolve the edited message against complete history before excluding it from the fork.
+            </td>
+            <td>
+              Fork/history source review and typechecks<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503830024"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>19. Attachment preservation</th>
+            <td>
+              Carry original attachments through edit/resend, retry, the action queue, provider send
+              and composer recovery.
+            </td>
+            <td>
+              Transport source review and regression suite<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503830029"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+          <tr>
+            <th>20. Prepared and queued snapshots</th>
+            <td>
+              Use stable user/request IDs for prepared launches and capture queued turns at actual
+              delivery, including legacy ACP steering.
+            </td>
+            <td>
+              Prepared-send review and ACP parity tests<br /><a
+                href="https://github.com/anthonyhumphreys/mezair/pull/105#discussion_r4503830035"
+                >Review thread</a
+              >
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      The two additional test suggestions are also covered: checkpoint tests use different staged
+      and unstaged contents and compare index trees before and after both capture and restore; a
+      real-Git test unstages one hunk while preserving the other staged hunk and all working-tree
+      bytes.
+    </p>
+    <h2>Performance CI repair</h2>
+    <p>
+      The renderer check depended on the old text “Jump to live work”. The control now has a stable
+      accessible label, and the fixture locates that semantic control. The existing assertions for
+      reader position, expanded history and jumping to the bottom remain in place. Performance
+      budgets were not relaxed.
+    </p>
+    <h2>Delayed follow-up review</h2>
+    <ul>
+      <li>
+        Checkpoint capture, rewind, whole-file discard and hunk discard share canonical checkout
+        leases. A capture cannot retain partially restored files.
+      </li>
+      <li>
+        Provider send preparation reserves its session before awaiting work. Simultaneous idle
+        follow-ups queue in order; failed preparation releases the reservation.
+      </li>
+      <li>
+        Git whole-file actions use literal paths, parsed diffs disable forced color, and staged
+        renames require whole-file unstaging so their source deletion cannot be left behind.
+      </li>
+      <li>
+        Verification busy state and completion belong to the transcript store and survive panel
+        remounts. A remount cannot resubmit in-flight verification commands.
+      </li>
+      <li>
+        Inline edits stay mounted while the thread is busy. Retained attachments make a request
+        sendable even with empty text, including through the real ChatView action queue.
+      </li>
+      <li>
+        A successful mutation refreshes the displayed repository even when manual Refresh races its
+        completion. Closed panel controls retain an enabled keyboard tab stop.
+      </li>
+      <li>Delivery timestamps survive uncertain retries and subsequent status events.</li>
+      <li>
+        Failed actions recover only into their original workspace, thread and persona composer. A
+        browser regression exercises the real ChatView editor, fork, send failure, thread switch,
+        attachment recovery and the other conversation's persisted draft.
+      </li>
+      <li>
+        The earlier durable cleanup queue and stop-on-incomplete-rewind behavior also address the
+        follow-up review's cleanup and partial-rewind findings.
+      </li>
+    </ul>
+    <p>
+      The four additional test suggestions cover distinct enqueue/delivery timestamps, empty and
+      model-only usage, a zero-sized context meter, failed resend through ChatView, and undo after a
+      successful file removal followed by a second operation failure.
+    </p>
+    <h2>Additional findings in the review summary</h2>
+    <ul>
+      <li>
+        Whole-file discard uses a fingerprint of the reviewed patch, reverses that patch through
+        Git, and refuses newer edits. It is disabled while the agent is working. Untracked deletion
+        is protected by the same reviewed-content check.
+      </li>
+      <li>
+        Every repository needs a durable undo snapshot before rewind; partial failures retain a
+        usable recovery key.
+      </li>
+      <li>
+        Undo is associated with its source workspace and cannot appear or run from another
+        workspace. It opens a file preview before applying.
+      </li>
+      <li>
+        Rewind, undo and edit/resend confirm the current file set through a main-process tree
+        fingerprint. Changed files refresh the preview and require another confirmation. The service
+        rechecks all contents after saving undo and before its first write.
+      </li>
+      <li>
+        Recovery leases and active-session checks use canonical execution paths, including shared
+        checkouts, nested repositories and retained repair worktrees.
+      </li>
+      <li>
+        Checkpoints persist the validated execution path. Capture, preview, rewind and undo use the
+        retained repair worktree; unavailable or mismatched bindings fail without falling back to
+        the ordinary checkout.
+      </li>
+      <li>
+        Content-hunk patches exclude executable-bit changes. Current-selection keys prevent stale
+        hunks acting on another file; diffs and checkpoint restore use literal paths.
+      </li>
+      <li>
+        Schema 121 retains Git-ref cleanup metadata transactionally before checkpoint rows cascade
+        away. Cleanup runs at startup and in bounded background batches, retries offline checkouts,
+        and checks the expected ref value before deletion.
+      </li>
+      <li>
+        Current conversation repository scope and workspace membership are validated before preview
+        reads and independently before restore changes files.
+      </li>
+    </ul>
+    <p>
+      Real-Git and SQLite regressions cover stale previews, edits during undo capture, removed
+      workspace membership, indirect deletion, executable-bit preservation, reviewed deletion,
+      repair-worktree recovery, the oldest retained checkpoint, and upgrades from schema 120.
+    </p>
+    <h2>Latest review: recovery boundaries and interaction details</h2>
+    <ul>
+      <li>
+        Thread deletion, local and synced workspace deletion, repository removal and ref cleanup
+        share recovery leases. Undo metadata stays intact during a rewind.
+      </li>
+      <li>
+        Normal and queued captures use the provider session's actual repository bindings. Stale
+        bindings fail closed; the UI starts a fresh idle session when repository selection changes.
+        Active-session exclusion includes the execution cwd for repository-free workspace chats.
+      </li>
+      <li>
+        Offline secondary checkouts are skipped during best-effort capture while explicit bindings
+        still validate current membership.
+      </li>
+      <li>
+        Schema 122 stores independent child-ref manifests. Cleanup survives a missing parent ref,
+        preserves legacy paths before forgetting a repository, and advances past unavailable rows.
+        Retention uses insertion order so clock changes cannot immediately prune a new Undo.
+      </li>
+      <li>
+        Git review forces three context lines, uses the displayed no-index patch for untracked
+        hunks, terminates hanging Git/filter process groups, refuses parent-level submodule discard,
+        and fences checkout-changing branch operations.
+      </li>
+      <li>
+        Both file and hunk discard are disabled during active work. Rewind and Undo invalidate and
+        refresh the open Review panel immediately.
+      </li>
+      <li>
+        First-message edits carry the explicitly created thread ID. Composer recovery queues all
+        failed actions and acknowledges each after applying it. Reuse and event handlers follow the
+        active conversation; work-item layout keeps its own scope.
+      </li>
+      <li>
+        Arrow keys continue from the focused option after a panel closes. Regressions cover disabled
+        selected options and confirm the actual repository IDs used by delayed mutations.
+      </li>
+      <li>
+        Rendered checks fail on uncaught browser exceptions. The expanded suite passed 70 assertions
+        across wide and narrow layouts, including the real ChatView first-message edit and
+        multiple-action recovery.
+      </li>
+    </ul>
+    <h2>Final review follow-up</h2>
+    <ul>
+      <li>
+        Ordinary sends reserve their session before checkpoint or local-reply preparation.
+        Follow-ups queue during preparation and settle after local replies, provider delivery or
+        failure.
+      </li>
+      <li>
+        Explicit scaffold and headless Mesh execution roots remain valid without repository IDs.
+        Repo-bound sessions retain path-cardinality validation and canonical Windows assertions.
+      </li>
+      <li>
+        Git pull, branch creation, checkout and merge have bounded subprocess lifetimes. Discard
+        checks overlapping active conversations in main while holding the same lease that blocks new
+        turns.
+      </li>
+      <li>
+        Quarantined workspace projection and binding changes now commit together. A busy recovery
+        lease retains the original sealed update and schedules retry.
+      </li>
+      <li>
+        Forks carry their source thread and respect navigation; replacement sessions stop before
+        installing themselves in another conversation. A blocked /new retains its text.
+      </li>
+      <li>
+        Recovery retains overflow attachments, blocks incomplete submission and acknowledges text
+        separately so navigation cannot append it twice. Scoped attachment metadata survives
+        composer remounts. Deleted destinations release queued payloads after checking the local
+        thread catalogue.
+      </li>
+      <li>
+        Rendered assertions check request ordering, both discard controls and exact mutation
+        destinations. Service regressions check that stale sends never capture and real mutation
+        entry points preserve Undo while leased.
+      </li>
+    </ul>
+    <h2>Final composer review — 10 November 2026</h2>
+    <p>
+      The composer now combines model and run settings while keeping the model locked during an
+      active run. The final rendered review found that replacing the search field with the
+      busy-state panel lost keyboard focus and prevented Escape from dismissing it. The panel now
+      focuses an editable setting when opened while busy or when a run starts. Escape closes the
+      panel and restores trigger focus.
+    </p>
+    <p>
+      Both 1280px and 720px browser checks verify the idle searchable picker, the busy model lock,
+      settings focus, and Escape/trigger restoration. The expanded rendered suite passed
+      <strong>110 assertions</strong>; 25 focused composer tests, the renderer TypeScript check,
+      lint and fixture build also passed. Final CI and merge results are recorded in the handoff.
+    </p>
+    <h2>Latest review: startup, recovery and process lifetimes</h2>
+    <ul>
+      <li>
+        Delegated workers register their canonical execution paths before asynchronous startup.
+        Discard and rewind reject overlapping workers, even when their coordinator is idle;
+        native-process ownership continues through close.
+      </li>
+      <li>
+        On-device replies atomically save the visible user/assistant exchange before completion and
+        queued continuation capture. Stable assistant IDs avoid duplicate or late partial renderer
+        writes. Temporary conversation history stays in memory.
+      </li>
+      <li>
+        Codex start, resume and fork requests and deferred ACP new/load/retry requests revalidate
+        current scope. Rejected late ACP dispatch fails the startup promise and cleans up the
+        process/token. Claude checks again after asynchronous SDK setup and at child spawn.
+        Threadless Design, BA and persona restarts pin their originating active workspace rather
+        than skipping membership checks.
+      </li>
+      <li>
+        POSIX Git timeouts wait for the child and live process-group descendants before releasing
+        the checkout lease. Pulls use a 30-minute hard limit and a five-minute idle limit, with
+        progress resetting the idle timer. Other reviewed operations keep the short deadline.
+      </li>
+      <li>
+        Sync session retirement invalidates deferred quarantine retries, preserving the sealed
+        update without projecting it after sign-out.
+      </li>
+      <li>
+        Completed attachment prefills no longer reinsert removed files or block sending when their
+        callback is omitted. Capacity overflow remains retryable. A scope switch loads its
+        attachment state before applying recovery.
+      </li>
+      <li>
+        Composer draft keys include workspace, thread and persona/layout. Legacy keys without an
+        attributable workspace are left inert rather than adopting another workspace's files.
+      </li>
+      <li>
+        A narrow thread-existence bridge checks the local catalogue across normal and work-item
+        conversations. Recovery queues and lookups survive ChatView unmounts until their scoped
+        composer acknowledges each payload; confirmed deletion releases retained data.
+      </li>
+      <li>
+        Opening, resuming or leaving temporary chat invalidates earlier navigation requests. A
+        superseded temporary creation is ended instead of replacing the active conversation.
+      </li>
+      <li>
+        Permission cancellation is classified by the actual selected option; data-free denials
+        remain possible after scope removal.
+      </li>
+    </ul>
+    <p>
+      The focused service set passed 170 regressions. The browser suite passed
+      <strong>98 rendered assertions</strong> at 1280px and 720px, including real ChatView remounts,
+      work-item lookup recovery, workspace draft isolation and optional-prefill removal/send. The
+      complete local suite passed 3,744 tests with 12 existing skips; both TypeScript projects, lint
+      and the production build passed. Final CI results are recorded in the handoff.
+    </p>
+    <h2>Security finding: current workspace membership</h2>
+    <p>
+      <strong>Outcome: implementation complete; final CI verification pending.</strong> A ready
+      session could receive a new writable turn after its repository left the workspace: checkpoint
+      capture rejected the repository, but its best-effort error was swallowed. The shared send
+      boundary now checks current membership independently of snapshots, including after
+      asynchronous ACP acknowledgements. A pinned workspace identity also rejects a reset that
+      leaves the same thread unassigned. Guides, feedback, local output, live tool context and
+      accepted pending answers/approvals use the same current grant. Denial and cancellation remain
+      available.
+    </p>
+    <p>
+      Files: <code>chat-session-scope.ts</code>, <code>codex-session.service.ts</code>,
+      <code>chat.ipc.ts</code> and <code>local-chat-stream.ts</code>. The narrow strategy preserves
+      immutable execution bindings and retained repair paths rather than replacing them with
+      ordinary checkout paths. Legitimate scaffold, Mesh, repository-free workspace and queued-send
+      controls pass.
+    </p>
+    <p>
+      Regression proof uses real SQLite membership removal and provider protocol fakes: unchanged
+      conversation repository IDs cannot authorize a detached repository, no new prompt/steer or
+      accepted reply is written, and cancellation succeeds. An EventEmitter test proves a revoked
+      local stream rejects the awaited send without escaping the native callback. Fresh independent
+      review exposed that callback issue and the pending-response sibling paths; both were
+      addressed.
+    </p>
+    <pre><code># Owning workspace: mezair-app/
+# Gate 1: syntax, imports and types
+pnpm exec tsc --noEmit -p tsconfig.node.json
+pnpm exec tsc --noEmit -p tsconfig.web.json
+# Gate 2: original trigger, sibling paths and callback safety
+pnpm exec vitest run src/main/services/__tests__/acp-session-parity.test.ts src/main/services/__tests__/agent-mcp-session.test.ts src/main/services/__tests__/chat-checkpoint-safety.test.ts src/main/services/__tests__/local-chat-stream.test.ts
+# Gate 3: legitimate controls and package checks
+pnpm lint
+pnpm exec electron-vite build
+pnpm exec vitest run</code></pre>
+    <p>
+      The affected service set passed 183 tests. The last completed full local run before the final
+      callback regressions passed 3,722 tests with 12 existing skips. A later full run encountered
+      host sleeps lasting up to 15 minutes; the affected tests passed on rerun. The final CI run is
+      the authoritative complete result. This is a targeted permission-boundary fix, not a claim
+      that all repository vulnerabilities were audited or that existing native processes lose their
+      OS permissions mid-turn.
+    </p>
+    <h2>Validation</h2>
+    <p>
+      <strong
+        >Latest local candidate: 3,744 tests passed, 12 existing skips; 400 test files passed and
+        four skipped. Both TypeScript projects, ESLint and production main/preload/renderer builds
+        passed. The threadless startup regression failed before the fix and passed afterward,
+        alongside 103 startup/scope/Mesh/checkpoint controls. The independent candidate review is
+        complete; its confirmed threadless bypass was addressed.</strong
+      >
+    </p>
+    <p>
+      A complete earlier local suite passed 3,712 tests with 12 existing skips. The final
+      Unicode-stream regression also passed in the 24-test Git suite. Both Desktop TypeScript
+      projects, lint and the production main/preload/renderer build passed.
+    </p>
+    <p>
+      The extended rendered suite includes 98 assertions covering overflow recovery, remount,
+      navigation and blocked-command regressions at 1280px and 720px; final totals are recorded in
+      the handoff. It exercises repository switches, exact mutation destinations, stale errors and
+      confirmation, busy controls, keyboard navigation, verification remounts, and the real
+      ChatView's editor, explicit first-message branch and scoped multi-action recovery. It uses
+      synthetic state in disposable browser profiles, without account, provider or repository
+      access; uncaught browser exceptions fail the run.
+    </p>
+    <p>
+      The final handoff records the latest commit's remote results, including packaging, paired
+      renderer performance budgets and the Windows packaged soak, from the
+      <a href="https://github.com/anthonyhumphreys/mezair/pull/105/checks">PR checks page</a>.
+      Earlier local runs encountered sandbox loopback restrictions and host stalls; the completed
+      local run and CI provide the verification evidence. No merge or release is performed by this
+      change.
+    </p>
+    <!-- PERF_TABLE_START -->
+    <h2>Measured chat performance</h2>
+    <p>
+      An earlier completed paired CI run, on <code>8bc488f7</code>, compared five alternating pairs
+      against pinned reference <code>25800924</code>. This is the cumulative PR comparison against a
+      historical baseline, not the isolated speedup from the review fixes.
+    </p>
+    <div class="table">
+      <table>
+        <thead>
+          <tr>
+            <th>Median metric</th>
+            <th>Reference</th>
+            <th>PR</th>
+            <th>Reduction</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>Transcript mount</th>
+            <td>1,766.2 ms</td>
+            <td>126.3 ms</td>
+            <td>92.8%</td>
+          </tr>
+          <tr>
+            <th>Stream update p95</th>
+            <td>20.7 ms</td>
+            <td>15.2 ms</td>
+            <td>26.6%</td>
+          </tr>
+          <tr>
+            <th>Compose batch</th>
+            <td>57.2 ms</td>
+            <td>43.9 ms</td>
+            <td>23.3%</td>
+          </tr>
+          <tr>
+            <th>DOM elements</th>
+            <td>57,021</td>
+            <td>681</td>
+            <td>98.8%</td>
+          </tr>
+          <tr>
+            <th>Retained JS heap over idle</th>
+            <td>71.32 MB</td>
+            <td>12.35 MB</td>
+            <td>82.7%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Scenario: 1,000 turns, 30 operations per turn, 60 stream updates, fresh headless Chrome
+      contexts and forced garbage collection. Retained heap measures renderer JavaScript over idle,
+      not total Desktop RSS. These results do not measure real provider latency or replace
+      live-provider endurance testing.
+      <a href="https://github.com/anthonyhumphreys/mezair/actions/runs/42520529972">Source run</a>.
+    </p>
+    <!-- PERF_TABLE_END -->
+    <h2>Reproduce the rendered checks</h2>
+    <pre><code># From mezair-app/
+pnpm exec vite build --config scripts/chat-review.vite.config.ts
+node scripts/chat-review-checks.mjs
+
+# Optional visual fixture:
+pnpm exec vite --config scripts/chat-replay.vite.config.ts --port 4189
+# Open http://127.0.0.1:4189/?review</code></pre>
+    <h2>Scope and limits</h2>
+    <p>
+      Checkpoints cover local normal chats, prepared tasks and delivered queued turns. Temporary
+      chats and read-only side questions remain excluded. Repository leases coordinate
+      Mezair-managed operations; they are not operating-system filesystem locks. Submodules must be
+      initialized and retain their recorded layout. No new provider permissions are granted.
+    </p>
+  </body>
+</html>

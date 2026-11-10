@@ -1,3 +1,4 @@
+import { registerManagedWorkerPaths, retainManagedWorkerProcess } from './managed-worker-paths.js';
 import { validateWorkflowTarget } from '../../shared/workflow-target.js';
 import { constrainPermissionMode } from '../../../cloud/contract/permissions.js';
 import {
@@ -923,6 +924,7 @@ async function runCodexThread(input: {
     toolAccess.close();
     throw error;
   }
+  retainManagedWorkerProcess(proc, [...input.repoRows.map((repo) => repo.path), cwd]);
   activeProcesses.set(input.key, proc);
   createChatSession(
     input.threadId,
@@ -1203,6 +1205,7 @@ async function runAcpCliThread(input: {
     env: providerSpawnEnv(),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  retainManagedWorkerProcess(proc, [...input.repoRows.map((repo) => repo.path), cwd]);
   activeProcesses.set(input.key, proc);
 
   return new Promise((resolve, reject) => {
@@ -1272,24 +1275,35 @@ async function runAcpCliThread(input: {
 async function runAgentThread(
   input: Omit<Parameters<typeof runCodexThread>[0], 'provider'> & { provider: AgentProvider },
 ): Promise<CodexThreadResult> {
-  const settings = getSettings();
-  const enabledProviders = settings.enabledLlmProviders?.length
-    ? settings.enabledLlmProviders
-    : [settings.llmProvider];
-  if (!enabledProviders.includes(input.provider)) {
-    throw new Error(
-      `${input.provider} is not enabled. Activate it in Settings before running this workflow.`,
-    );
+  const paths = input.repoRows.map((repo) => repo.path);
+  const cwd = resolveSessionCwd(
+    paths,
+    { workspace: { workspaceId: input.workspaceId } },
+    app.getPath('userData'),
+  );
+  const releaseWorker = registerManagedWorkerPaths([...paths, cwd]);
+  try {
+    const settings = getSettings();
+    const enabledProviders = settings.enabledLlmProviders?.length
+      ? settings.enabledLlmProviders
+      : [settings.llmProvider];
+    if (!enabledProviders.includes(input.provider)) {
+      throw new Error(
+        `${input.provider} is not enabled. Activate it in Settings before running this workflow.`,
+      );
+    }
+    if (isAcpAgentProvider(input.provider)) {
+      if (input.factoryRunId)
+        throw new Error('Factory workers require an isolated Codex app-server provider.');
+      return await runAcpCliThread({ ...input, provider: input.provider });
+    }
+    return await runCodexThread({
+      ...input,
+      provider: input.provider,
+    });
+  } finally {
+    releaseWorker();
   }
-  if (isAcpAgentProvider(input.provider)) {
-    if (input.factoryRunId)
-      throw new Error('Factory workers require an isolated Codex app-server provider.');
-    return runAcpCliThread({ ...input, provider: input.provider });
-  }
-  return runCodexThread({
-    ...input,
-    provider: input.provider,
-  });
 }
 
 function validateWorkflowConfiguration(template: WorkflowTemplateInput): void {

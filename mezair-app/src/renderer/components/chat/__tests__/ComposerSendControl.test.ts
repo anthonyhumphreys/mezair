@@ -24,7 +24,6 @@ describe('ComposerSendControl', () => {
         options: [option('guide'), option('queue')],
         selectedId: 'queue',
         onSelect: () => undefined,
-        hasContent: true,
         menuLabel: 'More ways to send',
       }),
     );
@@ -39,7 +38,6 @@ describe('ComposerSendControl', () => {
         options: [option('send', { disabled: true })],
         selectedId: 'side',
         onSelect: () => undefined,
-        hasContent: false,
         menuLabel: 'More ways to send',
       }),
     );

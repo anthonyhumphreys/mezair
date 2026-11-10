@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="1250" viewBox="0 0 1120 1250" role="img" aria-labelledby="mcp-diagram-title mcp-diagram-description">
+<title id="mcp-diagram-title">How external bots use Mezair</title>
+<desc id="mcp-diagram-description">A bot connects over authenticated MCP to either an owner-hosted daemon or a managed gateway and isolated worker. Both paths enforce the owner's selected repositories, tools, budgets, approvals and expiry before using Mezair capabilities and returning filtered results. Account encryption keys remain on trusted owner devices. Managed execution receives only approved data and scoped keys. The separate Sync and Mesh coordinator routes ciphertext and metadata without an account key. The bot provider, and the managed gateway or worker when selected, can read approved tool data.</desc>
+<defs>
+<marker id="mcp-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1L9 5L1 9" fill="none" stroke="#225f46" stroke-width="1.5"/></marker>
+<marker id="mcp-sealed-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1L9 5L1 9" fill="none" stroke="#53635a" stroke-width="1.5"/></marker>
+</defs>
+<rect width="1120" height="1250" fill="#f7f9f5"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#14221f">
+<text x="40" y="52" font-size="36" font-weight="700" fill="#14221f" text-anchor="start">How external bots use Mezair</text>
+<text x="40" y="87" font-size="21" font-weight="400" fill="#53635a" text-anchor="start">You choose repositories, tools, budgets, approvals and expiry.</text>
+<rect x="335" y="122" width="450" height="112" rx="12" fill="#14221f" stroke="#14221f" stroke-width="1.5"/>
+<text x="560" y="156" font-size="26" font-weight="700" fill="#ffffff" text-anchor="middle">Your bot</text>
+<text x="560" y="188" font-size="20" font-weight="400" fill="#e0eae3" text-anchor="middle">Grok Bot · OpenAI dot · other MCP clients</text>
+<text x="560" y="215" font-size="19" font-weight="400" fill="#e0eae3" text-anchor="middle">Receives only the results you permit</text>
+<text x="560" y="271" font-size="20" font-weight="500" fill="#225f46" text-anchor="middle">Authenticated MCP requests / filtered results</text>
+<path d="M560 234V247" fill="none" stroke="#225f46" stroke-width="2" marker-end="url(#mcp-arrow)"/>
+<path d="M560 285V306M290 306H830" fill="none" stroke="#225f46" stroke-width="2"/>
+<rect x="40" y="324" width="500" height="387" rx="12" fill="#e4efe6" stroke="#c1d4c5" stroke-width="1.5"/>
+<rect x="580" y="324" width="500" height="387" rx="12" fill="#e4efe6" stroke="#c1d4c5" stroke-width="1.5"/>
+<path d="M290 306V378" fill="none" stroke="#225f46" stroke-width="2" marker-end="url(#mcp-arrow)" marker-start="url(#mcp-arrow)"/>
+<path d="M830 306V378" fill="none" stroke="#225f46" stroke-width="2" marker-end="url(#mcp-arrow)" marker-start="url(#mcp-arrow)"/>
+<text x="65" y="358" font-size="25" font-weight="700" fill="#14221f" text-anchor="start">Owner-hosted</text>
+<text x="605" y="358" font-size="25" font-weight="700" fill="#14221f" text-anchor="start">Managed</text>
+<rect x="70" y="384" width="440" height="260" rx="12" fill="#ffffff" stroke="#d4ded5" stroke-width="1.5"/>
+<text x="290" y="422" font-size="26" font-weight="700" fill="#14221f" text-anchor="middle">Your daemon</text>
+<text x="290" y="460" font-size="21" font-weight="400" fill="#14221f" text-anchor="middle">MCP endpoint + permission checks</text>
+<text x="290" y="492" font-size="21" font-weight="400" fill="#14221f" text-anchor="middle">Isolated execution</text>
+<path d="M95 515H485" stroke="#d4ded5" stroke-width="1"/>
+<text x="290" y="550" font-size="20" font-weight="500" fill="#225f46" text-anchor="middle">Account key stays on your trusted host</text>
+<text x="290" y="582" font-size="20" font-weight="400" fill="#14221f" text-anchor="middle">Needs an online owner-controlled host</text>
+<text x="290" y="619" font-size="19" font-weight="400" fill="#53635a" text-anchor="middle">You operate the infrastructure</text>
+<rect x="610" y="384" width="440" height="105" rx="12" fill="#ffffff" stroke="#d4ded5" stroke-width="1.5"/>
+<text x="830" y="416" font-size="25" font-weight="700" fill="#14221f" text-anchor="middle">Managed MCP gateway</text>
+<text x="830" y="447" font-size="20" font-weight="400" fill="#14221f" text-anchor="middle">Authentication + connection scopes</text>
+<text x="830" y="474" font-size="19" font-weight="400" fill="#53635a" text-anchor="middle">Reads approved requests and results</text>
+<path d="M830 493V533" fill="none" stroke="#225f46" stroke-width="2" marker-end="url(#mcp-arrow)" marker-start="url(#mcp-arrow)"/>
+<rect x="610" y="539" width="440" height="105" rx="12" fill="#ffffff" stroke="#d4ded5" stroke-width="1.5"/>
+<text x="830" y="571" font-size="25" font-weight="700" fill="#14221f" text-anchor="middle">Isolated managed worker</text>
+<text x="830" y="601" font-size="20" font-weight="400" fill="#14221f" text-anchor="middle">Permission checks + execution</text>
+<text x="830" y="628" font-size="19" font-weight="500" fill="#225f46" text-anchor="middle">Scoped data and keys only · no account key</text>
+<text x="290" y="682" font-size="19" font-weight="400" fill="#53635a" text-anchor="middle">Direct access to permitted local data</text>
+<text x="830" y="677" font-size="19" font-weight="500" fill="#225f46" text-anchor="middle">Works while your devices are offline</text>
+<text x="830" y="700" font-size="18" font-weight="400" fill="#53635a" text-anchor="middle">Using provisioned data or explicit service grants</text>
+<path d="M290 714V748H560V777" fill="none" stroke="#225f46" stroke-width="2" marker-end="url(#mcp-arrow)"/>
+<path d="M830 714V748H560V777" fill="none" stroke="#225f46" stroke-width="2" marker-end="url(#mcp-arrow)"/>
+<rect x="140" y="785" width="840" height="112" rx="12" fill="#ffffff" stroke="#d4ded5" stroke-width="1.5"/>
+<text x="560" y="819" font-size="26" font-weight="700" fill="#14221f" text-anchor="middle">Mezair capabilities</text>
+<text x="560" y="850" font-size="21" font-weight="400" fill="#14221f" text-anchor="middle">Repositories · threads · factories · Mesh · Cloud · Registry</text>
+<text x="560" y="880" font-size="19" font-weight="400" fill="#53635a" text-anchor="middle">Current grants and host capabilities limit every action and returned result.</text>
+<text x="40" y="943" font-size="25" font-weight="700" fill="#14221f" text-anchor="start">Separate encrypted sync and provisioning</text>
+<rect x="40" y="968" width="470" height="142" rx="12" fill="#ffffff" stroke="#d4ded5" stroke-width="1.5"/>
+<text x="65" y="1004" font-size="25" font-weight="700" fill="#14221f" text-anchor="start">Trusted owner devices</text>
+<text x="65" y="1038" font-size="21" font-weight="400" fill="#14221f" text-anchor="start">Approve · provision · revoke</text>
+<text x="65" y="1072" font-size="20" font-weight="500" fill="#225f46" text-anchor="start">Account encryption key remains here</text>
+<rect x="610" y="968" width="470" height="142" rx="12" fill="#edf2eb" stroke="#d4ded5" stroke-width="1.5"/>
+<text x="635" y="1004" font-size="25" font-weight="700" fill="#14221f" text-anchor="start">Sync &amp; Mesh coordinator</text>
+<text x="635" y="1038" font-size="21" font-weight="400" fill="#14221f" text-anchor="start">Ciphertext + routing metadata</text>
+<text x="635" y="1072" font-size="20" font-weight="500" fill="#225f46" text-anchor="start">No account key; cannot decrypt content</text>
+<path d="M515 1040H605" fill="none" stroke="#53635a" stroke-width="2" marker-end="url(#mcp-sealed-arrow)" marker-start="url(#mcp-sealed-arrow)" stroke-dasharray="6 5"/>
+<text x="560" y="1018" font-size="17" font-weight="400" fill="#53635a" text-anchor="middle">Sealed</text>
+<text x="40" y="1150" font-size="20" font-weight="400" fill="#14221f" text-anchor="start">Managed workers receive approved snapshots and scoped keys, never the account key.</text>
+<text x="40" y="1182" font-size="20" font-weight="400" fill="#53635a" text-anchor="start">The coordinator routes encrypted inputs/results to authorised recipients.</text>
+<text x="40" y="1222" font-size="19" font-weight="500" fill="#73450e" text-anchor="start">Readable data: your bot provider, your executor, and the managed service when selected.</text>
+</g></svg>

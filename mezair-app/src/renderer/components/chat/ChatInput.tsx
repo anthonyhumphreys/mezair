@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useId,
   type ReactNode,
 } from 'react';
 import {
@@ -28,6 +29,7 @@ import {
 import type {
   AgentProvider,
   ChatAttachment,
+  ChatBusyEnterAction,
   ChatAttachmentInput,
   ChatFileMentionSearchResult,
   ChatFollowUpIntent,
@@ -37,6 +39,7 @@ import type {
   ReasoningEffort,
 } from '../../../shared/types';
 import { VoiceInputButton } from './VoiceInputButton';
+import { ContextMeter, type ChatContextUsage } from './ContextMeter';
 import { ModelPicker } from './ModelPicker';
 import type { ModelPickerPreferences } from '../../../shared/model-picker';
 import type { ChatModelOption } from '../../utils/chat-model-options';
@@ -191,7 +194,14 @@ interface ChatInputProps {
   leadingControls?: ReactNode;
   /** The selected agent and destination stay visible while setup is closed. */
   setupSummary?: string;
-  prefill?: { id: string; text: string; attachments?: ChatAttachment[] } | null;
+  onPrefillApplied?: (id: string) => void;
+  onPrefillTextApplied?: (id: string) => void;
+  prefill?: {
+    id: string;
+    text: string;
+    textApplied?: boolean;
+    attachments?: ChatAttachment[];
+  } | null;
   draftKey?: string;
   allowAttachments?: boolean;
   mentionRepoIds?: string[];
@@ -203,6 +213,10 @@ interface ChatInputProps {
    * under the composer. Intended for empty threads.
    */
   showSyntaxHint?: boolean;
+  /** What plain Enter does while the agent is working (Settings → Chat). */
+  busyEnterAction?: ChatBusyEnterAction;
+  /** Context-window fill reported for the latest turn. */
+  contextUsage?: ChatContextUsage | null;
 }
 
 function ChatInputImpl({
@@ -241,16 +255,30 @@ function ChatInputImpl({
   leadingControls,
   setupSummary = 'Chat setup',
   prefill,
+  onPrefillApplied,
+  onPrefillTextApplied,
   draftKey,
   allowAttachments = true,
   mentionRepoIds = NO_REPO_IDS,
   quickPrompts = NO_QUICK_PROMPTS,
   slashCommands = NO_SLASH_COMMANDS,
   focusRequest = 0,
+  busyEnterAction = 'guide',
+  contextUsage = null,
   showSyntaxHint = false,
 }: ChatInputProps) {
   const [value, setValue] = useState(() => loadDraft(draftKey));
-  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>(() =>
+    loadAttachmentDraft(draftKey),
+  );
+  const completedPrefillRef = useRef<string | null>(null);
+  const recoveryBlocked = Boolean(
+    completedPrefillRef.current !== prefill?.id &&
+    prefill?.attachments?.some(
+      (item) =>
+        !attachments.some((entry) => getAttachmentDedupKey(entry) === getAttachmentDedupKey(item)),
+    ),
+  );
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
   const allowAttachmentsRef = useRef(allowAttachments);
@@ -266,7 +294,12 @@ function ChatInputImpl({
   const [pendingFollowUpId, setPendingFollowUpId] = useState<string | null>(null);
   const [standardSendPending, setStandardSendPending] = useState(false);
   const [sideQuestionPending, setSideQuestionPending] = useState(false);
-  const [busySendChoice, setBusySendChoice] = useState<BusySendChoice>('guide');
+  const [busySendChoice, setBusySendChoice] = useState<BusySendChoice>(
+    busyEnterAction === 'queue' ? 'queue' : 'guide',
+  );
+  useEffect(() => {
+    if (busyEnterAction !== 'newline') setBusySendChoice(busyEnterAction);
+  }, [busyEnterAction]);
   const [idleSendChoice, setIdleSendChoice] = useState<IdleSendChoice>('send');
   const [pendingFollowUpIntent, setPendingFollowUpIntent] = useState<ChatFollowUpIntent | null>(
     null,
@@ -310,6 +343,7 @@ function ChatInputImpl({
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const syntaxHelpRef = useRef<HTMLDivElement>(null);
   const skipNextDraftSaveRef = useRef(false);
+  const skipNextAttachmentSaveRef = useRef(false);
   const mentionRepoKey = mentionRepoIds.join('\0');
   const draggingFiles = dragDepth > 0;
 
@@ -435,6 +469,7 @@ function ChatInputImpl({
   }, [draftKey, markDraftChanged]);
 
   const handleSend = useCallback(async () => {
+    if (recoveryBlocked) return;
     const trimmed = value.trim();
     if (
       (!trimmed && attachments.length === 0) ||
@@ -488,6 +523,7 @@ function ChatInputImpl({
     disabled,
     busy,
     preparingAttachments,
+    recoveryBlocked,
     onSend,
     clearComposer,
     currentDraftVersion,
@@ -495,6 +531,7 @@ function ChatInputImpl({
 
   const handleFollowUp = useCallback(
     async (intent: ChatFollowUpIntent, retry?: FollowUpSubmission) => {
+      if (!retry && recoveryBlocked) return;
       if (
         disabled ||
         !onFollowUp ||
@@ -601,6 +638,7 @@ function ChatInputImpl({
       followUpCapabilities,
       onFollowUp,
       preparingAttachments,
+      recoveryBlocked,
       value,
       currentDraftVersion,
       rememberUncertainFollowUp,
@@ -609,6 +647,7 @@ function ChatInputImpl({
   );
 
   const handleSideQuestion = useCallback(async () => {
+    if (recoveryBlocked) return;
     const message = value.trim();
     if (
       disabled ||
@@ -670,6 +709,7 @@ function ChatInputImpl({
     disabled,
     onSideQuestion,
     preparingAttachments,
+    recoveryBlocked,
     sideQuestionAvailable,
     value,
     currentDraftVersion,
@@ -992,8 +1032,8 @@ function ChatInputImpl({
       return;
     }
 
-    if (
-      shouldSendChatMessageFromKey({
+    const enterAction = resolveComposerEnter(
+      {
         busy,
         key: e.key,
         shiftKey: e.shiftKey,
@@ -1001,11 +1041,16 @@ function ChatInputImpl({
         ctrlKey: e.ctrlKey,
         isComposing: e.nativeEvent.isComposing,
         keyCode: e.nativeEvent.keyCode,
-      })
-    ) {
-      e.preventDefault();
-      if (selectedSendOption && !selectedSendOption.disabled) selectedSendOption.run();
-    }
+      },
+      busyEnterAction,
+    );
+    if (!enterAction) return;
+    e.preventDefault();
+    const option =
+      enterAction === 'selected'
+        ? selectedSendOption
+        : (sendOptions.find((candidate) => candidate.id === enterAction) ?? selectedSendOption);
+    if (option && !option.disabled) option.run();
   };
 
   const handleVoiceTranscript = useCallback(
@@ -1091,10 +1136,13 @@ function ChatInputImpl({
     composerAutosize.cancel();
     markDraftChanged();
     skipNextDraftSaveRef.current = true;
+    skipNextAttachmentSaveRef.current = true;
     const nextDraft = loadDraft(draftKey);
     setValue(nextDraft);
     valueRef.current = nextDraft;
-    setAttachments([]);
+    const nextAttachments = loadAttachmentDraft(draftKey);
+    attachmentsRef.current = nextAttachments;
+    setAttachments(nextAttachments);
     setAttachmentPreviews({});
     setAttachmentError(null);
     setStandardFeedback(null);
@@ -1116,15 +1164,24 @@ function ChatInputImpl({
 
   useEffect(() => {
     if (!prefill) {
+      completedPrefillRef.current = null;
       prefillAppliedRef.current = null;
       return;
     }
-    if (prefillAppliedRef.current === prefill.id) return;
-    prefillAppliedRef.current = prefill.id;
-
-    markDraftChanged();
-    setStandardFeedback(null);
-    setValue((prev) => appendComposerPrefill(prev, prefill.text));
+    if (completedPrefillRef.current === prefill.id) return;
+    if (!prefill.textApplied && prefillAppliedRef.current !== prefill.id) {
+      prefillAppliedRef.current = prefill.id;
+      markDraftChanged();
+      setStandardFeedback(null);
+      setValue((prev) => appendComposerPrefill(prev, prefill.text));
+      onPrefillTextApplied?.(prefill.id);
+    }
+    if (!allowAttachments && prefill.attachments?.length) {
+      setAttachmentError(
+        'Choose a provider that supports attachments to finish restoring these files.',
+      );
+      return;
+    }
     if (allowAttachments && prefill.attachments?.length) {
       const current = attachmentsRef.current;
       const next = mergeAttachments(current, prefill.attachments);
@@ -1135,18 +1192,38 @@ function ChatInputImpl({
           ),
       );
       if (next.length < current.length + uniqueIncoming.length) {
-        setAttachmentError('Some files were skipped.');
+        setAttachmentError(
+          'Some recovered files are waiting. Remove an attachment to finish restoring them before sending.',
+        );
       }
-      setAttachments(next);
+      if (next.length !== current.length) setAttachments(next);
+      if (
+        prefill.attachments.some(
+          (item) =>
+            !next.some((entry) => getAttachmentDedupKey(item) === getAttachmentDedupKey(entry)),
+        )
+      )
+        return;
     }
 
+    completedPrefillRef.current = prefill.id;
+    setAttachmentError(null);
+    onPrefillApplied?.(prefill.id);
     composerAutosize.schedule(() => {
       const el = textareaRef.current;
       if (!el) return;
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length);
     });
-  }, [allowAttachments, composerAutosize, markDraftChanged, prefill]);
+  }, [
+    allowAttachments,
+    attachments,
+    composerAutosize,
+    markDraftChanged,
+    prefill,
+    onPrefillApplied,
+    onPrefillTextApplied,
+  ]);
 
   useEffect(() => {
     if (allowAttachments) return;
@@ -1243,7 +1320,15 @@ function ChatInputImpl({
     saveDraft(draftKey, value);
   }, [draftKey, value]);
 
-  const hasContent = value.trim().length > 0 || attachments.length > 0;
+  useEffect(() => {
+    if (skipNextAttachmentSaveRef.current) {
+      skipNextAttachmentSaveRef.current = false;
+      return;
+    }
+    saveAttachmentDraft(draftKey, attachments);
+  }, [draftKey, attachments]);
+
+  const hasContent = (value.trim().length > 0 || attachments.length > 0) && !recoveryBlocked;
   const canGuide = Boolean(followUpCapabilities?.guide && onFollowUp);
   const canQueue = Boolean(followUpCapabilities?.queue && onFollowUp);
   const followUpBlocked = uncertainFollowUps.some((submission) =>
@@ -1371,6 +1456,23 @@ function ChatInputImpl({
         ? buildSkillMentionOptionId(selectedSkillMentionResult)
         : undefined;
 
+  const runSettingsProps: RunSettingsProps = {
+    model,
+    modelProvider,
+    executionStrategy,
+    onExecutionStrategyChange,
+    reasoningLevel,
+    reasoningOptions,
+    onReasoningChange,
+    collaborationMode,
+    onCollaborationModeChange,
+    fastMode,
+    fastModeAvailable,
+    onFastModeChange,
+  };
+  const showRunSettings = hasRunSettings(runSettingsProps);
+  const runSettingsDetail = getRunSettingsDetail(runSettingsProps);
+
   return (
     <ChatComposerFrame frameRef={composerWidthRef}>
       <ChatComposerSurface
@@ -1413,7 +1515,7 @@ function ChatInputImpl({
                 key={quickPrompt.id}
                 type="button"
                 onClick={() => handleQuickPrompt(quickPrompt.prompt)}
-                className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-text-muted transition-colors hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+                className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
               >
                 {quickPrompt.label}
               </button>
@@ -1494,8 +1596,8 @@ function ChatInputImpl({
 
         <ChatComposerFooter>
           <div
-            className={`flex min-w-0 max-w-full items-center gap-1 ${
-              compactFooter ? 'w-full flex-nowrap' : 'flex-wrap'
+            className={`flex min-w-0 max-w-full items-center gap-0.5 ${
+              compactFooter ? 'flex-nowrap' : 'flex-wrap'
             }`}
           >
             {allowAttachments && (
@@ -1503,7 +1605,7 @@ function ChatInputImpl({
                 type="button"
                 onClick={() => void handleSelectAttachments()}
                 disabled={disabled || preparingAttachments}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors duration-200 hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 disabled:opacity-30"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors duration-150 hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 disabled:opacity-30"
                 title={preparingAttachments ? 'Preparing attachments' : 'Attach files'}
                 aria-label={preparingAttachments ? 'Preparing attachments' : 'Attach files'}
                 aria-busy={preparingAttachments}
@@ -1511,7 +1613,7 @@ function ChatInputImpl({
                 {preparingAttachments ? (
                   <Loader2 size={15} className="animate-spin" />
                 ) : (
-                  <Plus size={21} strokeWidth={1.8} />
+                  <Plus size={17} strokeWidth={1.75} />
                 )}
               </button>
             )}
@@ -1531,15 +1633,12 @@ function ChatInputImpl({
             )}
 
             {(leadingControls || contextControls) && (
-              <div
-                ref={contextMenuRef}
-                className={`relative min-w-0 ${compactFooter ? 'flex-1' : ''}`}
-              >
+              <div ref={contextMenuRef} className="relative min-w-0">
                 <button
                   ref={contextTriggerRef}
                   type="button"
                   onClick={() => setContextMenuOpen((open) => !open)}
-                  className={`flex h-9 min-w-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 ${compactFooter ? 'w-full' : 'max-w-44'}`}
+                  className={`flex h-8 min-w-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 ${compactFooter ? 'max-w-full' : 'max-w-48'}`}
                   aria-label={`Chat setup: ${setupSummary}`}
                   title="Choose an agent, destination and conversation context"
                   aria-haspopup="dialog"
@@ -1548,8 +1647,8 @@ function ChatInputImpl({
                 >
                   <span className="truncate">{setupSummary}</span>
                   <ChevronDown
-                    size={11}
-                    className={`transition-transform ${contextMenuOpen ? 'rotate-180' : ''}`}
+                    size={12}
+                    className={`shrink-0 text-text-tertiary transition-transform ${contextMenuOpen ? 'rotate-180' : ''}`}
                   />
                 </button>
                 {contextMenuOpen && (
@@ -1580,14 +1679,14 @@ function ChatInputImpl({
           </div>
 
           <div
-            className={`ml-auto flex max-w-full min-w-0 items-center justify-end gap-1.5 ${
-              compactFooter ? 'w-full flex-nowrap' : 'flex-wrap'
+            className={`ml-auto flex max-w-full min-w-0 items-center justify-end gap-1 ${
+              compactFooter ? 'flex-nowrap' : 'flex-wrap'
             }`}
           >
             <div
-              className={`flex min-w-0 items-center gap-1 ${compactFooter ? 'flex-1 flex-nowrap' : 'flex-wrap'}`}
+              className={`flex min-w-0 items-center gap-0.5 ${compactFooter ? 'flex-1 flex-nowrap' : 'flex-wrap'}`}
             >
-              {onModelChange && (
+              {onModelChange ? (
                 <ModelPicker
                   model={model}
                   provider={modelProvider}
@@ -1597,35 +1696,28 @@ function ChatInputImpl({
                   onChange={onModelChange}
                   variant="inline"
                   compact={compactFooter}
-                  hideProvider={veryCompactFooter}
-                  disabled={busy}
+                  hideProvider={compactFooter}
+                  triggerDetail={runSettingsDetail || undefined}
+                  settings={
+                    showRunSettings ? <RunSettingsFields {...runSettingsProps} /> : undefined
+                  }
+                  disabled={busy && !showRunSettings}
                   disabledReason="Stop the current run to change model or provider."
+                  modelLockedReason={
+                    busy && showRunSettings
+                      ? 'Stop the current run to change model or provider.'
+                      : undefined
+                  }
                 />
-              )}
-
-              {(onExecutionStrategyChange ||
-                onReasoningChange ||
-                onCollaborationModeChange ||
-                onFastModeChange) && (
-                <RunSettingsDropdown
-                  model={model}
-                  modelProvider={modelProvider}
-                  executionStrategy={executionStrategy}
-                  onExecutionStrategyChange={onExecutionStrategyChange}
-                  reasoningLevel={reasoningLevel}
-                  reasoningOptions={reasoningOptions}
-                  onReasoningChange={onReasoningChange}
-                  collaborationMode={collaborationMode}
-                  onCollaborationModeChange={onCollaborationModeChange}
-                  fastMode={fastMode}
-                  fastModeAvailable={fastModeAvailable}
-                  onFastModeChange={onFastModeChange}
-                  compact={compactFooter}
-                />
+              ) : (
+                showRunSettings && (
+                  <RunSettingsDropdown {...runSettingsProps} compact={compactFooter} />
+                )
               )}
             </div>
 
-            <div className="ml-auto flex shrink-0 flex-nowrap items-center justify-end gap-1.5">
+            <div className="ml-auto flex shrink-0 flex-nowrap items-center justify-end gap-1">
+              {contextUsage && !veryCompactFooter && <ContextMeter usage={contextUsage} />}
               <VoiceInputButton
                 onTranscript={(text) => {
                   setVoiceError(null);
@@ -1651,7 +1743,6 @@ function ChatInputImpl({
                       ? setBusySendChoice(id as BusySendChoice)
                       : setIdleSendChoice(id as IdleSendChoice)
                   }
-                  hasContent={hasContent}
                   menuLabel={
                     busy ? 'More ways to send while the run continues' : 'More ways to send'
                   }
@@ -1704,7 +1795,7 @@ function ChatInputImpl({
               type="button"
               onClick={() => void handleFollowUp(submission.intent, submission)}
               disabled={disabled || !!pendingFollowUpId}
-              className="shrink-0 rounded-md border border-border px-2 py-1 font-medium text-text-primary transition-colors hover:bg-bg-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 disabled:cursor-not-allowed disabled:opacity-40"
+              className="shrink-0 rounded-md border border-border px-2 py-1 font-medium text-text-primary transition-colors hover:bg-bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Retry same message
             </button>
@@ -1712,17 +1803,16 @@ function ChatInputImpl({
         ))}
       </ChatComposerSurface>
 
-      {hasContent && selectedSendOption && (
-        <p className="mt-1.5 px-1 text-right text-xs text-text-tertiary">
-          {busy
-            ? `Enter adds a line · ${SEND_SHORTCUT} to ${selectedSendOption.shortLabel.toLowerCase()}`
-            : 'Enter to send · Shift Enter for a new line'}
+      {/* Enter-to-send is universal; only the busy meaning of Enter needs saying out loud. */}
+      {busy && hasContent && selectedSendOption && (
+        <p className="mt-1.5 px-4 text-right text-xs text-text-tertiary">
+          {busyEnterHint(busyEnterAction, canGuide, canQueue)}
         </p>
       )}
 
       <p id="chat-composer-keyboard-hint" className="sr-only">
         {busy
-          ? `Enter adds a line while the agent is working. ${selectedSendOption ? `Control or Command plus Enter sends using ${selectedSendOption.label}.` : 'Stop the run or wait to send.'}`
+          ? `While the agent is working: ${busyEnterHint(busyEnterAction, canGuide, canQueue)}. Shift plus Enter adds a line. Escape stops the run.`
           : 'Enter sends. Shift plus Enter adds a line.'}
         {mentionRepoIds.length > 0
           ? ' Type slash for commands, at for files, or dollar for skills.'
@@ -1778,7 +1868,7 @@ function ChatInputImpl({
                   </li>
                   <li>
                     <span className="font-mono text-text-primary">Enter</span>{' '}
-                    {busy ? `adds a line while working; ${SEND_SHORTCUT} sends,` : 'sends,'}{' '}
+                    {busy ? `${busyEnterHint(busyEnterAction, canGuide, canQueue)};` : 'sends,'}{' '}
                     <span className="font-mono text-text-primary">Shift+Enter</span> adds a line
                   </li>
                 </ul>
@@ -1795,6 +1885,41 @@ function ChatInputImpl({
 }
 
 export const ChatInput = memo(ChatInputImpl);
+
+function loadAttachmentDraft(draftKey: string | undefined): ChatAttachment[] {
+  if (!draftKey) return [];
+  try {
+    const parsed: unknown = JSON.parse(
+      window.localStorage.getItem(`${draftKey}:attachments`) ?? '[]',
+    );
+    return Array.isArray(parsed)
+      ? parsed
+          .filter(
+            (item): item is ChatAttachment =>
+              item &&
+              typeof item.path === 'string' &&
+              typeof item.id === 'string' &&
+              typeof item.name === 'string' &&
+              typeof item.mimeType === 'string' &&
+              typeof item.size === 'number' &&
+              (item.kind === 'file' || item.kind === 'image'),
+          )
+          .slice(0, MAX_ATTACHMENT_COUNT)
+      : [];
+  } catch {
+    return [];
+  }
+}
+function saveAttachmentDraft(draftKey: string | undefined, attachments: ChatAttachment[]): void {
+  if (!draftKey) return;
+  try {
+    if (attachments.length)
+      window.localStorage.setItem(`${draftKey}:attachments`, JSON.stringify(attachments));
+    else window.localStorage.removeItem(`${draftKey}:attachments`);
+  } catch {
+    /* Keep the current in-memory draft when storage is unavailable. */
+  }
+}
 
 function loadDraft(draftKey: string | undefined): string {
   if (!draftKey) return '';
@@ -1826,6 +1951,7 @@ function clearDraft(draftKey: string | undefined): void {
   if (!draftKey) return;
   try {
     window.localStorage.removeItem(draftKey);
+    window.localStorage.removeItem(`${draftKey}:attachments`);
   } catch {
     // Storage can be unavailable in restricted renderer contexts.
   }
@@ -2300,6 +2426,43 @@ export function getSkillMentionResults(
     .slice(0, limit);
 }
 
+/**
+ * Which send option a key press triggers. Idle: Enter sends. Busy: plain Enter
+ * follows the user's setting (guide or queue) and ⌘/Ctrl+Enter sends the other
+ * one; with `newline`, plain Enter adds a line and ⌘/Ctrl+Enter sends the
+ * selected option. Shift+Enter always adds a line.
+ */
+export function resolveComposerEnter(
+  event: ChatComposerKeyEvent,
+  busyEnterAction: ChatBusyEnterAction,
+): 'selected' | 'guide' | 'queue' | null {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229)
+    return null;
+  const modified = event.metaKey === true || event.ctrlKey === true;
+  if (!event.busy) return 'selected';
+  if (busyEnterAction === 'newline') return modified ? 'selected' : null;
+  const primary = busyEnterAction;
+  const secondary = primary === 'guide' ? 'queue' : 'guide';
+  return modified ? secondary : primary;
+}
+
+/** Visible and spoken keyboard hint for a busy composer. */
+export function busyEnterHint(
+  busyEnterAction: ChatBusyEnterAction,
+  canGuide: boolean,
+  canQueue: boolean,
+): string {
+  if (busyEnterAction === 'newline') return `Enter adds a line · ${SEND_SHORTCUT} sends`;
+  const label = (mode: 'guide' | 'queue') => (mode === 'guide' ? 'guide now' : 'queue next');
+  const primary = busyEnterAction;
+  const secondary = primary === 'guide' ? 'queue' : 'guide';
+  const available = (mode: 'guide' | 'queue') => (mode === 'guide' ? canGuide : canQueue);
+  if (!available(primary) && available(secondary)) return `Enter to ${label(secondary)}`;
+  return available(secondary)
+    ? `Enter to ${label(primary)} · ${SEND_SHORTCUT} to ${label(secondary)}`
+    : `Enter to ${label(primary)}`;
+}
+
 export function shouldSendChatMessageFromKey(event: ChatComposerKeyEvent): boolean {
   return (
     event.key === 'Enter' &&
@@ -2398,21 +2561,7 @@ export function getRunSettingsLabel(
     .join(' · ');
 }
 
-function RunSettingsDropdown({
-  model,
-  modelProvider,
-  executionStrategy,
-  onExecutionStrategyChange,
-  reasoningLevel,
-  reasoningOptions = REASONING_EFFORT_OPTIONS.map((option) => option.level),
-  onReasoningChange,
-  collaborationMode,
-  onCollaborationModeChange,
-  fastMode,
-  fastModeAvailable,
-  onFastModeChange,
-  compact,
-}: {
+interface RunSettingsProps {
   model: string;
   modelProvider: AgentProvider;
   executionStrategy: ExecutionStrategy;
@@ -2425,11 +2574,258 @@ function RunSettingsDropdown({
   fastMode: boolean;
   fastModeAvailable: boolean;
   onFastModeChange?: (enabled: boolean) => void;
-  compact: boolean;
+}
+
+/** The reasoning effort the current model actually runs at, if it has one. */
+function resolveRunEffort(
+  model: string,
+  modelProvider: AgentProvider,
+  reasoningLevel: ReasoningEffort,
+  reasoningOptions: ReasoningEffort[],
+): ReasoningEffort | undefined {
+  if (isAcpAgentProvider(modelProvider)) return getCursorModelReasoningEffort(model);
+  return reasoningOptions.includes(reasoningLevel) ? reasoningLevel : undefined;
+}
+
+/**
+ * Short trailing detail for the combined model chip. Build is the default mode
+ * and is not named; ACP model labels already carry their reasoning level.
+ */
+export function getRunSettingsDetail({
+  model,
+  modelProvider,
+  reasoningLevel,
+  reasoningOptions = REASONING_EFFORT_OPTIONS.map((option) => option.level),
+  collaborationMode,
+  fastMode,
+  fastModeAvailable,
+}: Pick<
+  RunSettingsProps,
+  | 'model'
+  | 'modelProvider'
+  | 'reasoningLevel'
+  | 'reasoningOptions'
+  | 'collaborationMode'
+  | 'fastMode'
+  | 'fastModeAvailable'
+>): string {
+  const effort = isAcpAgentProvider(modelProvider)
+    ? undefined
+    : resolveRunEffort(model, modelProvider, reasoningLevel, reasoningOptions);
+  return [
+    collaborationMode === 'plan' ? 'Plan' : null,
+    effort ? formatReasoningLabel(effort) : null,
+    fastMode && fastModeAvailable ? 'Fast' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+export function hasRunSettings(
+  props: Pick<
+    RunSettingsProps,
+    | 'onExecutionStrategyChange'
+    | 'onReasoningChange'
+    | 'onCollaborationModeChange'
+    | 'onFastModeChange'
+  >,
+): boolean {
+  return Boolean(
+    props.onExecutionStrategyChange ||
+    props.onReasoningChange ||
+    props.onCollaborationModeChange ||
+    props.onFastModeChange,
+  );
+}
+
+const settingsSelectClass =
+  'h-8 w-full rounded-lg border border-border-subtle bg-bg-secondary px-2 text-xs text-text-primary outline-none transition-colors hover:border-border focus:border-accent focus:ring-2 focus:ring-accent/30';
+
+function SettingsRow({
+  label,
+  hint,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  htmlFor?: string;
+  children: ReactNode;
 }) {
+  return (
+    <div>
+      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2">
+        {htmlFor ? (
+          <label htmlFor={htmlFor} className="text-xs font-medium text-text-secondary">
+            {label}
+          </label>
+        ) : (
+          <span className="text-xs font-medium text-text-secondary">{label}</span>
+        )}
+        {children}
+      </div>
+      {hint && (
+        <p className="mt-1 pl-[calc(5.5rem+0.5rem)] text-xs leading-4 text-text-tertiary">{hint}</p>
+      )}
+    </div>
+  );
+}
+
+/** Mode, reasoning, subagents and fast mode. Rendered inside the model panel. */
+function RunSettingsFields({
+  model,
+  modelProvider,
+  executionStrategy,
+  onExecutionStrategyChange,
+  reasoningLevel,
+  reasoningOptions = REASONING_EFFORT_OPTIONS.map((option) => option.level),
+  onReasoningChange,
+  collaborationMode,
+  onCollaborationModeChange,
+  fastMode,
+  fastModeAvailable,
+  onFastModeChange,
+}: RunSettingsProps) {
+  const fieldId = useId();
   const availableOptions = REASONING_EFFORT_OPTIONS.filter((option) =>
     reasoningOptions.includes(option.level),
   );
+  const acpName = modelProvider === 'devin' ? 'Devin' : 'Cursor';
+  const segment = (active: boolean, tone: 'neutral' | 'info' = 'neutral') =>
+    `flex h-7 items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 ${
+      active
+        ? tone === 'info'
+          ? 'bg-info/12 text-info'
+          : 'bg-bg-elevated text-text-primary shadow-sm'
+        : 'text-text-tertiary hover:text-text-primary'
+    }`;
+
+  return (
+    <div className="space-y-2.5">
+      {onCollaborationModeChange && (
+        <SettingsRow label="Mode">
+          <div
+            className="grid grid-cols-2 gap-0.5 rounded-lg bg-text-primary/[0.06] p-0.5"
+            role="group"
+            aria-label="Collaboration mode"
+          >
+            <button
+              type="button"
+              onClick={() => onCollaborationModeChange('default')}
+              className={segment(collaborationMode === 'default')}
+              aria-pressed={collaborationMode === 'default'}
+            >
+              <Hammer size={12} />
+              Build
+            </button>
+            <button
+              type="button"
+              onClick={() => onCollaborationModeChange('plan')}
+              className={segment(collaborationMode === 'plan', 'info')}
+              aria-pressed={collaborationMode === 'plan'}
+            >
+              <ListChecks size={12} />
+              Plan
+            </button>
+          </div>
+        </SettingsRow>
+      )}
+
+      {isAcpAgentProvider(modelProvider) ? (
+        <SettingsRow
+          label="Reasoning"
+          hint={`${acpName} model IDs include their reasoning level where supported.`}
+        >
+          <span className="text-xs text-text-secondary">
+            {(() => {
+              const effort = getCursorModelReasoningEffort(model);
+              return effort ? formatReasoningLabel(effort) : `Set by the ${acpName} model`;
+            })()}
+          </span>
+        </SettingsRow>
+      ) : (
+        onReasoningChange &&
+        availableOptions.length > 0 && (
+          <SettingsRow
+            label="Reasoning"
+            htmlFor={`${fieldId}-reasoning`}
+            hint={availableOptions.find((option) => option.level === reasoningLevel)?.description}
+          >
+            <select
+              id={`${fieldId}-reasoning`}
+              value={reasoningLevel}
+              onChange={(event) => onReasoningChange(event.target.value as ReasoningEffort)}
+              className={settingsSelectClass}
+            >
+              {availableOptions.map((option) => (
+                <option key={option.level} value={option.level}>
+                  {formatReasoningLabel(option.level)}
+                </option>
+              ))}
+            </select>
+          </SettingsRow>
+        )
+      )}
+
+      {onExecutionStrategyChange && (
+        <SettingsRow
+          label="Subagents"
+          htmlFor={`${fieldId}-strategy`}
+          hint={
+            EXECUTION_STRATEGIES.find((strategy) => strategy.id === executionStrategy)?.description
+          }
+        >
+          <select
+            id={`${fieldId}-strategy`}
+            value={executionStrategy}
+            onChange={(event) => onExecutionStrategyChange(event.target.value as ExecutionStrategy)}
+            className={settingsSelectClass}
+          >
+            {EXECUTION_STRATEGIES.map((strategy) => (
+              <option key={strategy.id} value={strategy.id}>
+                {strategy.label}
+              </option>
+            ))}
+          </select>
+        </SettingsRow>
+      )}
+
+      {onFastModeChange && (
+        <SettingsRow
+          label="Fast mode"
+          hint={
+            fastModeAvailable
+              ? "Use the provider's faster service tier."
+              : 'Not available for this model.'
+          }
+        >
+          <button
+            type="button"
+            role="switch"
+            aria-checked={fastMode}
+            aria-label="Fast mode"
+            onClick={() => onFastModeChange(!fastMode)}
+            disabled={!fastModeAvailable}
+            className={`flex h-7 w-fit items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 disabled:cursor-not-allowed disabled:opacity-45 ${
+              fastMode
+                ? 'bg-warning/12 text-warning'
+                : 'bg-text-primary/[0.06] text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            <Zap size={12} fill={fastMode ? 'currentColor' : 'none'} />
+            {fastMode ? 'On' : 'Off'}
+          </button>
+        </SettingsRow>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Standalone run settings, used only when the model cannot be changed here
+ * (for example a remote run target). Otherwise the fields live in the model panel.
+ */
+function RunSettingsDropdown({ compact, ...props }: RunSettingsProps & { compact: boolean }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -2453,21 +2849,22 @@ function RunSettingsDropdown({
     }
   };
 
-  const effort = isAcpAgentProvider(modelProvider)
-    ? getCursorModelReasoningEffort(model)
-    : reasoningOptions.includes(reasoningLevel)
-      ? reasoningLevel
-      : undefined;
+  const effort = resolveRunEffort(
+    props.model,
+    props.modelProvider,
+    props.reasoningLevel,
+    props.reasoningOptions ?? REASONING_EFFORT_OPTIONS.map((option) => option.level),
+  );
   const label = [
-    collaborationMode === 'plan' ? 'Plan' : 'Build',
+    props.collaborationMode === 'plan' ? 'Plan' : 'Build',
     effort ? formatReasoningLabel(effort) : null,
   ]
     .filter(Boolean)
     .join(' · ');
   const accessibleSummary = [
-    getRunSettingsLabel(`${modelProvider} · ${model}`, collaborationMode, effort),
-    `Execution strategy: ${executionStrategy}`,
-    fastModeAvailable ? `Fast mode ${fastMode ? 'on' : 'off'}` : null,
+    getRunSettingsLabel(`${props.modelProvider} · ${props.model}`, props.collaborationMode, effort),
+    `Execution strategy: ${props.executionStrategy}`,
+    props.fastModeAvailable ? `Fast mode ${props.fastMode ? 'on' : 'off'}` : null,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -2482,8 +2879,8 @@ function RunSettingsDropdown({
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className={`flex h-9 min-w-0 items-center gap-1.5 rounded-full text-xs font-medium text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 ${
-          compact ? 'h-9 w-9 shrink-0 justify-center px-0' : 'max-w-64 px-2.5'
+        className={`flex h-8 min-w-0 items-center gap-1.5 rounded-full text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 ${
+          compact ? 'w-8 shrink-0 justify-center px-0' : 'max-w-64 px-2.5'
         }`}
         title={`Run settings: ${accessibleSummary}`}
         aria-label={`Run settings: ${accessibleSummary}`}
@@ -2491,12 +2888,12 @@ function RunSettingsDropdown({
         aria-expanded={open}
         aria-controls={open ? RUN_SETTINGS_MENU_ID : undefined}
       >
-        <SlidersHorizontal size={13} className="shrink-0 text-text-tertiary" />
+        <SlidersHorizontal size={14} strokeWidth={1.75} className="shrink-0 text-text-tertiary" />
         {!compact && <span className="truncate">{label}</span>}
         {!compact && (
           <ChevronDown
             size={12}
-            className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+            className={`shrink-0 text-text-tertiary transition-transform ${open ? 'rotate-180' : ''}`}
           />
         )}
       </button>
@@ -2504,136 +2901,11 @@ function RunSettingsDropdown({
       {open && (
         <div
           id={RUN_SETTINGS_MENU_ID}
-          className={`absolute bottom-full right-0 z-50 mb-2 max-h-[min(38rem,calc(100vh-8rem))] w-72 overflow-y-auto rounded-xl border border-border bg-bg-elevated p-3 shadow-lg ring-1 ring-overlay ${compact ? 'max-w-full' : ''}`}
+          className={`absolute bottom-full right-0 z-50 mb-2 max-h-[min(38rem,calc(100vh-8rem))] w-80 overflow-y-auto rounded-xl border border-border bg-bg-elevated p-3 shadow-lg ring-1 ring-overlay ${compact ? 'max-w-full' : ''}`}
           role="dialog"
           aria-label="Run settings"
         >
-          <div className="space-y-3">
-            {onCollaborationModeChange && (
-              <div>
-                <span className="mb-1 block text-xs font-medium text-text-muted">Mode</span>
-                <div
-                  className="grid grid-cols-2 gap-1 rounded-lg bg-bg-secondary p-1"
-                  role="group"
-                  aria-label="Collaboration mode"
-                >
-                  <button
-                    type="button"
-                    onClick={() => onCollaborationModeChange('default')}
-                    className={`flex h-8 items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors ${
-                      collaborationMode === 'default'
-                        ? 'bg-bg-elevated text-text-primary'
-                        : 'text-text-tertiary hover:text-text-primary'
-                    }`}
-                    aria-pressed={collaborationMode === 'default'}
-                  >
-                    <Hammer size={12} />
-                    Build
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onCollaborationModeChange('plan')}
-                    className={`flex h-8 items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors ${
-                      collaborationMode === 'plan'
-                        ? 'bg-info/12 text-info'
-                        : 'text-text-tertiary hover:text-text-primary'
-                    }`}
-                    aria-pressed={collaborationMode === 'plan'}
-                  >
-                    <ListChecks size={12} />
-                    Plan
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {isAcpAgentProvider(modelProvider) ? (
-              <div>
-                <span className="mb-1 block text-xs font-medium text-text-muted">Reasoning</span>
-                <div className="rounded-lg border border-border-subtle bg-bg-secondary px-2.5 py-2 text-xs text-text-secondary">
-                  Set by the {modelProvider === 'devin' ? 'Devin' : 'Cursor'} model
-                </div>
-                <span className="mt-1 block text-xs leading-4 text-text-tertiary">
-                  {modelProvider === 'devin' ? 'Devin' : 'Cursor'} model IDs include their reasoning
-                  level where supported.
-                </span>
-              </div>
-            ) : (
-              onReasoningChange &&
-              availableOptions.length > 0 && (
-                <label className="block">
-                  <span className="mb-1 block text-xs font-medium text-text-muted">Reasoning</span>
-                  <select
-                    value={reasoningLevel}
-                    onChange={(event) => onReasoningChange(event.target.value as ReasoningEffort)}
-                    className="h-9 w-full rounded-lg border border-border bg-bg-secondary px-2.5 text-xs capitalize text-text-primary outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-                  >
-                    {availableOptions.map((option) => (
-                      <option key={option.level} value={option.level}>
-                        {option.level}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="mt-1 block text-xs leading-4 text-text-tertiary">
-                    {
-                      availableOptions.find((option) => option.level === reasoningLevel)
-                        ?.description
-                    }
-                  </span>
-                </label>
-              )
-            )}
-
-            {onExecutionStrategyChange && (
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-text-muted">Subagents</span>
-                <select
-                  value={executionStrategy}
-                  onChange={(event) =>
-                    onExecutionStrategyChange(event.target.value as ExecutionStrategy)
-                  }
-                  className="h-9 w-full rounded-lg border border-border bg-bg-secondary px-2.5 text-xs text-text-primary outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-                >
-                  {EXECUTION_STRATEGIES.map((strategy) => (
-                    <option key={strategy.id} value={strategy.id}>
-                      {strategy.label}
-                    </option>
-                  ))}
-                </select>
-                <span className="mt-1 block text-xs leading-4 text-text-tertiary">
-                  {
-                    EXECUTION_STRATEGIES.find((strategy) => strategy.id === executionStrategy)
-                      ?.description
-                  }
-                </span>
-              </label>
-            )}
-
-            {onFastModeChange && (
-              <button
-                type="button"
-                onClick={() => onFastModeChange(!fastMode)}
-                disabled={!fastModeAvailable}
-                className={`flex w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 disabled:cursor-not-allowed disabled:opacity-45 ${
-                  fastMode
-                    ? 'border-warning/30 bg-warning/10 text-warning'
-                    : 'border-border-subtle bg-bg-secondary text-text-secondary hover:border-border hover:text-text-primary'
-                }`}
-                aria-pressed={fastMode}
-              >
-                <span>
-                  <span className="flex items-center gap-1.5 font-medium">
-                    <Zap size={12} fill={fastMode ? 'currentColor' : 'none'} />
-                    Fast mode
-                  </span>
-                  <span className="mt-1 block text-xs leading-4 text-text-tertiary">
-                    Use the provider's faster service tier.
-                  </span>
-                </span>
-                <span aria-hidden="true">{fastMode ? 'On' : 'Off'}</span>
-              </button>
-            )}
-          </div>
+          <RunSettingsFields {...props} />
         </div>
       )}
     </div>

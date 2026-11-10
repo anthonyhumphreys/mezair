@@ -1,3 +1,4 @@
+import { useDelegationState } from './DelegationViewState';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, GitFork, Loader2, Square } from 'lucide-react';
 import type {
@@ -36,24 +37,29 @@ export function integrationApplicationHeadline(
   return 'The combined result is in a retained integration checkout. It has not been applied to your repository.';
 }
 
-export function ChatDelegations({ threadId }: { threadId: string }) {
+/** Live delegated runs for a thread (polled, shared across subscribers). */
+export function useThreadDelegations(threadId: string | null) {
   const [snapshot, setSnapshot] = useState<{
     threadId: string;
     runs: ChatDelegationRun[];
     error: boolean;
   }>({ threadId: '', runs: [], error: false });
-  const [showOlder, setShowOlder] = useState(false);
-  const key = `chat-delegations:${threadId}`;
+  const key = `chat-delegations:${threadId ?? ''}`;
   const subscription = useRef(0);
   useEffect(() => {
+    if (!threadId) {
+      subscription.current++;
+      setSnapshot({ threadId: '', runs: [], error: false });
+      return;
+    }
     const generation = ++subscription.current;
     const unsubscribe = sharedPollingCache.subscribe(
       key,
       () => window.mezair.chat.listDelegations(threadId),
       (value) => {
         if (subscription.current !== generation) return;
-        setSnapshot((previous) => {
-          const runs = value.value ?? (previous.threadId === threadId ? previous.runs : []);
+        setSnapshot(() => {
+          const runs = value.value ?? EMPTY_RUNS;
           return {
             threadId,
             runs,
@@ -68,20 +74,77 @@ export function ChatDelegations({ threadId }: { threadId: string }) {
       unsubscribe();
     };
   }, [key, threadId]);
-  const current = snapshot.threadId === threadId;
-  const runs = current ? snapshot.runs : [];
-  const error = current && snapshot.error;
+  const current = Boolean(threadId) && snapshot.threadId === threadId;
+  const refresh = useCallback(() => sharedPollingCache.refresh(key), [key]);
+  return {
+    runs: current ? snapshot.runs : EMPTY_RUNS,
+    error: current && snapshot.error,
+    refresh,
+  };
+}
+
+const EMPTY_RUNS: ChatDelegationRun[] = [];
+
+/**
+ * Assigns each run to the turn whose time window contains its start, so
+ * delegated agents appear inside the turn that launched them. Runs older than
+ * the first loaded turn are returned under `unplaced`.
+ */
+export function placeDelegationsInTurns(
+  runs: ChatDelegationRun[],
+  turns: Array<{ key: string; startedAt?: string }>,
+): { byTurn: Map<string, ChatDelegationRun[]>; unplaced: ChatDelegationRun[] } {
+  const byTurn = new Map<string, ChatDelegationRun[]>();
+  const unplaced: ChatDelegationRun[] = [];
+  const starts = turns.map((turn) => ({
+    key: turn.key,
+    at: turn.startedAt ? Date.parse(turn.startedAt) : NaN,
+  }));
+  for (const run of runs) {
+    const created = Date.parse(run.createdAt);
+    let owner: string | null = null;
+    for (const turn of starts) {
+      if (Number.isNaN(turn.at)) owner = null;
+      else if (turn.at <= created) owner = turn.key;
+      else break;
+    }
+    if (!owner || Number.isNaN(created)) {
+      unplaced.push(run);
+      continue;
+    }
+    const list = byTurn.get(owner) ?? [];
+    list.push(run);
+    byTurn.set(owner, list);
+  }
+  return { byTurn, unplaced };
+}
+
+/** Delegated runs rendered inside a turn (or at the end for unplaced runs). */
+export function ChatDelegationList({
+  threadId,
+  runs,
+  error = false,
+  onRefresh,
+  label = 'Delegated work',
+}: {
+  threadId: string;
+  runs: ChatDelegationRun[];
+  error?: boolean;
+  onRefresh: () => Promise<void>;
+  label?: string;
+}) {
+  const [showOlder, setShowOlder] = useState(false);
   if (!runs.length && !error) return null;
   return (
-    <section aria-label="Delegated work" className="mt-6 w-full border-t border-border-subtle pt-4">
-      <div className="mb-3 flex items-center gap-2 text-xs font-medium text-text-secondary">
-        <GitFork size={14} aria-hidden="true" /> Delegated work
-        <span className="font-normal text-text-tertiary">{runs.length}</span>
+    <section aria-label={label} className="w-full rounded-xl border border-border-subtle px-3 py-2">
+      <div className="mb-1 flex items-center gap-2 text-xs font-medium text-text-secondary">
+        <GitFork size={14} aria-hidden="true" /> {label}
+        <span className="font-normal tabular-nums text-text-tertiary">{runs.length}</span>
       </div>
       {error && (
-        <p className="mb-3 text-xs text-warning" role="status">
+        <p className="mb-2 text-xs text-warning" role="status">
           Could not refresh delegated work. Showing the last available status.{' '}
-          <button className={actionClass} onClick={() => void sharedPollingCache.refresh(key)}>
+          <button type="button" className={actionClass} onClick={() => void onRefresh()}>
             Retry
           </button>
         </p>
@@ -100,17 +163,23 @@ export function ChatDelegations({ threadId }: { threadId: string }) {
               key={`${threadId}:${run.id}`}
               run={run}
               threadId={threadId}
-              onRefresh={() => sharedPollingCache.refresh(key)}
+              onRefresh={onRefresh}
             />
           ))}
       </div>
       {runs.length > 3 && (
-        <button className={actionClass} onClick={() => setShowOlder(!showOlder)}>
+        <button type="button" className={actionClass} onClick={() => setShowOlder(!showOlder)}>
           {showOlder ? 'Show recent work' : 'Show earlier work'}
         </button>
       )}
     </section>
   );
+}
+
+/** Thread-level list (all runs), kept for surfaces without a turn transcript. */
+export function ChatDelegations({ threadId }: { threadId: string }) {
+  const { runs, error, refresh } = useThreadDelegations(threadId);
+  return <ChatDelegationList threadId={threadId} runs={runs} error={error} onRefresh={refresh} />;
 }
 
 function DelegationRun({
@@ -123,7 +192,7 @@ function DelegationRun({
   onRefresh: () => Promise<void>;
 }) {
   const [detail, setDetail] = useState<ChatDelegationRun | null>(null);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useDelegationState(`${threadId}:${run.id}`, 'open', false);
   const [loading, setLoading] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [acting, setActing] = useState(false);
@@ -364,7 +433,7 @@ function DelegationRun({
   );
 }
 
-function DelegationIntegrationPanel({
+export function DelegationIntegrationPanel({
   threadId,
   run,
   integration,
@@ -386,11 +455,23 @@ function DelegationIntegrationPanel({
     () => mounted.current && identityRef.current === identity,
     [identity],
   );
-  const [plan, setPlan] = useState<ChatDelegationIntegrationPlan | null>(null);
-  const [selections, setSelections] = useState<ChatDelegationVerificationSelection[]>([]);
-  const [customCommands, setCustomCommands] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [plan, setPlan] = useDelegationState<ChatDelegationIntegrationPlan | null>(
+    identity,
+    'plan',
+    null,
+  );
+  const [selections, setSelections] = useDelegationState<ChatDelegationVerificationSelection[]>(
+    identity,
+    'selections',
+    [],
+  );
+  const [customCommands, setCustomCommands] = useDelegationState<Record<string, string>>(
+    identity,
+    'commands',
+    {},
+  );
+  const [busy, setBusy] = useDelegationState(identity, 'operation-busy', false);
+  const [error, setError] = useDelegationState<string | null>(identity, 'operation-error', null);
   const integrated = integration?.combined ?? run.integrationState === 'integrated';
   const canCombine = run.status === 'completed' && !integrated;
 
@@ -398,7 +479,6 @@ function DelegationIntegrationPanel({
     mounted.current = true;
     return () => {
       mounted.current = false;
-      operation.current += 1;
     };
   }, []);
 
@@ -413,12 +493,13 @@ function DelegationIntegrationPanel({
   };
 
   const openPlan = async () => {
+    if (busy) return;
     const id = ++operation.current;
     setBusy(true);
     setError(null);
     try {
       const value = await window.mezair.chat.prepareDelegationIntegration(threadId, run.id);
-      if (!isCurrent() || id !== operation.current) return;
+      if (id !== operation.current) return;
       const stored = integration?.verificationSelections ?? [];
       setPlan(value);
       setSelections(
@@ -434,51 +515,54 @@ function DelegationIntegrationPanel({
       );
       setCustomCommands({});
     } catch (cause) {
-      if (isCurrent() && id === operation.current)
+      if (id === operation.current)
         setError(
           cause instanceof Error ? cause.message : 'Could not prepare the integration review.',
         );
     } finally {
-      if (isCurrent() && id === operation.current) setBusy(false);
+      if (id === operation.current) setBusy(false);
     }
   };
 
   const submitSelections = async (selectedChecks: ChatDelegationVerificationSelection[]) => {
+    if (busy) return;
     const id = ++operation.current;
     setBusy(true);
     setError(null);
     try {
       const value = await window.mezair.chat.integrateDelegation(threadId, run.id, selectedChecks);
-      if (!isCurrent() || id !== operation.current) return;
-      onIntegrationUpdate(value);
+      if (id !== operation.current) return;
+      if (isCurrent()) onIntegrationUpdate(value);
       setPlan(null);
-      await onRefresh();
+      if (isCurrent()) await onRefresh();
     } catch (cause) {
-      if (isCurrent() && id === operation.current)
+      if (id === operation.current)
         setError(cause instanceof Error ? cause.message : 'Could not integrate these results.');
     } finally {
-      if (isCurrent() && id === operation.current) setBusy(false);
+      if (id === operation.current) setBusy(false);
     }
   };
 
   const retryVerification = async () => {
+    if (busy) return;
     const id = ++operation.current;
     setBusy(true);
     setError(null);
     try {
       const value = await window.mezair.chat.retryDelegationVerification(threadId, run.id);
-      if (!isCurrent() || id !== operation.current) return;
-      onIntegrationUpdate(value);
-      await onRefresh();
+      if (id !== operation.current) return;
+      if (isCurrent()) onIntegrationUpdate(value);
+      if (isCurrent()) await onRefresh();
     } catch (cause) {
-      if (isCurrent() && id === operation.current)
+      if (id === operation.current)
         setError(cause instanceof Error ? cause.message : 'Could not retry verification.');
     } finally {
-      if (isCurrent() && id === operation.current) setBusy(false);
+      if (id === operation.current) setBusy(false);
     }
   };
 
   const applyRepository = async (repositoryId: string) => {
+    if (busy) return;
     const id = ++operation.current;
     setBusy(true);
     setError(null);
@@ -488,14 +572,14 @@ function DelegationIntegrationPanel({
         run.id,
         repositoryId,
       );
-      if (!isCurrent() || id !== operation.current) return;
-      onIntegrationUpdate(value);
-      await onRefresh();
+      if (id !== operation.current) return;
+      if (isCurrent()) onIntegrationUpdate(value);
+      if (isCurrent()) await onRefresh();
     } catch (cause) {
-      if (isCurrent() && id === operation.current)
+      if (id === operation.current)
         setError(cause instanceof Error ? cause.message : 'Could not apply verified changes.');
     } finally {
-      if (isCurrent() && id === operation.current) setBusy(false);
+      if (id === operation.current) setBusy(false);
     }
   };
 

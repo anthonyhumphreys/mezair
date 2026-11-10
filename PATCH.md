@@ -1098,3 +1098,7 @@ Composer drafts include workspace identity, and renderer-owned recovery survives
 route unmounts and checks both normal and work-item destinations. Completed
 optional prefills cannot resurrect removed files or prevent sending. Temporary
 navigation invalidates earlier normal-thread creation requests.
+
+The combined model/run-settings panel retains keyboard focus when a run starts
+and replaces model selection with locked-state settings. Opening it while busy
+focuses an editable setting; Escape closes it and returns focus to the trigger.

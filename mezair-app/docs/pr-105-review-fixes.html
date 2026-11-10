@@ -537,6 +537,20 @@
         entry points preserve Undo while leased.
       </li>
     </ul>
+    <h2>Final composer review — 10 November 2026</h2>
+    <p>
+      The composer now combines model and run settings while keeping the model locked during an
+      active run. The final rendered review found that replacing the search field with the
+      busy-state panel lost keyboard focus and prevented Escape from dismissing it. The panel now
+      focuses an editable setting when opened while busy or when a run starts. Escape closes the
+      panel and restores trigger focus.
+    </p>
+    <p>
+      Both 1280px and 720px browser checks verify the idle searchable picker, the busy model lock,
+      settings focus, and Escape/trigger restoration. The expanded rendered suite passed
+      <strong>110 assertions</strong>; 25 focused composer tests, the renderer TypeScript check,
+      lint and fixture build also passed. Final CI and merge results are recorded in the handoff.
+    </p>
     <h2>Latest review: startup, recovery and process lifetimes</h2>
     <ul>
       <li>
@@ -640,7 +654,15 @@ pnpm exec vitest run</code></pre>
       OS permissions mid-turn.
     </p>
     <h2>Validation</h2>
-    <p><strong>Latest local candidate: 3,744 tests passed, 12 existing skips; 400 test files passed and four skipped. Both TypeScript projects, ESLint and production main/preload/renderer builds passed. The threadless startup regression failed before the fix and passed afterward, alongside 103 startup/scope/Mesh/checkpoint controls. The independent candidate review is complete; its confirmed threadless bypass was addressed.</strong></p>
+    <p>
+      <strong
+        >Latest local candidate: 3,744 tests passed, 12 existing skips; 400 test files passed and
+        four skipped. Both TypeScript projects, ESLint and production main/preload/renderer builds
+        passed. The threadless startup regression failed before the fix and passed afterward,
+        alongside 103 startup/scope/Mesh/checkpoint controls. The independent candidate review is
+        complete; its confirmed threadless bypass was addressed.</strong
+      >
+    </p>
     <p>
       A complete earlier local suite passed 3,712 tests with 12 existing skips. The final
       Unicode-stream regression also passed in the 24-test Git suite. Both Desktop TypeScript

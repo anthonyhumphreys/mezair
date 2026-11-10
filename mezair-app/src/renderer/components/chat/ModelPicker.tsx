@@ -133,9 +133,17 @@ export function ModelPicker({
         setOpen(false);
     };
     document.addEventListener('pointerdown', outside);
-    if (slider) panelRef.current?.querySelector<HTMLInputElement>('input[type="range"]')?.focus();
+    if (modelLockedReason) {
+      // The model search unmounts when a run starts. Keep keyboard users in the
+      // replacement settings panel so Tab and Escape continue to work.
+      panelRef.current
+        ?.querySelector<HTMLElement>('button:not([disabled]), select:not([disabled]), a[href]')
+        ?.focus();
+    } else if (slider) {
+      panelRef.current?.querySelector<HTMLInputElement>('input[type="range"]')?.focus();
+    }
     return () => document.removeEventListener('pointerdown', outside);
-  }, [menuOpen, slider]);
+  }, [menuOpen, slider, modelLockedReason]);
 
   return (
     <>

@@ -249,6 +249,50 @@ Object.assign(window, {
       ),
     );
     await until(() => document.querySelector('button[title="Edit and resend"]'));
+    const modelTrigger = () =>
+      document.querySelector<HTMLButtonElement>('button[aria-label^="Model and run settings"]')!;
+    const escapePanel = () =>
+      document.activeElement!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+    modelTrigger().focus();
+    modelTrigger().click();
+    await frame();
+    check(
+      document.activeElement?.getAttribute('aria-label') === 'Search models and providers',
+      'The idle model picker must focus its searchable model list',
+    );
+    button('Toggle thread busy').click();
+    await frame();
+    check(
+      !document.querySelector('input[aria-label="Search models and providers"]') &&
+        document.querySelector('[role="dialog"]')?.textContent?.includes('Stop the current run'),
+      'Starting a run must remove model selection and explain the lock',
+    );
+    check(
+      document.activeElement?.closest('[role="dialog"]'),
+      'Starting a run with the model panel open must retain focus in its run settings',
+    );
+    escapePanel();
+    await frame();
+    check(
+      !document.querySelector('[role="dialog"]') && document.activeElement === modelTrigger(),
+      'Escape after the busy transition must close the panel and restore trigger focus',
+    );
+    modelTrigger().click();
+    await frame();
+    check(
+      document.activeElement?.closest('[role="dialog"]'),
+      'Opening run settings while busy must focus an editable setting',
+    );
+    escapePanel();
+    await frame();
+    check(
+      !document.querySelector('[role="dialog"]') && document.activeElement === modelTrigger(),
+      'The busy run settings must remain keyboard dismissible',
+    );
+    button('Toggle thread busy').click();
+    await frame();
     document.querySelector<HTMLButtonElement>('button[title="Edit and resend"]')!.click();
     await frame();
     type(

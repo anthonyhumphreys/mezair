@@ -20,6 +20,7 @@ import { WorkspaceBar } from '@/components/workspace-bar';
 import { useCompanion } from '@/contexts/companion-context';
 import { homeSummary } from '@/lib/home-summary';
 import { useOpenThread } from '@/lib/routes';
+import { agentProviderLabel } from '../../../src/shared/agent-providers';
 
 type IconName = ComponentProps<typeof MaterialIcons>['name'];
 
@@ -136,13 +137,20 @@ export default function HomeScreen() {
                         candidate.activeSessionId === session.id,
                     );
                     const threadId = thread?.id ?? session.appThreadId;
+                    const agent = agentProviderLabel(session.provider);
                     return (
                       <HomeRow
                         key={session.id}
                         icon="bolt"
                         tone="running"
-                        title={thread?.title ?? `${session.personaId} session`}
-                        detail={`${session.status === 'starting' ? 'Starting' : 'Working'} · ${session.personaId}${!threadId ? ' · Open on Mac' : ''}`}
+                        title={thread?.title ?? `${agent ?? 'Agent'} session`}
+                        detail={[
+                          session.status === 'starting' ? 'Starting' : 'Working',
+                          agent,
+                          threadId ? null : 'Open on Mac',
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
                         onPress={() => (threadId ? openThread(threadId) : void openOnDesktop())}
                       />
                     );

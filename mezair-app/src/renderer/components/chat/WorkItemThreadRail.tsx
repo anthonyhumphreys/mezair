@@ -25,7 +25,6 @@ import {
 import type {
   ChatLayout,
   ChatThread,
-  CodexMode,
   CodexSession,
   WorkItem,
   WorkItemProvider,
@@ -36,6 +35,7 @@ import { ConfirmDialog } from '../ui';
 import { SettingsLink } from '../shared/SettingsLink';
 import type { ReactNode } from 'react';
 import { ChatAccessLevelBadge } from './ChatAccessLevelChip';
+import type { ChatAccessDisplay } from './thread-access';
 import { ChatLayoutToggle } from './ChatLayoutToggle';
 import {
   canSettleThread,
@@ -58,9 +58,8 @@ interface WorkItemThreadRailProps {
   /** CH4/CH9 — Chat/Tickets layout toggle lives in the rail header. */
   chatLayout?: ChatLayout;
   onChatLayoutChange?: (layout: ChatLayout) => void;
-  /** CH1 — per-thread access level display. */
-  accessLevels?: Record<string, CodexMode>;
-  defaultAccessLevel?: CodexMode;
+  /** CH1 — per-thread access, resolved with the composer chip's wording. */
+  accessDisplays?: Record<string, ChatAccessDisplay>;
 }
 
 function WorkItemThreadRailImpl({
@@ -75,8 +74,7 @@ function WorkItemThreadRailImpl({
   onDeleteThread,
   chatLayout,
   onChatLayoutChange,
-  accessLevels,
-  defaultAccessLevel = 'on-request',
+  accessDisplays,
 }: WorkItemThreadRailProps) {
   const { activeWorkspace } = useWorkspace();
   const [items, setItems] = useState<WorkItem[]>([]);
@@ -236,8 +234,8 @@ function WorkItemThreadRailImpl({
                   <span className={threadStateTextClass(displayState)}>
                     {threadStateLabel(displayState)}
                   </span>
-                  {accessLevels && (
-                    <ChatAccessLevelBadge level={accessLevels[thread.id] ?? defaultAccessLevel} />
+                  {accessDisplays?.[thread.id] && (
+                    <ChatAccessLevelBadge display={accessDisplays[thread.id]} />
                   )}
                   {(thread.summary ?? thread.preview) && (
                     <>

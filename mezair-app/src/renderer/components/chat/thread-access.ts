@@ -71,7 +71,7 @@ export function chatAccessLevelShortLabel(mode: CodexMode): string {
     case 'workspace-auto':
       return 'Workspace';
     case 'full-access':
-      return 'Full';
+      return 'Full access';
     default:
       return 'Ask';
   }
@@ -119,6 +119,8 @@ export interface ChatAccessOption {
   /** Provider-side mode id this option activates ('ask' | 'agent' | ...). */
   appliedMode?: string;
   label: string;
+  /** Collapsed chip and rail badge wording, when shorter than the menu label. */
+  shortLabel?: string;
   description: string;
   elevated: boolean;
   collaborationMode?: 'plan';
@@ -224,6 +226,7 @@ export function chatAccessOptionsForProvider(
     const sandboxOptions = CHAT_ACCESS_LEVELS.map((level) => ({
       level,
       label: chatAccessLevelLabel(level),
+      shortLabel: chatAccessLevelShortLabel(level),
       description: chatAccessLevelDescription(level),
       elevated: chatAccessLevelIsElevated(level),
     }));
@@ -331,15 +334,107 @@ export function resolveChatAccessChipLabel(
   level: CodexMode,
   appliedMode?: string,
 ): string {
-  if (appliedMode) {
-    const match = options.find((option) => chatAccessOptionSelected(option, level, appliedMode));
-    if (match) return match.label;
-    const modeLabel =
-      chatAppliedModeLabel(appliedMode) ??
-      (isChatAccessLevel(appliedMode) ? chatAccessLevelLabel(appliedMode) : null);
-    if (modeLabel) return modeLabel;
+  return resolveChatAccessDisplay(options, level, appliedMode).fullLabel;
+}
+
+/**
+ * The words and tone for a thread's access, shared by the composer chip and the
+ * thread rail badge so one thread reads the same in both places. Provider-native
+ * mode names win: an ACP provider applies its own mode (Cursor's "Agent" is not
+ * a workspace sandbox), so the generic level names would misdescribe it.
+ */
+export interface ChatAccessDisplay {
+  /** Compact wording for the chip and badge. */
+  label: string;
+  /** Full wording for titles and assistive text. */
+  fullLabel: string;
+  elevated: boolean;
+}
+
+/**
+ * Resolve the display for a stored level and the provider-side mode (the applied
+ * mode when known, else the mode the next send requests).
+ */
+export function resolveChatAccessDisplay(
+  options: ChatAccessOption[],
+  level: CodexMode,
+  mode?: string,
+  selectionError?: string,
+): ChatAccessDisplay {
+  if (selectionError)
+    return { label: 'Choose access', fullLabel: 'Choose access', elevated: false };
+  const fromOption = (option: ChatAccessOption): ChatAccessDisplay => ({
+    label: option.shortLabel ?? option.label,
+    fullLabel: option.label,
+    elevated: option.elevated,
+  });
+  const fromLevel = (value: CodexMode): ChatAccessDisplay => ({
+    label: chatAccessLevelShortLabel(value),
+    fullLabel: chatAccessLevelLabel(value),
+    elevated: chatAccessLevelIsElevated(value),
+  });
+  if (mode) {
+    const match = options.find((option) => chatAccessOptionSelected(option, level, mode));
+    if (match) return fromOption(match);
+    const modeLabel = chatAppliedModeLabel(mode);
+    if (modeLabel)
+      return { label: modeLabel, fullLabel: modeLabel, elevated: chatAccessLevelIsElevated(level) };
+    if (isChatAccessLevel(mode)) return fromLevel(mode);
   }
-  return options.find((option) => option.level === level)?.label ?? chatAccessLevelLabel(level);
+  const byLevel = options.find((option) => option.level === level);
+  return byLevel ? fromOption(byLevel) : fromLevel(level);
+}
+
+/**
+ * The provider-side mode the next local send requests for a level. ACP providers
+ * report their own mode id; Codex-family providers only differ from the stored
+ * level when a persona or plan clamps to read-only, or auto review is selected.
+ */
+export function requestedChatAccessMode(
+  provider: AgentProvider,
+  level: CodexMode,
+  permissionProfile: PermissionProfile,
+  collaborationMode: 'default' | 'plan' = 'default',
+  personaReadOnly = false,
+): string | undefined {
+  if (isAcpAgentProvider(provider))
+    return expectedAcpAppliedMode(
+      provider,
+      level,
+      collaborationMode,
+      !personaReadOnly,
+      permissionProfile,
+    );
+  if (personaReadOnly || collaborationMode === 'plan') return 'read-only';
+  return level === 'on-request' && permissionProfile === 'auto-review' ? 'auto-review' : undefined;
+}
+
+/**
+ * Rail display for a thread that is not open in the composer: the selection it
+ * would run with on the current provider, labelled exactly as the chip would.
+ */
+export function resolveThreadAccessDisplay(
+  store: ThreadAccessStore,
+  threadId: string,
+  workspaceDefault: CodexMode | null | undefined,
+  provider: AgentProvider,
+  personaReadOnly = false,
+): ChatAccessDisplay {
+  const selection = resolveThreadAccessForDisplay(store, threadId, workspaceDefault, provider);
+  return resolveChatAccessDisplay(
+    chatAccessOptionsForProvider(provider),
+    selection.mode,
+    selection.selectionError
+      ? undefined
+      : requestedChatAccessMode(
+          provider,
+          selection.mode,
+          selection.permissionProfile,
+          'default',
+          personaReadOnly,
+        ),
+    selection.selectionError,
+  );
 }
 
 // ---------------------------------------------------------------------------

@@ -196,13 +196,14 @@ export default function HomePage() {
         <section className="cine-section" aria-labelledby="factories-title">
           <div className="home-wide">
             <div className="cine-titlerow">
-              <h2 id="factories-title" className="cine-h2 max-w-[15ch]">
+              <h2 id="factories-title" className="cine-h2 max-w-[17ch]">
                 Label an issue. Come back to a pull request.
+                <span className="home-factory-aside">Or let the agent merge it when it&rsquo;s ready.</span>
               </h2>
               <div>
                 <p className="cine-lede">
-                  Software factories carry a labelled GitHub issue all the way to a reviewed pull request. Nothing merges
-                  until you approve it.
+                  Software factories carry a labelled GitHub issue all the way to a reviewed pull request. By default
+                  nothing merges until you approve it; switch a factory to auto-merge and it lands without you.
                 </p>
                 <p className="home-factory-link">
                   <Link href="/docs/desktop/software-factories" className="cine-link inline-flex min-h-11 items-center">

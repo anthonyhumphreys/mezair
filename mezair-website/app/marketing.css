@@ -1307,6 +1307,16 @@ html:has(.cine) {
   height: auto;
 }
 
+/* A quieter second line under the factories heading: the optional next step. */
+.cine .home-factory-aside {
+  display: block;
+  margin-top: 0.6rem;
+  color: oklch(var(--muted-foreground));
+  font-size: 0.55em;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+
 .cine .home-dim {
   color: oklch(var(--muted-foreground));
 }

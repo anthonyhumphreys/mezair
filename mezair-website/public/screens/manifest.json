@@ -6,7 +6,7 @@
     "source": "probe",
     "route": "agents-at-work.html?picker",
     "fixture": "AgentsAtWorkProbe: production ChatView with synthetic Acme threads for Codex, Claude Code, Cursor and Devin; Cursor thread active with the model picker open",
-    "appCommit": "f1ee6af4",
+    "appCommit": "e22363f4",
     "capturedAt": "2026-11-11"
   },
   "agents-at-work-picker": {
@@ -21,7 +21,7 @@
       744,
       1418
     ],
-    "appCommit": "f1ee6af4",
+    "appCommit": "e22363f4",
     "capturedAt": "2026-11-11"
   },
   "agents-at-work-rail": {
@@ -36,6 +36,16 @@
       560,
       1405
     ],
+    "appCommit": "e22363f4",
+    "capturedAt": "2026-11-11"
+  },
+  "companion-home": {
+    "file": "/screens/companion-home.webp",
+    "width": 1206,
+    "height": 1940,
+    "source": "simulator",
+    "route": "Home tab (cropped above the tab bar)",
+    "fixture": "mobile/lib/sample-host.ts: production Mezair Companion screens on a synthetic paired host (Dana's MacBook Pro, Acme storefront) with one pending approval and Codex and Claude Code sessions running",
     "appCommit": "f1ee6af4",
     "capturedAt": "2026-11-11"
   },
@@ -144,6 +154,28 @@
     "appCommit": "1e91d524",
     "capturedAt": "2026-10-31"
   },
+  "retry-workflow": {
+    "file": "/screens/retry-workflow.webp",
+    "width": 1100,
+    "height": 560,
+    "source": "replay",
+    "route": "?capture=retry-workflow",
+    "fixture": "Retry workflow: production transcript and Review surface with synthetic task, commands, results and diff",
+    "appCommit": "8b4f9bd6",
+    "appWorkingTree": true,
+    "capturedAt": "2026-11-01"
+  },
+  "retry-workflow-mobile": {
+    "file": "/screens/retry-workflow-mobile.webp",
+    "width": 390,
+    "height": 820,
+    "source": "replay",
+    "route": "?capture=retry-workflow",
+    "fixture": "Retry workflow: production transcript and Review surface with synthetic task, commands, results and diff",
+    "appCommit": "8b4f9bd6",
+    "appWorkingTree": true,
+    "capturedAt": "2026-11-01"
+  },
   "surface-dependencies": {
     "file": "/screens/surface-dependencies.webp",
     "width": 2278,
@@ -199,37 +231,5 @@
     "appCommit": "8b4f9bd6",
     "appWorkingTree": true,
     "capturedAt": "2026-11-01"
-  },
-  "retry-workflow": {
-    "file": "/screens/retry-workflow.webp",
-    "width": 1100,
-    "height": 560,
-    "source": "replay",
-    "route": "?capture=retry-workflow",
-    "fixture": "Retry workflow: production transcript and Review surface with synthetic task, commands, results and diff",
-    "appCommit": "8b4f9bd6",
-    "appWorkingTree": true,
-    "capturedAt": "2026-11-01"
-  },
-  "retry-workflow-mobile": {
-    "file": "/screens/retry-workflow-mobile.webp",
-    "width": 390,
-    "height": 820,
-    "source": "replay",
-    "route": "?capture=retry-workflow",
-    "fixture": "Retry workflow: production transcript and Review surface with synthetic task, commands, results and diff",
-    "appCommit": "8b4f9bd6",
-    "appWorkingTree": true,
-    "capturedAt": "2026-11-01"
-  },
-  "companion-home": {
-    "file": "/screens/companion-home.webp",
-    "width": 1206,
-    "height": 1940,
-    "source": "simulator",
-    "route": "Home tab (cropped above the tab bar)",
-    "fixture": "mobile/lib/sample-host.ts: production Mezair Companion screens on a synthetic paired host (Dana's MacBook Pro, Acme storefront) with one pending approval and Codex and Claude Code sessions running",
-    "appCommit": "f1ee6af4",
-    "capturedAt": "2026-11-11"
   }
 }

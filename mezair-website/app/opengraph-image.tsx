@@ -6,7 +6,7 @@ export const contentType = cardContentType;
 
 export default function Image() {
   return renderCard({
-    title: "One set of reins.",
+    title: "One set of reins",
     description: "The free, open-source desktop app for Codex, Claude Code, Cursor and Devin. Sign in with the plans you already pay for.",
     label: "mezair.dev",
     facts: ["Free", "MIT", "macOS · Windows · Linux"],

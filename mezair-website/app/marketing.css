@@ -1019,7 +1019,7 @@ html:has(.cine) {
 .cine .home-main {
   overflow-x: clip;
   --home-gutter: clamp(1.25rem, 6.667vw, 6rem);
-  /* Display size for one-line display headings: "One set of reins." is ~8.6em wide. */
+  /* Display size for one-line display headings: "One set of reins" is ~8.3em wide. */
   --home-display: min(6rem, calc((100vw - 2 * var(--home-gutter)) / 8.9));
 }
 

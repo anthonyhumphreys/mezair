@@ -32,7 +32,7 @@ const text: Record<ScreenId, ScreenText> = {
     caption: "Five threads at once: one waiting for you, two working, one ready to archive."
   },
   "agents-at-work-picker": {
-    alt: "Close-up of Mezair's open model picker. Under a search field it lists Codex CLI with GPT-6.1 Sol, Claude Code with Opus, and Devin CLI with Auto (Devin default) and SWE-2, then reads 6 models. Run settings follow: Build mode, reasoning set by the Cursor model, subagents on Auto and fast mode off. Beneath the picker, the thread's composer is set to Cursor with Composer 2.",
+    alt: "Close-up of Mezair's open model picker. Under a search field it groups models by agent: Cursor CLI with Auto and the selected Composer 2, Codex CLI with GPT-6.1 Sol, Claude Code with Opus, and Devin CLI with Auto and SWE-2. Three run settings follow: Build mode, reasoning set by the Cursor model, and subagents on Auto. Beneath the picker, the thread's composer is set to Cursor with Composer 2.",
     caption: "The model picker: every agent and model, chosen per thread."
   },
   "companion-home": {

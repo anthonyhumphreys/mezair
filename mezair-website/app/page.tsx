@@ -9,7 +9,7 @@ import { SiteHeader } from "@/components/site/header";
 import { screen, type Screen } from "@/lib/screens";
 import { githubRepositoryUrl, hostedSignupNotice, latestDesktopDmgUrl, releasesUrl } from "@/lib/site";
 
-const cast = ["Codex.", "Claude Code.", "Cursor.", "Devin."];
+const cast = ["Codex", "Claude Code", "Cursor", "Devin"];
 
 const agents = [
   { name: "Codex", plan: "Your ChatGPT plan" },
@@ -74,7 +74,7 @@ export default function HomePage() {
                   {name}
                 </span>
               ))}
-              <span className="home-claim">One set of reins.</span>
+              <span className="home-claim">One set of reins</span>
             </h1>
             <div className="home-hero-side">
               <p className="home-body">

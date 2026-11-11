@@ -74,6 +74,8 @@ export function ModelPicker({
   const [open, setOpen] = useState(false);
   const [browse, setBrowse] = useState(false);
   const [position, setPosition] = useState<CSSProperties>({});
+  // Run settings sit in their own column beside the models when the window has room for it.
+  const [sideBySide, setSideBySide] = useState(false);
   const selected = options.find((option) => option.provider === provider && option.id === model);
   const presets = preferences.presets.length
     ? preferences.presets
@@ -99,7 +101,9 @@ export function ModelPicker({
     const reposition = () => {
       const rect = triggerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const width = Math.min(376, window.innerWidth - 24);
+      const wide = Boolean(settings) && !modelLockedReason && !slider && window.innerWidth >= 720;
+      setSideBySide(wide);
+      const width = Math.min(wide ? 560 : 400, window.innerWidth - 24);
       const above = rect.top - 20;
       const below = window.innerHeight - rect.bottom - 20;
       const top =
@@ -121,7 +125,7 @@ export function ModelPicker({
       window.removeEventListener('resize', reposition);
       window.removeEventListener('scroll', reposition, true);
     };
-  }, [menuOpen, fullWidth, placement]);
+  }, [menuOpen, fullWidth, placement, settings, modelLockedReason, slider]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -261,18 +265,33 @@ export function ModelPicker({
                 </div>
               </>
             ) : (
-              <ModelSearchList
-                options={options}
-                provider={provider}
-                model={model}
-                onSelect={(option) => {
-                  onChange(option.id, option.provider);
-                  close();
-                }}
-              />
+              <div
+                className={`flex min-h-0 ${sideBySide ? 'h-[21rem] flex-row' : 'max-h-[26rem] flex-col'}`}
+              >
+                <ModelSearchList
+                  options={options}
+                  provider={provider}
+                  model={model}
+                  onSelect={(option) => {
+                    onChange(option.id, option.provider);
+                    close();
+                  }}
+                />
+                {settings && sideBySide && (
+                  <div
+                    role="group"
+                    aria-label="Run settings"
+                    className="w-48 shrink-0 overflow-y-auto overscroll-contain border-l border-border-subtle p-2.5"
+                  >
+                    {settings}
+                  </div>
+                )}
+              </div>
             )}
-            {settings && (
-              <div className="shrink-0 border-t border-border-subtle p-3">{settings}</div>
+            {settings && (modelLockedReason || !sideBySide) && (
+              <div className="max-h-72 shrink-0 overflow-y-auto border-t border-border-subtle p-3">
+                {settings}
+              </div>
             )}
             {settingsLink && (
               <Link

@@ -10,6 +10,7 @@ import {
 } from 'react';
 import {
   AlertCircle,
+  Check,
   ChevronDown,
   ChevronRight,
   CircleHelp,
@@ -56,7 +57,7 @@ import {
   ChatComposerSurface,
 } from './shared/ChatPresentation';
 import type { ChatAccessOption } from './thread-access';
-import { isAcpAgentProvider } from '../../../shared/agent-providers';
+import { isAcpAgentProvider, type AcpAgentProvider } from '../../../shared/agent-providers';
 import { slugForDomId } from '../../utils/dom-id';
 import { getNextListboxIndex } from '../../utils/list-navigation';
 import { EXECUTION_STRATEGIES, type ExecutionStrategy } from '../../utils/execution-strategy';
@@ -2522,8 +2523,56 @@ function formatReasoningLabel(level: ReasoningEffort): string {
   return `${level.charAt(0).toUpperCase()}${level.slice(1)}`;
 }
 
+/** Cursor encodes effort in its model ids: `gpt-5-high` or `gpt-5.6-sol[reasoning=medium]`. */
 export function getCursorModelReasoningEffort(model: string): ReasoningEffort | undefined {
-  return REASONING_EFFORT_OPTIONS.find((option) => model.endsWith(`-${option.level}`))?.level;
+  const bracketed = /\[reasoning=([a-z]+)\]$/.exec(model)?.[1];
+  return REASONING_EFFORT_OPTIONS.find((option) =>
+    bracketed ? option.level === bracketed : model.endsWith(`-${option.level}`),
+  )?.level;
+}
+
+/**
+ * Reasoning for agent-client providers. Mezair sends none of them a separate
+ * reasoning setting: Cursor and Devin run at whatever level the selected model
+ * id carries, and Claude Code sessions load the user's Claude Code settings.
+ */
+const ACP_REASONING: Record<
+  AcpAgentProvider,
+  { fromModelId: boolean; fallback: string; hint: string }
+> = {
+  cursor: {
+    fromModelId: true,
+    fallback: 'Set by the Cursor model',
+    hint: 'Cursor model IDs include their reasoning level where supported.',
+  },
+  devin: {
+    fromModelId: true,
+    fallback: 'Set by the Devin model',
+    hint: 'Mezair does not send Devin a reasoning setting. The selected Devin model decides.',
+  },
+  claude: {
+    fromModelId: false,
+    fallback: 'Claude Code settings',
+    hint: 'Mezair does not set reasoning for Claude Code. Your Claude Code settings decide how much it thinks.',
+  },
+};
+
+/** The effort an agent-client model runs at, when its id states one. */
+export function getAcpModelReasoningEffort(
+  provider: AcpAgentProvider,
+  model: string,
+): ReasoningEffort | undefined {
+  return ACP_REASONING[provider].fromModelId ? getCursorModelReasoningEffort(model) : undefined;
+}
+
+/** Value and help text for the run settings' Reasoning row on an agent-client provider. */
+export function getAcpReasoningSummary(
+  provider: AcpAgentProvider,
+  model: string,
+): { value: string; hint: string } {
+  const copy = ACP_REASONING[provider];
+  const effort = getAcpModelReasoningEffort(provider, model);
+  return { value: effort ? formatReasoningLabel(effort) : copy.fallback, hint: copy.hint };
 }
 
 export function getCompactModelLabel(
@@ -2542,7 +2591,7 @@ export function getCompactModelLabel(
   const compact = label
     .replace(/\s+\([^)]*\)$/, '')
     .replace(/\s+1M(?:\s+Thinking)?(?:\s+\S+)?$/i, '');
-  const reasoning = getCursorModelReasoningEffort(model);
+  const reasoning = getAcpModelReasoningEffort(provider, model);
   if (!reasoning) return compact.trim();
   return compact.replace(new RegExp(`\\s+${reasoning}$`, 'i'), '').trim();
 }
@@ -2583,7 +2632,7 @@ function resolveRunEffort(
   reasoningLevel: ReasoningEffort,
   reasoningOptions: ReasoningEffort[],
 ): ReasoningEffort | undefined {
-  if (isAcpAgentProvider(modelProvider)) return getCursorModelReasoningEffort(model);
+  if (isAcpAgentProvider(modelProvider)) return getAcpModelReasoningEffort(modelProvider, model);
   return reasoningOptions.includes(reasoningLevel) ? reasoningLevel : undefined;
 }
 
@@ -2638,40 +2687,82 @@ export function hasRunSettings(
   );
 }
 
-const settingsSelectClass =
-  'h-8 w-full rounded-lg border border-border-subtle bg-bg-secondary px-2 text-xs text-text-primary outline-none transition-colors hover:border-border focus:border-accent focus:ring-2 focus:ring-accent/30';
-
-function SettingsRow({
-  label,
-  hint,
-  htmlFor,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  htmlFor?: string;
-  children: ReactNode;
-}) {
+/** A small heading over one group of run options. */
+function OptionGroupLabel({ id, children }: { id: string; children: ReactNode }) {
   return (
-    <div>
-      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2">
-        {htmlFor ? (
-          <label htmlFor={htmlFor} className="text-xs font-medium text-text-secondary">
-            {label}
-          </label>
-        ) : (
-          <span className="text-xs font-medium text-text-secondary">{label}</span>
-        )}
-        {children}
-      </div>
-      {hint && (
-        <p className="mt-1 pl-[calc(5.5rem+0.5rem)] text-xs leading-4 text-text-tertiary">{hint}</p>
-      )}
+    <div id={id} className="px-2 pb-1 text-xs font-medium text-text-tertiary">
+      {children}
     </div>
   );
 }
 
-/** Mode, reasoning, subagents and fast mode. Rendered inside the model panel. */
+/**
+ * One run setting as a short list of choices, like a menu: the current one is ticked.
+ * Arrow keys move between choices (radio semantics); descriptions are tooltips.
+ */
+function OptionList<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: Array<{ id: T; label: string; description?: string }>;
+  onChange: (value: T) => void;
+}) {
+  const labelId = useId();
+  const listRef = useRef<HTMLDivElement>(null);
+  const move = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    const index = options.findIndex((option) => option.id === value);
+    const next =
+      options[(index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length];
+    onChange(next.id);
+    window.requestAnimationFrame(() =>
+      listRef.current?.querySelector<HTMLButtonElement>(`[data-option="${next.id}"]`)?.focus(),
+    );
+  };
+  return (
+    <div>
+      <OptionGroupLabel id={labelId}>{label}</OptionGroupLabel>
+      <div
+        ref={listRef}
+        role="radiogroup"
+        aria-labelledby={labelId}
+        onKeyDown={move}
+        className="flex flex-col gap-px"
+      >
+        {options.map((option) => {
+          const checked = option.id === value;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              role="radio"
+              aria-checked={checked}
+              data-option={option.id}
+              tabIndex={checked ? 0 : -1}
+              title={option.description}
+              onClick={() => onChange(option.id)}
+              className={`flex h-7 items-center gap-2 rounded-md px-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${
+                checked
+                  ? 'bg-bg-hover font-medium text-text-primary'
+                  : 'text-text-secondary hover:bg-bg-hover/60 hover:text-text-primary'
+              }`}
+            >
+              <span className="min-w-0 flex-1 truncate">{option.label}</span>
+              {checked && <Check size={13} className="shrink-0 text-accent" aria-hidden="true" />}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Mode, reasoning, subagents and fast mode, as a column of short choice lists. */
 function RunSettingsFields({
   model,
   modelProvider,
@@ -2686,11 +2777,13 @@ function RunSettingsFields({
   fastModeAvailable,
   onFastModeChange,
 }: RunSettingsProps) {
-  const fieldId = useId();
+  const reasoningLabelId = useId();
   const availableOptions = REASONING_EFFORT_OPTIONS.filter((option) =>
     reasoningOptions.includes(option.level),
   );
-  const acpName = modelProvider === 'devin' ? 'Devin' : 'Cursor';
+  const acpReasoning = isAcpAgentProvider(modelProvider)
+    ? getAcpReasoningSummary(modelProvider, model)
+    : null;
   const segment = (active: boolean, tone: 'neutral' | 'info' = 'neutral') =>
     `flex h-7 items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 ${
       active
@@ -2701,121 +2794,92 @@ function RunSettingsFields({
     }`;
 
   return (
-    <div className="space-y-2.5">
+    <div className="flex flex-col gap-3">
       {onCollaborationModeChange && (
-        <SettingsRow label="Mode">
-          <div
-            className="grid grid-cols-2 gap-0.5 rounded-lg bg-text-primary/[0.06] p-0.5"
-            role="group"
-            aria-label="Collaboration mode"
+        <div
+          className="grid grid-cols-2 gap-0.5 rounded-lg bg-text-primary/[0.06] p-0.5"
+          role="group"
+          aria-label="Collaboration mode"
+        >
+          <button
+            type="button"
+            onClick={() => onCollaborationModeChange('default')}
+            className={segment(collaborationMode === 'default')}
+            aria-pressed={collaborationMode === 'default'}
           >
-            <button
-              type="button"
-              onClick={() => onCollaborationModeChange('default')}
-              className={segment(collaborationMode === 'default')}
-              aria-pressed={collaborationMode === 'default'}
-            >
-              <Hammer size={12} />
-              Build
-            </button>
-            <button
-              type="button"
-              onClick={() => onCollaborationModeChange('plan')}
-              className={segment(collaborationMode === 'plan', 'info')}
-              aria-pressed={collaborationMode === 'plan'}
-            >
-              <ListChecks size={12} />
-              Plan
-            </button>
-          </div>
-        </SettingsRow>
+            <Hammer size={12} />
+            Build
+          </button>
+          <button
+            type="button"
+            onClick={() => onCollaborationModeChange('plan')}
+            className={segment(collaborationMode === 'plan', 'info')}
+            aria-pressed={collaborationMode === 'plan'}
+          >
+            <ListChecks size={12} />
+            Plan
+          </button>
+        </div>
       )}
 
-      {isAcpAgentProvider(modelProvider) ? (
-        <SettingsRow
-          label="Reasoning"
-          hint={`${acpName} model IDs include their reasoning level where supported.`}
-        >
-          <span className="text-xs text-text-secondary">
-            {(() => {
-              const effort = getCursorModelReasoningEffort(model);
-              return effort ? formatReasoningLabel(effort) : `Set by the ${acpName} model`;
-            })()}
-          </span>
-        </SettingsRow>
+      {acpReasoning ? (
+        <div title={acpReasoning.hint}>
+          <OptionGroupLabel id={reasoningLabelId}>Reasoning</OptionGroupLabel>
+          <p aria-labelledby={reasoningLabelId} className="px-2 text-xs text-text-secondary">
+            {acpReasoning.value}
+          </p>
+        </div>
       ) : (
         onReasoningChange &&
         availableOptions.length > 0 && (
-          <SettingsRow
+          <OptionList
             label="Reasoning"
-            htmlFor={`${fieldId}-reasoning`}
-            hint={availableOptions.find((option) => option.level === reasoningLevel)?.description}
-          >
-            <select
-              id={`${fieldId}-reasoning`}
-              value={reasoningLevel}
-              onChange={(event) => onReasoningChange(event.target.value as ReasoningEffort)}
-              className={settingsSelectClass}
-            >
-              {availableOptions.map((option) => (
-                <option key={option.level} value={option.level}>
-                  {formatReasoningLabel(option.level)}
-                </option>
-              ))}
-            </select>
-          </SettingsRow>
+            value={reasoningLevel}
+            onChange={onReasoningChange}
+            options={availableOptions.map((option) => ({
+              id: option.level,
+              label: formatReasoningLabel(option.level),
+              description: option.description,
+            }))}
+          />
         )
       )}
 
       {onExecutionStrategyChange && (
-        <SettingsRow
+        <OptionList
           label="Subagents"
-          htmlFor={`${fieldId}-strategy`}
-          hint={
-            EXECUTION_STRATEGIES.find((strategy) => strategy.id === executionStrategy)?.description
-          }
-        >
-          <select
-            id={`${fieldId}-strategy`}
-            value={executionStrategy}
-            onChange={(event) => onExecutionStrategyChange(event.target.value as ExecutionStrategy)}
-            className={settingsSelectClass}
-          >
-            {EXECUTION_STRATEGIES.map((strategy) => (
-              <option key={strategy.id} value={strategy.id}>
-                {strategy.label}
-              </option>
-            ))}
-          </select>
-        </SettingsRow>
+          value={executionStrategy}
+          onChange={onExecutionStrategyChange}
+          options={EXECUTION_STRATEGIES}
+        />
       )}
 
-      {onFastModeChange && (
-        <SettingsRow
-          label="Fast mode"
-          hint={
-            fastModeAvailable
-              ? "Use the provider's faster service tier."
-              : 'Not available for this model.'
-          }
+      {/* Hide fast mode where the model can't use it, unless it is still on and needs turning off. */}
+      {onFastModeChange && (fastModeAvailable || fastMode) && (
+        <button
+          type="button"
+          role="switch"
+          aria-checked={fastMode}
+          onClick={() => onFastModeChange(!fastMode)}
+          disabled={!fastModeAvailable && !fastMode}
+          title="Use the provider's faster service tier."
+          className={`flex h-7 items-center gap-2 rounded-md px-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${
+            fastMode
+              ? 'text-warning'
+              : 'text-text-secondary hover:bg-bg-hover/60 hover:text-text-primary'
+          }`}
         >
-          <button
-            type="button"
-            role="switch"
-            aria-checked={fastMode}
-            aria-label="Fast mode"
-            onClick={() => onFastModeChange(!fastMode)}
-            disabled={!fastModeAvailable}
-            className={`flex h-7 w-fit items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 disabled:cursor-not-allowed disabled:opacity-45 ${
-              fastMode
-                ? 'bg-warning/12 text-warning'
-                : 'bg-text-primary/[0.06] text-text-secondary hover:text-text-primary'
-            }`}
+          <Zap size={12} fill={fastMode ? 'currentColor' : 'none'} aria-hidden="true" />
+          <span className="flex-1">Fast mode</span>
+          <span
+            aria-hidden="true"
+            className={`relative h-3.5 w-6 rounded-full transition-colors ${fastMode ? 'bg-warning' : 'bg-text-primary/15'}`}
           >
-            <Zap size={12} fill={fastMode ? 'currentColor' : 'none'} />
-            {fastMode ? 'On' : 'Off'}
-          </button>
-        </SettingsRow>
+            <span
+              className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-bg-elevated transition-[left] ${fastMode ? 'left-3' : 'left-0.5'}`}
+            />
+          </span>
+        </button>
       )}
     </div>
   );

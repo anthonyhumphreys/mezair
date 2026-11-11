@@ -7,6 +7,8 @@ import {
   partitionNeedsUserThreads,
   partitionThreads,
   shouldSelectThreadFromKey,
+  threadContextLabel,
+  threadsSpanSeveralRepos,
 } from '../ChatThreadRail';
 
 const keyTarget = (closestEditable: boolean, editable = false): EventTarget =>
@@ -107,5 +109,48 @@ describe('work inbox lifecycle', () => {
       needsUserThreads: [input, approval],
       otherActiveThreads: [idle, failed],
     });
+  });
+});
+
+describe('thread row context', () => {
+  const thread = (overrides: Partial<ChatThread>): ChatThread => ({
+    id: 't',
+    personaId: 'coder',
+    title: 'Thread',
+    repoIds: [],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    messageCount: 1,
+    attentionState: 'idle',
+    ...overrides,
+  });
+  const names = {
+    repoNames: new Map([
+      ['a', 'storefront'],
+      ['b', 'payments'],
+    ]),
+    personaNames: new Map([['coder', 'Coder']]),
+  };
+
+  it('only names repositories when the threads span more than one', () => {
+    expect(
+      threadsSpanSeveralRepos([thread({ activeRepoId: 'a' }), thread({ activeRepoId: 'a' })]),
+    ).toBe(false);
+    expect(threadsSpanSeveralRepos([thread({ activeRepoId: 'a' }), thread({})])).toBe(false);
+    expect(
+      threadsSpanSeveralRepos([thread({ activeRepoId: 'a' }), thread({ activeRepoId: 'b' })]),
+    ).toBe(true);
+  });
+
+  it('omits a shared repository name rather than repeating it on every row', () => {
+    expect(threadContextLabel(thread({ activeRepoId: 'a' }), names, false)).toBeUndefined();
+    expect(threadContextLabel(thread({ activeRepoId: 'a' }), names, true)).toBe('storefront');
+  });
+
+  it('prefers the work item, and names the persona for threads without a repository', () => {
+    expect(
+      threadContextLabel(thread({ activeRepoId: 'a', workItemTitle: 'ACME-12' }), names, true),
+    ).toBe('ACME-12');
+    expect(threadContextLabel(thread({}), names, false)).toBe('Coder');
   });
 });

@@ -23,9 +23,9 @@ const mono = JetBrains_Mono({
   display: "swap"
 });
 
-const title = "Mezair | Put your agents in motion";
+const title = "Mezair: every coding agent, one set of reins";
 const description =
-  "Run Codex, Claude Code, Cursor, Devin and more from one desktop app. Bring your own subscriptions. Free and open source. Add hosted Sync & Mesh for £8.99/mo, or self-host it for free.";
+  "The free, open-source desktop app for Codex, Claude Code, Cursor and Devin. Sign in with the plans you already pay for.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),

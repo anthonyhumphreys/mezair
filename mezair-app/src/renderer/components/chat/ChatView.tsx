@@ -76,8 +76,10 @@ import { useThreadAccess } from './useThreadAccess';
 import {
   chatAccessOptionsForProvider,
   beginThreadAccessChange,
-  expectedAcpAppliedMode,
   remoteThreadAccessError,
+  requestedChatAccessMode,
+  resolveChatAccessDisplay,
+  resolveThreadAccessDisplay,
   type ChatAccessOption,
 } from './thread-access';
 import { isAcpAgentProvider } from '../../../shared/agent-providers';
@@ -843,19 +845,67 @@ export function ChatView({ userRole }: ChatViewProps) {
   const personaReadOnly = activePersona?.capabilities.canWriteFiles === false;
   const requestedAccessMode = runTarget.remote
     ? undefined
-    : isAcpAgentProvider(agentProvider)
-      ? expectedAcpAppliedMode(
-          agentProvider,
-          threadAccess.level,
-          collaborationMode,
-          !personaReadOnly,
-          threadAccess.permissionProfile,
-        )
-      : personaReadOnly || collaborationMode === 'plan'
-        ? 'read-only'
-        : threadAccess.level === 'on-request' && threadAccess.permissionProfile === 'auto-review'
-          ? 'auto-review'
-          : undefined;
+    : requestedChatAccessMode(
+        agentProvider,
+        threadAccess.level,
+        threadAccess.permissionProfile,
+        collaborationMode,
+        personaReadOnly,
+      );
+  const accessAppliedMode = runTarget.remote ? undefined : session?.appliedMode;
+  const accessSelectionError =
+    threadAccess.selectionError ??
+    (runTarget.remote
+      ? remoteThreadAccessError({
+          permissionProfile: threadAccess.permissionProfile,
+          permissionMode: runTargetInput.permissionMode,
+        })
+      : undefined);
+  // CH1 — one wording per thread: the open thread's badge is the composer chip's
+  // display; other threads resolve the same way on the provider they would run with.
+  const activeAccessDisplay = useMemo(
+    () =>
+      resolveChatAccessDisplay(
+        accessOptions,
+        threadAccess.level,
+        accessAppliedMode ?? requestedAccessMode,
+        accessSelectionError,
+      ),
+    [
+      accessOptions,
+      threadAccess.level,
+      accessAppliedMode,
+      requestedAccessMode,
+      accessSelectionError,
+    ],
+  );
+  const threadAccessDisplays = useMemo(
+    () =>
+      Object.fromEntries(
+        threads.map((thread) => [
+          thread.id,
+          thread.id === activeThreadId
+            ? activeAccessDisplay
+            : resolveThreadAccessDisplay(
+                threadAccess.store,
+                thread.id,
+                workspaceAccessDefault,
+                modelProvider,
+                personas.find((persona) => persona.id === thread.personaId)?.capabilities
+                  .canWriteFiles === false,
+              ),
+        ]),
+      ),
+    [
+      threads,
+      activeThreadId,
+      activeAccessDisplay,
+      threadAccess.store,
+      workspaceAccessDefault,
+      modelProvider,
+      personas,
+    ],
+  );
 
   const slashCommands = useMemo(() => buildSlashCommands(agentLabel), [agentLabel]);
   const combinedThreadStatuses = useMemo(
@@ -1648,8 +1698,7 @@ export function ChatView({ userRole }: ChatViewProps) {
               onDeleteThread={deleteThread}
               chatLayout={chatLayout}
               onChatLayoutChange={handleChatLayoutChange}
-              accessLevels={threadAccess.threadLevels}
-              defaultAccessLevel={threadAccess.defaultLevel}
+              accessDisplays={threadAccessDisplays}
             />
           ) : (
             <ChatThreadRail
@@ -1665,8 +1714,7 @@ export function ChatView({ userRole }: ChatViewProps) {
               onDeleteThread={deleteThread}
               chatLayout={chatLayout}
               onChatLayoutChange={handleChatLayoutChange}
-              accessLevels={threadAccess.threadLevels}
-              defaultAccessLevel={threadAccess.defaultLevel}
+              accessDisplays={threadAccessDisplays}
             />
           ))}
 
@@ -1836,17 +1884,9 @@ export function ChatView({ userRole }: ChatViewProps) {
               activeThread?.purpose === 'side-question'
             }
             accessOptions={accessOptions}
-            accessAppliedMode={runTarget.remote ? undefined : session?.appliedMode}
+            accessAppliedMode={accessAppliedMode}
             accessRequestedMode={requestedAccessMode}
-            accessSelectionError={
-              threadAccess.selectionError ??
-              (runTarget.remote
-                ? remoteThreadAccessError({
-                    permissionProfile: threadAccess.permissionProfile,
-                    permissionMode: runTargetInput.permissionMode,
-                  })
-                : undefined)
-            }
+            accessSelectionError={accessSelectionError}
             onAccessOptionSelect={scaffoldModeActive ? undefined : handleAccessOptionSelect}
             collaborationMode={runTarget.remote ? 'default' : collaborationMode}
             onCollaborationModeChange={

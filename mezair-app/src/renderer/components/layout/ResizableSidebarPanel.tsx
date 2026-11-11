@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStoredPanelState } from '../../hooks/useStoredPanelState';
 
@@ -38,6 +38,26 @@ export function shouldAutoCollapsePanel({
   persistedCollapsed,
 }: AutoCollapseInput): boolean {
   return Boolean(threshold && viewportWidth < threshold && !persistedCollapsed);
+}
+
+interface AutoCollapseTransitionInput {
+  /** Whether the previous layout was below the threshold; null before the first layout. */
+  wasNarrow: boolean | null;
+  isNarrow: boolean;
+  autoCollapsed: boolean;
+}
+
+/**
+ * Responsive collapse reacts to threshold crossings only. Between crossings the
+ * current state stands, so an explicit expand or collapse survives later resizes.
+ */
+export function nextAutoCollapsed({
+  wasNarrow,
+  isNarrow,
+  autoCollapsed,
+}: AutoCollapseTransitionInput): boolean {
+  if (wasNarrow === isNarrow) return autoCollapsed;
+  return isNarrow;
 }
 
 export function resolvePanelWidth({ width, collapsedWidth, collapsed }: PanelWidthInput): number {
@@ -148,28 +168,27 @@ export function ResizableSidebarPanel({
   const collapseButton = side === 'left' ? <ChevronLeft size={14} /> : <ChevronRight size={14} />;
   const expandButton = side === 'left' ? <ChevronRight size={14} /> : <ChevronLeft size={14} />;
 
+  // The viewport side of the threshold at the last layout. Seeded by the
+  // first-render decision above, so mounting narrow does not count as a crossing.
+  const wasNarrowRef = useRef<boolean | null>(
+    autoCollapseBelow ? window.innerWidth < autoCollapseBelow : null,
+  );
   useEffect(() => {
     if (!autoCollapseBelow || !collapsible) return;
 
-    const collapseWhenNarrow = () => {
-      if (
-        shouldAutoCollapsePanel({
-          viewportWidth: window.innerWidth,
-          threshold: autoCollapseBelow,
-          persistedCollapsed: collapsed,
-        })
-      ) {
-        setAutoCollapsed(true);
-        return;
-      }
-
-      setAutoCollapsed(false);
+    const collapseOnCrossing = () => {
+      const isNarrow = window.innerWidth < autoCollapseBelow;
+      const wasNarrow = wasNarrowRef.current;
+      wasNarrowRef.current = isNarrow;
+      setAutoCollapsed((autoCollapsed) =>
+        nextAutoCollapsed({ wasNarrow, isNarrow, autoCollapsed }),
+      );
     };
 
-    collapseWhenNarrow();
-    window.addEventListener('resize', collapseWhenNarrow);
-    return () => window.removeEventListener('resize', collapseWhenNarrow);
-  }, [autoCollapseBelow, collapsed, collapsible]);
+    collapseOnCrossing();
+    window.addEventListener('resize', collapseOnCrossing);
+    return () => window.removeEventListener('resize', collapseOnCrossing);
+  }, [autoCollapseBelow, collapsible]);
 
   return (
     <div

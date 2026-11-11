@@ -4,6 +4,7 @@ import {
   buildFileMentionOptionId,
   findActiveSkillMention,
   findActiveSlashCommand,
+  getAcpReasoningSummary,
   getCompactModelLabel,
   getCursorModelReasoningEffort,
   getSkillMentionResults,
@@ -49,6 +50,44 @@ describe('getRunSettingsDetail', () => {
     expect(getRunSettingsDetail({ ...base, model: 'gpt-5-high', modelProvider: 'cursor' })).toBe(
       '',
     );
+  });
+});
+
+describe('getAcpReasoningSummary', () => {
+  it('names each agent-client provider in its own reasoning wording', () => {
+    const cursor = getAcpReasoningSummary('cursor', 'composer-2');
+    expect(cursor.value).toBe('Set by the Cursor model');
+    expect(cursor.hint).toMatch(/^Cursor model IDs/);
+
+    const devin = getAcpReasoningSummary('devin', 'swe-2');
+    expect(devin.value).toBe('Set by the Devin model');
+    expect(devin.hint).toContain('Devin');
+    expect(devin.hint).not.toContain('Cursor');
+
+    const claude = getAcpReasoningSummary('claude', 'opus');
+    expect(claude.value).toBe('Claude Code settings');
+    expect(claude.hint).toContain('Claude Code');
+    expect(claude.hint).not.toContain('Cursor');
+  });
+
+  it('reads the effort from Cursor and Devin model ids in either suffix form', () => {
+    expect(getAcpReasoningSummary('cursor', 'gpt-5-high').value).toBe('High');
+    expect(getAcpReasoningSummary('cursor', 'gpt-5.6-sol[reasoning=medium]').value).toBe('Medium');
+    expect(getAcpReasoningSummary('devin', 'swe-2-xhigh').value).toBe('Extra high');
+  });
+
+  it('never reads an effort from a Claude Code model id, which Mezair does not use for reasoning', () => {
+    expect(getAcpReasoningSummary('claude', 'claude-opus-high').value).toBe('Claude Code settings');
+    expect(
+      getRunSettingsDetail({
+        model: 'claude-opus-high',
+        modelProvider: 'claude',
+        reasoningLevel: 'high',
+        collaborationMode: 'default',
+        fastMode: false,
+        fastModeAvailable: false,
+      }),
+    ).toBe('');
   });
 });
 

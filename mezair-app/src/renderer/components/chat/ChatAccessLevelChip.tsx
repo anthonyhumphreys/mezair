@@ -11,13 +11,11 @@ import {
 import type { CodexMode } from '../../../shared/types';
 import { ConfirmDialog, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '../ui';
 import {
-  DEFAULT_CHAT_ACCESS_LEVEL,
-  chatAccessLevelIsElevated,
-  chatAccessLevelLabel,
-  chatAccessLevelShortLabel,
   chatAccessOptionSelected,
   chatAccessOptionsForProvider,
   resolveChatAccessChipLabel,
+  resolveChatAccessDisplay,
+  type ChatAccessDisplay,
   type ChatAccessOption,
 } from './thread-access';
 
@@ -65,27 +63,19 @@ export function ChatAccessLevelChip({
   const resolvedOptions = (options ?? chatAccessOptionsForProvider(undefined)).filter(
     (option) => onSelectOption || !option.permissionProfile,
   );
-  const selectedOption = resolvedOptions.find(
-    (option) =>
-      !selectionError && chatAccessOptionSelected(option, value, requestedMode ?? appliedMode),
-  );
   const requestedLabel = resolveChatAccessChipLabel(resolvedOptions, value, requestedMode);
-  const chipLabel = selectionError
-    ? 'Choose access'
-    : appliedMode
-      ? resolveChatAccessChipLabel(resolvedOptions, value, appliedMode)
-      : requestedLabel;
+  // Shows what the provider applies once confirmed, else what the next turn requests.
+  // The thread rail badge resolves the same display, so both name the thread alike.
+  const display = resolveChatAccessDisplay(
+    resolvedOptions,
+    value,
+    appliedMode ?? requestedMode,
+    selectionError,
+  );
   // Until the provider confirms a mode the chip shows the requested level as-is;
   // the menu header spells out that it applies from the next turn.
   const pendingProviderConfirmation = !selectionError && !appliedMode;
-  const elevated = selectedOption?.elevated ?? chatAccessLevelIsElevated(value);
-  // The default level is the expected state, so the chip collapses to an icon.
-  // Anything that differs (read only, plan, elevated, or an error) names itself.
-  const quiet =
-    !selectionError &&
-    !elevated &&
-    value === DEFAULT_CHAT_ACCESS_LEVEL &&
-    (selectedOption ? selectedOption.level === DEFAULT_CHAT_ACCESS_LEVEL : true);
+  const elevated = display.elevated;
 
   const select = (option: ChatAccessOption) => {
     if (onSelectOption) {
@@ -120,9 +110,7 @@ export function ChatAccessLevelChip({
             type="button"
             disabled={disabled}
             className={cx(
-              quiet
-                ? 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors'
-                : `flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors ${compact ? 'max-w-48' : 'max-w-56'}`,
+              `flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors ${compact ? 'max-w-48' : 'max-w-56'}`,
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55',
               'disabled:cursor-not-allowed disabled:opacity-50',
               elevated
@@ -134,9 +122,9 @@ export function ChatAccessLevelChip({
             title={
               disabled
                 ? 'Thread access is locked for the current run or persona'
-                : `Thread access: ${chipLabel}${pendingProviderConfirmation ? ' (applies next turn)' : ''}`
+                : `Thread access: ${display.fullLabel}${pendingProviderConfirmation ? ' (applies next turn)' : ''}`
             }
-            aria-label={`Thread access: ${chipLabel}${pendingProviderConfirmation ? ', applies next turn' : ''}`}
+            aria-label={`Thread access: ${display.fullLabel}${pendingProviderConfirmation ? ', applies next turn' : ''}`}
           >
             {elevated ? (
               <ShieldAlert size={14} strokeWidth={1.75} className="shrink-0" aria-hidden="true" />
@@ -148,12 +136,8 @@ export function ChatAccessLevelChip({
                 aria-hidden="true"
               />
             )}
-            {!quiet && (
-              <>
-                <span className="truncate">{chipLabel}</span>
-                <ChevronDown size={12} className="shrink-0 text-text-tertiary" aria-hidden="true" />
-              </>
-            )}
+            <span className="truncate">{display.label}</span>
+            <ChevronDown size={12} className="shrink-0 text-text-tertiary" aria-hidden="true" />
           </button>
         )}
         menuClassName="w-80"
@@ -238,25 +222,27 @@ export function ChatAccessLevelChip({
   );
 }
 
-/** Compact read-only level indicator for the thread rail (CH1). */
-export function ChatAccessLevelBadge({ level }: { level: CodexMode }) {
-  const elevated = chatAccessLevelIsElevated(level);
+/**
+ * Compact read-only access indicator for the thread rail (CH1). Takes the same
+ * resolved display as the composer chip, never a raw level.
+ */
+export function ChatAccessLevelBadge({ display }: { display: ChatAccessDisplay }) {
   return (
     <span
       className={cx(
-        'inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs font-medium',
-        elevated
+        'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-xs font-medium',
+        display.elevated
           ? 'border-warning/35 bg-warning/10 text-warning'
           : 'border-border-subtle text-text-tertiary',
       )}
-      title={`Thread access: ${chatAccessLevelLabel(level)}`}
+      title={`Thread access: ${display.fullLabel}`}
     >
-      {elevated ? (
+      {display.elevated ? (
         <ShieldAlert size={10} aria-hidden="true" />
       ) : (
         <Shield size={10} aria-hidden="true" />
       )}
-      {chatAccessLevelShortLabel(level)}
+      {display.label}
     </span>
   );
 }

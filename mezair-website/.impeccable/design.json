@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-28T01:21:15Z",
+  "generatedAt": "2026-11-11T00:00:00Z",
   "title": "Design System: Mezair website",
   "extensions": {
     "source": "DESIGN.md",
@@ -32,9 +32,14 @@
         "theme": "Always dark; header theme toggle hidden.",
         "sources": [
           "app/marketing.css",
-          "components/marketing/product-reel.tsx",
+          "app/page.tsx",
+          "components/marketing/shot.tsx",
+          "components/marketing/mark-on-view.tsx",
+          "components/marketing/mesh-stage.tsx",
+          "components/marketing/use-timeline.ts",
           "components/marketing/use-reel.ts",
-          "components/marketing/handoff-stage.tsx"
+          "lib/screens.ts",
+          "public/screens/manifest.json"
         ]
       },
       {
@@ -797,7 +802,7 @@
     "typographyMeta": {
       "display": {
         "displayName": "Display",
-        "purpose": "Marketing hero headings."
+        "purpose": "Marketing hero headings on /sync and /pricing; the homepage and naming page carry their own larger route scales on the same wide voice."
       },
       "headline": {
         "displayName": "Headline",
@@ -831,15 +836,27 @@
     "shadows": [
       {
         "name": "projected-window",
-        "value": "0 1px 0 oklch(1 0 0 / 0.06) inset, 0 50px 100px -40px oklch(0.04 0.02 265 / 0.95), 0 24px 40px -28px oklch(0.04 0.02 265 / 0.8)",
-        "purpose": "Full product scene window.",
-        "source": "app/marketing.css .sc-win"
+        "value": "0 1px 0 oklch(1 0 0 / 0.07) inset, 0 50px 100px -40px oklch(0.04 0.02 265 / 0.95), 0 24px 40px -28px oklch(0.04 0.02 265 / 0.8)",
+        "purpose": "Real capture frames.",
+        "source": "app/marketing.css .cine .shot"
       },
       {
-        "name": "handoff-stage",
-        "value": "0 1px 0 oklch(1 0 0 / 0.06) inset, 0 50px 100px -40px oklch(0.04 0.02 265 / 0.95)",
-        "purpose": "Full Sync handoff stage.",
-        "source": "app/marketing.css .ho-stage"
+        "name": "panel-capture",
+        "value": "filter: drop-shadow(0 30px 50px oklch(0.03 0.02 265 / 0.7))",
+        "purpose": "Transparent settings-panel captures; no frame.",
+        "source": "app/marketing.css .cine .shot[data-panel=\"true\"] img"
+      },
+      {
+        "name": "mesh-stage-panel",
+        "value": "0 1px 0 oklch(1 0 0 / 0.06) inset, 0 60px 120px -50px oklch(0.04 0.02 265 / 0.95), 0 24px 40px -28px oklch(0.04 0.02 265 / 0.8)",
+        "purpose": "The Mesh stage on /sync.",
+        "source": "app/marketing.css .cine .ms-panel"
+      },
+      {
+        "name": "key-light",
+        "value": "radial-gradient(48% 52% at 50% 48%, oklch(var(--cine-key) / 0.5), transparent 72%); homepage per-window pool: radial-gradient(50% 50% at 50% 52%, oklch(var(--cine-key) / 0.55), transparent 74%)",
+        "purpose": "Cool atmosphere behind a lit section or, on the homepage, behind each product window below the hero.",
+        "source": "app/marketing.css .cine-lit::before, .home-lit::before"
       },
       {
         "name": "plans-board",
@@ -866,29 +883,29 @@
         "purpose": "A single stage entrance; removed under reduced motion."
       },
       {
-        "name": "panel-cut",
-        "value": "620ms cubic-bezier(0.16, 1, 0.3, 1)",
-        "purpose": "Re-cut the scene side panel on chapter changes."
+        "name": "home-roll-call",
+        "value": "560ms var(--cine-ease) per name, delays 250/430/610/790ms; color peaks at foreground at 30% and returns to muted",
+        "purpose": "Homepage hero: each agent name is called in turn. No-preference motion only."
       },
       {
-        "name": "feed-reveal",
-        "value": "grid-template-rows 560ms cubic-bezier(0.16, 1, 0.3, 1), opacity 380ms ease, transform 560ms cubic-bezier(0.16, 1, 0.3, 1)",
-        "purpose": "Fold conversation blocks into the scene."
+        "name": "home-claim",
+        "value": "900ms var(--cine-ease) 1050ms backwards; from muted to foreground",
+        "purpose": "Homepage hero: the claim lands white after the names."
       },
       {
-        "name": "reel-chapters",
-        "value": "5200ms, 7600ms, 6400ms, 9800ms; 100ms tick",
-        "purpose": "Task, Agent work, Review, Handoff; selection plays once and holds."
+        "name": "home-window-rise",
+        "value": "600ms cubic-bezier(0.16, 1, 0.3, 1) 1700ms backwards; from opacity 0.6, translateY(24px)",
+        "purpose": "Homepage hero window settles once the claim has landed."
       },
       {
-        "name": "handoff-loop",
-        "value": "12000ms; 100ms tick",
-        "purpose": "Full Sync scene, subject to the same playback gate."
+        "name": "mark-on-view",
+        "value": "IntersectionObserver threshold 0.6, once; remounts AnimatedMark to replay its ~3.6s entrance",
+        "purpose": "Homepage close: the painted mark plays when first seen; settled mark shown before and without JavaScript."
       },
       {
-        "name": "activity-edge",
-        "value": "5.5s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate",
-        "purpose": "Working turn card rim; only while the scene motion gate is on."
+        "name": "mesh-stage-chapters",
+        "value": "11s, 12s, 13s, 12s; requestAnimationFrame clock",
+        "purpose": "Sync, Mesh job, LAN-first routes, Handoff on /sync; selection plays once and holds."
       },
       {
         "name": "horseplay",
@@ -897,7 +914,7 @@
       }
     ],
     "playback": {
-      "source": "components/marketing/use-reel.ts",
+      "source": "components/marketing/use-timeline.ts with components/marketing/use-reel.ts",
       "gate": "IntersectionObserver isIntersecting (threshold 0.2), visible document, no reduced motion, not paused, and not holding a completed selected chapter.",
       "ambientMotion": "data-motion follows ticking, including explicit pause and completed chapter hold.",
       "initialFrame": "Elapsed is null, so the server and initial reduced-motion scene use a completed static frame.",
@@ -907,7 +924,7 @@
       {
         "name": "scene-two-panes",
         "value": "640px",
-        "purpose": "Wider shell padding; split product panes and horizontal full handoff."
+        "purpose": "Wider shell padding; homepage hero window and wide captures replace the phone focal crops."
       },
       {
         "name": "naming-stack",
@@ -917,12 +934,12 @@
       {
         "name": "comparison-columns",
         "value": "768px",
-        "purpose": "Credits, comparison/billing columns, two plans, reel hints."
+        "purpose": "Comparison/billing columns, two plans, chapter hints, homepage free and hosted plans."
       },
       {
         "name": "desktop-stage",
         "value": "1024px",
-        "purpose": "Header desktop nav, title row, scene rail and seven handoff steps."
+        "purpose": "Header desktop nav, title row, homepage two-column hero and split sections."
       },
       {
         "name": "four-plans",
@@ -993,7 +1010,7 @@
       "name": "Product window",
       "kind": "custom",
       "refersTo": "scene-window",
-      "description": "A bounded, lit application frame with a ruled titlebar. Full scene content belongs to ProductReel.",
+      "description": "Specimen of the scene-window token: a bounded, lit frame. Product imagery itself is always a real capture in the .shot frame.",
       "html": "<div class=\"ds-cine\"><div class=\"ds-window\"><div class=\"ds-window-bar\"><span class=\"ds-window-dot\"></span><strong>Mezair</strong><span>example repository</span></div><div class=\"ds-window-content\">Session on This MacBook</div></div></div>",
       "css": ".ds-cine{--background:0.135 0.03 266;--foreground:0.965 0.006 250;--card:0.175 0.03 264;--card-foreground:0.965 0.006 250;--popover:0.19 0.032 264;--popover-foreground:0.965 0.006 250;--primary:0.76 0.17 54;--primary-foreground:0.16 0.03 266;--secondary:0.21 0.03 264;--secondary-foreground:0.965 0.006 250;--muted:0.2 0.03 264;--muted-foreground:0.77 0.02 255;--accent:0.76 0.17 54;--accent-foreground:0.16 0.03 266;--border:0.3 0.03 262;--input:0.34 0.032 262;--ring:0.78 0.16 56;--artifact-bg:0.168 0.033 266;--artifact-raised:0.212 0.035 263;--artifact-line:0.35 0.036 262;--artifact-faint:0.46 0.035 260;--artifact-text:0.96 0.008 255;--artifact-dim:0.76 0.024 255;--artifact-accent:0.77 0.17 53;--artifact-ok:0.8 0.15 158;--cine-ease:cubic-bezier(0.16, 1, 0.3, 1);font-family:var(--font-sans),ui-sans-serif,system-ui,sans-serif;color:oklch(var(--foreground));background:oklch(var(--background));padding:1rem}.ds-window{overflow:hidden;border:1px solid oklch(var(--artifact-line)/.8);border-radius:16px;background:oklch(var(--artifact-bg));color:oklch(var(--artifact-text));font-size:13px;line-height:1.5;box-shadow:0 1px 0 oklch(1 0 0/.06) inset,0 50px 100px -40px oklch(.04 .02 265/.95),0 24px 40px -28px oklch(.04 .02 265/.8)}.ds-window-bar{display:flex;height:2.5rem;align-items:center;gap:.75rem;border-bottom:1px solid oklch(var(--artifact-line)/.72);padding:0 .9rem;color:oklch(var(--artifact-dim));font-size:12px}.ds-window-bar strong{font-weight:600;color:oklch(var(--artifact-text))}.ds-window-dot{width:.65rem;height:.65rem;border-radius:999px;background:oklch(var(--artifact-accent))}.ds-window-content{padding:1rem}"
     },
@@ -1008,11 +1025,11 @@
   ],
   "narrative": {
     "northStar": "The projection room and the workbench",
-    "overview": "Mezair shares one identity across two visual worlds: a calm, inspectable reading workspace and a dramatic projection room where working product scenes carry the marketing. Both use cool neutrals, Archivo, the monochrome horse-M and a restrained orange action accent. The mark follows the text color.\n\nThe always-dark projection room covers `/`, `/sync`, `/pricing` and `/what-does-mezair-mean`. The naming page is its quieter identity expression: power under precise control, with strength, discipline, progression and elegance expressed through the large horse-M and a visitor-triggered hop. Docs, account, workspace, auth and shared-artifact routes retain their existing reading and operating styles; the cinematic scope does not replace them.",
+    "overview": "Mezair shares one identity across two visual worlds: a calm, inspectable reading workspace and a dramatic projection room where real captures of the working product carry the marketing. Both use cool neutrals, Archivo, the monochrome horse-M and a restrained orange action accent. The mark follows the text color.\n\nThe always-dark projection room covers `/`, `/sync`, `/pricing` and `/what-does-mezair-mean`. The naming page is its quieter identity expression: power under precise control, with strength, discipline, progression and elegance expressed through the large horse-M and a visitor-triggered hop. Docs, account, workspace, auth and shared-artifact routes retain their existing reading and operating styles; the cinematic scope does not replace them.",
     "keyCharacteristics": [
       "Cool neutral grounds, a single action accent and explicit status words.",
       "Wide, heavy display type paired with normal-width interface text.",
-      "Authored product scenes, divided comparisons and quiet reading surfaces.",
+      "Real Desktop captures with fixture data, labelled motion diagrams, divided comparisons and quiet reading surfaces.",
       "Purposeful motion with pause controls, reduced-motion support and static initial frames."
     ],
     "rules": [
@@ -1035,13 +1052,14 @@
     "dos": [
       "Do keep the horse-M monochrome and bound to the surrounding text color.",
       "Do use the scoped marketing palette on all four cinematic routes and keep their theme toggle hidden.",
-      "Do label authored product scenes as illustrative demos and pair operational colors with text.",
+      "Do use real captures with fixture data for every product image, with alt text that describes the screen, and label motion diagrams as fixture content.",
+      "Do pair operational colors with text.",
       "Do keep chapter selection, pause controls, keyboard focus and reduced-motion behavior available.",
       "Do preserve the naming page’s click-triggered horseplay and its power-under-control character."
     ],
     "donts": [
       "Don't carry cinematic page styling into docs, account or workspace routes.",
-      "Don't use gradient text, decorative glass, fake screenshots, fake metrics or testimonials.",
+      "Don't use gradient text, decorative glass, drawn or composited product UI, fake metrics or testimonials.",
       "Don't replace divided comparisons with a repetitive grid of equal icon cards.",
       "Don't add decorative eyebrows, kickers or machine-looking labels to marketing headings.",
       "Don't turn the orange accent into a large decorative background or convey status through color alone."

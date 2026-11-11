@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/renderer/styles/global.css"
+        ],
+        "createdAt": "2026-11-10T17:43:11.970Z",
+        "reason": "Claude triage: L943 is the .markdown-content blockquote rule (3px neutral border-left, standard quotation marker, not a card accent); committed June 2026, untouched this session"
+      }
+    ]
+  }
+}

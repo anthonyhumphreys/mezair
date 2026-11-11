@@ -1,5 +1,7 @@
 import type { AgentProvider, CodexEvent } from '../../shared/types';
-import { isAcpAgentProvider } from '../../shared/agent-providers';
+import { agentProviderLabel } from '../../shared/agent-providers';
+
+export { agentProviderLabel };
 
 /**
  * H13 — provider display labels for user-facing strings.
@@ -8,15 +10,7 @@ import { isAcpAgentProvider } from '../../shared/agent-providers';
  * 'Devin'). Codex-family events leave it undefined; callers that only have an
  * event should use `agentEventLabel`, and callers that also know the session
  * provider can use `agentProviderLabel` for a stronger fallback.
- */
-export function agentProviderLabel(provider: AgentProvider | undefined): string | null {
-  if (!provider) return null;
-  if (provider === 'claude') return 'Claude Code';
-  if (isAcpAgentProvider(provider)) return provider === 'cursor' ? 'Cursor' : 'Devin';
-  return 'Codex';
-}
-
-/**
+ *
  * Display label for the agent that produced an event — prefers the stamped
  * `agentLabel`, then the session provider, then a generic 'Agent'.
  */

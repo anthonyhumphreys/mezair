@@ -125,8 +125,8 @@ export function useThreadAccess(
     selectionError: selection.selectionError,
     changing,
     setLevel,
-    /** Per-thread overrides for rail badges. */
-    threadLevels: store?.threads,
+    /** The workspace's access store, for resolving other threads' rail badges. */
+    store,
     defaultLevel: resolveThreadAccessForDisplay(store, null, workspaceDefault, provider).mode,
   };
 }

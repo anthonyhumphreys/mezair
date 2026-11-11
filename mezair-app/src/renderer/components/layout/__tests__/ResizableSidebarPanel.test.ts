@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { resolvePanelWidth, shouldAutoCollapsePanel } from '../ResizableSidebarPanel';
+import {
+  nextAutoCollapsed,
+  resolvePanelWidth,
+  shouldAutoCollapsePanel,
+} from '../ResizableSidebarPanel';
 
 describe('shouldAutoCollapsePanel', () => {
   it('auto-collapses below the threshold when the panel is not manually collapsed', () => {
@@ -30,6 +34,40 @@ describe('shouldAutoCollapsePanel', () => {
         persistedCollapsed: true,
       }),
     ).toBe(false);
+  });
+});
+
+describe('nextAutoCollapsed', () => {
+  it('collapses on first layout when the window is already narrow', () => {
+    expect(nextAutoCollapsed({ wasNarrow: null, isNarrow: true, autoCollapsed: false })).toBe(true);
+    expect(nextAutoCollapsed({ wasNarrow: null, isNarrow: false, autoCollapsed: false })).toBe(
+      false,
+    );
+  });
+
+  it('collapses when the window crosses from wide to narrow', () => {
+    expect(nextAutoCollapsed({ wasNarrow: false, isNarrow: true, autoCollapsed: false })).toBe(
+      true,
+    );
+  });
+
+  it('releases the responsive collapse when the window crosses back to wide', () => {
+    expect(nextAutoCollapsed({ wasNarrow: true, isNarrow: false, autoCollapsed: true })).toBe(
+      false,
+    );
+  });
+
+  it('keeps an explicit expand while resizing within the narrow range', () => {
+    // The user expanded the rail (autoCollapsed cleared); further narrow resizes keep it open.
+    expect(nextAutoCollapsed({ wasNarrow: true, isNarrow: true, autoCollapsed: false })).toBe(
+      false,
+    );
+  });
+
+  it('keeps the current state while resizing within the wide range', () => {
+    expect(nextAutoCollapsed({ wasNarrow: false, isNarrow: false, autoCollapsed: false })).toBe(
+      false,
+    );
   });
 });
 

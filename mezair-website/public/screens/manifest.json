@@ -6,22 +6,22 @@
     "source": "probe",
     "route": "agents-at-work.html?picker",
     "fixture": "AgentsAtWorkProbe: production ChatView with synthetic Acme threads for Codex, Claude Code, Cursor and Devin; Cursor thread active with the model picker open",
-    "appCommit": "e22363f4",
+    "appCommit": "e32a9d7b",
     "capturedAt": "2026-11-11"
   },
   "agents-at-work-picker": {
     "file": "/screens/agents-at-work-picker.webp",
-    "width": 744,
-    "height": 1418,
+    "width": 1160,
+    "height": 910,
     "source": "crop",
     "cropOf": "agents-at-work",
     "box": [
-      1846,
-      344,
-      744,
-      1418
+      1450,
+      890,
+      1160,
+      910
     ],
-    "appCommit": "e22363f4",
+    "appCommit": "e32a9d7b",
     "capturedAt": "2026-11-11"
   },
   "agents-at-work-rail": {
@@ -36,7 +36,7 @@
       560,
       1405
     ],
-    "appCommit": "e22363f4",
+    "appCommit": "e32a9d7b",
     "capturedAt": "2026-11-11"
   },
   "companion-home": {

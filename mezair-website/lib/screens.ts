@@ -24,7 +24,7 @@ const text: Record<ScreenId, ScreenText> = {
     caption: "The same workflow in a narrow thread."
   },
   "agents-at-work": {
-    alt: "Mezair Desktop in the Acme workspace with five storefront threads. Migrate image CDN URLs to the v2 signer is waiting for approval. Two threads are working: a stale cart total after a coupon is removed, and an address form that drops the apartment line. A gift card rounding fix is ready to archive. Each thread shows the access its agent applies: Agent on most, Ask on the address form thread and Full access on the gift card thread. The open thread fixed a search input that lost focus when filters updated, in seven actions with 6 passing search tests and two changed files. Its composer runs Cursor with Composer 2 and the same Agent access, and the open model picker also lists Codex CLI with GPT-6.1 Sol, Claude Code with Opus and Devin CLI.",
+    alt: "Mezair Desktop in the Acme workspace with five storefront threads. Migrate image CDN URLs to the v2 signer is waiting for approval. Two threads are working: a stale cart total after a coupon is removed, and an address form that drops the apartment line. A gift card rounding fix is ready to archive. Each thread shows the access its agent applies: Agent on most, Ask on the address form thread and Full access on the gift card thread. The open thread fixed a search input that lost focus when filters updated, in seven actions with 6 passing search tests and two changed files. Its composer runs Cursor with Composer 2 and the same Agent access, and the open model picker has an agent rail for Cursor, Codex, Claude Code and Devin beside Cursor's models and the run settings.",
     caption: "Several threads at work at once, with the agent chosen per thread."
   },
   "agents-at-work-rail": {
@@ -32,7 +32,7 @@ const text: Record<ScreenId, ScreenText> = {
     caption: "Five threads at once: one waiting for you, two working, one ready to archive."
   },
   "agents-at-work-picker": {
-    alt: "Close-up of Mezair's open model picker. Under a search field it groups models by agent: Cursor CLI with Auto and the selected Composer 2, Codex CLI with GPT-6.1 Sol, Claude Code with Opus, and Devin CLI with Auto and SWE-2. Three run settings follow: Build mode, reasoning set by the Cursor model, and subagents on Auto. Beneath the picker, the thread's composer is set to Cursor with Composer 2.",
+    alt: "Close-up of Mezair's open model picker in three columns. On the left, an agent rail: All, Cursor (selected), Codex, Claude Code and Devin. In the middle, a model search over Cursor's models, Auto and the selected Composer 2. On the right, run settings: Build mode, reasoning set by the Cursor model, and subagents as a list from Auto (selected) through Focused, Adaptive, Parallel and Review team. Beneath the picker, the thread's composer is set to Cursor with Composer 2.",
     caption: "The model picker: every agent and model, chosen per thread."
   },
   "companion-home": {

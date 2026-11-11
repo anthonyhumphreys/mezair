@@ -1259,13 +1259,13 @@ html:has(.cine) {
 
 .cine .home-picker {
   width: 100%;
-  max-width: 23.25rem;
+  max-width: 36rem;
   justify-self: center;
 }
 
 @media (min-width: 1024px) {
   .cine .home-switch {
-    grid-template-columns: minmax(0, 1fr) 23.25rem;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 36rem);
     align-items: center;
   }
 

@@ -191,8 +191,8 @@ const captures = [
  * @type {{ id: string, from: string, box: [number, number, number, number] }[]}
  */
 const crops = [
-  // The open model picker and the composer's Cursor Composer 2 control beneath it.
-  { id: 'agents-at-work-picker', from: 'agents-at-work', box: [1846, 344, 744, 1418] },
+  // The open model picker (agent rail, models, run settings) and the composer's model control.
+  { id: 'agents-at-work-picker', from: 'agents-at-work', box: [1450, 890, 1160, 910] },
   // The thread rail: five threads waiting, working and finished, with their access badges.
   { id: 'agents-at-work-rail', from: 'agents-at-work', box: [0, 140, 560, 1405] },
   // Security audit heading, summary, severity counts and the first four findings.

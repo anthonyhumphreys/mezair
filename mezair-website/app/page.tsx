@@ -7,9 +7,19 @@ import { Shot } from "@/components/marketing/shot";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
 import { screen, type Screen } from "@/lib/screens";
-import { githubRepositoryUrl, hostedSignupNotice, latestDesktopDmgUrl, releasesUrl } from "@/lib/site";
+import {
+  desktopProviders,
+  githubRepositoryUrl,
+  hostedSignupNotice,
+  latestDesktopDmgUrl,
+  releasesUrl
+} from "@/lib/site";
 
 const cast = ["Codex", "Claude Code", "Cursor", "Devin"];
+
+/** Providers beyond the cast, named under it so the headline isn't read as the whole list. */
+const moreProviders = desktopProviders.filter((name) => !cast.includes(name));
+const moreProvidersLine = `+ ${moreProviders.slice(0, -1).join(", ")} and ${moreProviders.at(-1)} keys`;
 
 const agents = [
   { name: "Codex", plan: "Your ChatGPT plan" },
@@ -74,10 +84,12 @@ export default function HomePage() {
                   {name}
                 </span>
               ))}
+              <span className="home-call-more">{moreProvidersLine}</span>
               <span className="home-claim">One set of reins</span>
             </h1>
             <div className="home-hero-side">
-              <p className="home-body">
+              <p className="home-byline">You connect the inference. We wrangle it.</p>
+              <p className="home-body mt-3">
                 The free, open-source app for running the coding agents you already pay for, side by side. Your plans, no
                 markup.
               </p>

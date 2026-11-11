@@ -1,383 +1,298 @@
+import Image, { getImageProps } from "next/image";
 import Link from "next/link";
-import type { CSSProperties } from "react";
-import { ArrowRight, Download, Github } from "lucide-react";
+import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ProductWorkflow } from "@/components/marketing/product-workflow";
-import { AnimatedMark } from "@/components/site/animated-mark";
+import { MarkOnView } from "@/components/marketing/mark-on-view";
+import { Shot } from "@/components/marketing/shot";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
-import {
-  companionProducts,
-  desktopProviders,
-  docsHighlights,
-  featureBeta,
-  githubRepositoryUrl,
-  hostedSignupNotice,
-  latestDesktopDmgUrl,
-  releasesUrl
-} from "@/lib/site";
+import { screen, type Screen } from "@/lib/screens";
+import { githubRepositoryUrl, hostedSignupNotice, latestDesktopDmgUrl, releasesUrl } from "@/lib/site";
 
-type Credit = { role: string; value: string; note?: string; href?: string };
+const cast = ["Codex.", "Claude Code.", "Cursor.", "Devin."];
 
-const credits: Credit[] = [
-  { role: "Agents", value: `${desktopProviders.join(", ")}.`, note: "Your own accounts. Providers bill you directly." },
-  {
-    role: "Git",
-    value: "Commit, open a pull request or undo a turn from the thread.",
-    note: "Background work runs in its own worktree."
-  },
-  { role: "Review", value: "Diffs, test results and security, dependency and pipeline checks appear in the thread." },
-  { role: "Plans", value: "Work items with acceptance criteria, risks and follow-ups attached." },
-  { role: "Automations", value: "Scheduled checks and multi-agent workflows, each in its own working copy." },
-  {
-    role: "Software factories",
-    value: "Labelled GitHub issue to confirmed merge, under a policy you activate.",
-    note: `${featureBeta.label}.`,
-    href: "/docs/desktop/software-factories"
-  },
-  { role: "Companions", value: "Approve a step or reply from iPhone, Apple Watch, Raycast or the menu bar." },
-  {
-    role: "Price",
-    value: "Free. Sync & Mesh is free to self-host, or £8.99 a month hosted.",
-    href: "/pricing"
-  }
+const agents = [
+  { name: "Codex", plan: "Your ChatGPT plan" },
+  { name: "Claude Code", plan: "Your Claude plan" },
+  { name: "Cursor", plan: "Your Cursor plan" },
+  { name: "Devin", plan: "Your Devin plan" }
 ];
 
-const keys: Array<{ label: string; keys: string[] }> = [
-  { label: "Command palette", keys: ["⌘", "K"] },
-  { label: "New chat thread", keys: ["⌘", "⇧", "N"] },
-  { label: "Toggle terminal", keys: ["⌘", "`"] },
-  { label: "Guide a running agent", keys: ["⌘", "↵"] },
-  { label: "Commands in the composer", keys: ["/"] },
-  { label: "Skills in the composer", keys: ["$"] }
+const facts = [
+  { term: "No account", body: "Everything stays in a local database on this machine." },
+  { term: "MIT", body: "Mezair and its backend are MIT, this site too. Fork it." },
+  { term: "Off by default", body: "Crash reports are sent only if you switch them on." }
 ];
 
-const dx: Array<{ title: string; body: string }> = [
-  {
-    title: "Agent tools",
-    body: "Agents can ask you questions and post reviews and diagrams in the thread."
-  },
-  {
-    title: "No account",
-    body: "Everything stays in a local database. Crash reporting is off by default."
-  },
-  {
-    title: "Custom shortcuts",
-    body: "Rebind any shortcut in Settings."
-  },
-  {
-    title: "Source code",
-    body: "The app, the backend and this site are MIT-licensed on GitHub."
-  }
-];
+function DownloadButton() {
+  return (
+    <Button asChild size="lg">
+      <Link href={latestDesktopDmgUrl}>
+        <Download aria-hidden="true" />
+        Download for macOS
+      </Link>
+    </Button>
+  );
+}
 
-const docPicks = ["/docs/overview", "/docs/desktop/installation", "/docs/desktop/agent-workflows", "/docs/sync/encryption", "/docs/project/repositories"];
-
-const fade = (ms: number) => ({ "--fade-delay": `${ms}ms` }) as CSSProperties;
+/** A real capture that swaps to its focal crop below 640px, where the whole window would be unreadable. */
+function ArtShot({ wide, narrow, sizes, className }: { wide: Screen; narrow: Screen; sizes: string; className?: string }) {
+  const {
+    props: { srcSet: narrowSrcSet, sizes: narrowSizes }
+  } = getImageProps({ src: narrow.file, width: narrow.width, height: narrow.height, alt: wide.alt, sizes: "94vw" });
+  const { props } = getImageProps({ src: wide.file, width: wide.width, height: wide.height, alt: wide.alt, sizes });
+  return (
+    <div className={`home-lit ${className ?? ""}`}>
+      <picture className="shot block">
+        <source
+          media="(max-width: 639px)"
+          srcSet={narrowSrcSet}
+          sizes={narrowSizes}
+          width={narrow.width}
+          height={narrow.height}
+        />
+        <img {...props} alt={wide.alt} />
+      </picture>
+    </div>
+  );
+}
 
 export default function HomePage() {
-  const docs = docsHighlights.filter((doc) => docPicks.includes(doc.href));
+  const run = screen("agents-at-work");
+  const narrow = screen("agents-at-work-rail");
+  const picker = screen("agents-at-work-picker");
+  const companion = screen("companion-home");
+  const findings = screen("surface-findings");
+  const findingsNarrow = screen("surface-findings-mobile");
+  const factories = screen("factories-line");
+  const factoriesNarrow = screen("factories-line-mobile");
 
   return (
     <div className="cine min-h-screen">
       <SiteHeader active="home" showThemeToggle={false} />
-      <main id="main-content">
-        <section className="cine-hero cine-lit" aria-labelledby="hero-title">
-          <div className="cine-wide">
-            <div className="mx-auto flex max-w-[56rem] flex-col items-center text-center">
-              <AnimatedMark className="hero-mark text-foreground" />
-              <h1 id="hero-title" className="cine-title cine-fade mt-6 max-w-[14ch]" style={fade(250)}>
-                Put your agents in motion.
-              </h1>
-              <p className="cine-lede cine-fade mt-5 max-w-[54ch]" style={fade(420)}>
-                Run Codex, Claude Code, Cursor, Devin and more from one desktop app. Bring your own subscriptions. Free and open
-                source. Add hosted{" "}
-                <Link href="/sync" className="cine-link">
-                  Sync &amp; Mesh
-                </Link>{" "}
-                for{" "}
-                <Link href="/pricing" className="cine-link">
-                  £8.99/mo
-                </Link>
-                , or{" "}
-                <Link href="/docs/sync/self-deploy" className="cine-link">
-                  self-host it for free
-                </Link>
-                .
-              </p>
-              <div className="cine-fade mt-7 flex flex-wrap justify-center gap-3" style={fade(560)}>
-                <Button asChild size="lg">
-                  <Link href={latestDesktopDmgUrl}>
-                    <Download aria-hidden="true" />
-                    Download for Mac
-                  </Link>
-                </Button>
-                <Button asChild size="lg" variant="outline">
-                  <Link href={githubRepositoryUrl}>
-                    <Github aria-hidden="true" />
-                    View source
-                  </Link>
-                </Button>
-              </div>
-              <p className="cine-fine cine-fade mt-4" style={fade(640)}>
-                The Mac build is unsigned, so follow the{" "}
-                <Link href="/docs/desktop/installation" className="cine-link">
-                  install guide
-                </Link>
-                . Builds for{" "}
-                <Link href={releasesUrl} className="cine-link">
-                  Windows and Linux
-                </Link>{" "}
-                are on GitHub. Mezair is{" "}
-                <Link href="/what-does-mezair-mean" className="cine-link">
-                  pronounced may-ZAIR
-                </Link>
-                .
-              </p>
-            </div>
-            <div className="cine-stage">
-              <ProductWorkflow />
-            </div>
-          </div>
-        </section>
-
-        <section className="py-10" aria-label="Agent providers">
-          <div className="page-shell">
-            <p className="text-center text-sm text-muted-foreground">Bring your own account</p>
-            <ul className="providers mt-4">
-              {desktopProviders.map((provider) => (
-                <li key={provider}>{provider}</li>
+      <main id="main-content" className="home-main">
+        <section className="home-hero cine-lit" aria-labelledby="hero-title">
+          <div className="home-wide home-hero-copy">
+            <h1 id="hero-title" className="home-display home-cast">
+              {cast.map((name) => (
+                <span key={name} className="home-call">
+                  {name}
+                </span>
               ))}
-            </ul>
+              <span className="home-claim">One set of reins.</span>
+            </h1>
+            <div className="home-hero-side">
+              <p className="home-body">
+                Mezair is the free, open-source desktop app for the coding agents you already pay for. Sign in with the plans
+                you have. No markup, no account with us.
+              </p>
+              <div className="home-hero-actions">
+                <DownloadButton />
+                <div className="home-hero-links">
+                  <Link href={githubRepositoryUrl} className="cine-link inline-flex min-h-11 items-center">
+                    Read the source
+                  </Link>
+                  <Link href={releasesUrl} className="cine-link inline-flex min-h-11 items-center">
+                    Windows and Linux builds
+                  </Link>
+                </div>
+              </div>
+              <p className="cine-fine home-hero-fine">
+                Add Sync &amp; Mesh across your machines: free to self-host, or{" "}
+                <Link href="/pricing" className="cine-link">
+                  £8.99 a month hosted
+                </Link>
+                .
+              </p>
+              <p className="cine-fine mt-2">
+                Apple silicon, unsigned for now:{" "}
+                <Link href="/docs/desktop/installation" className="cine-link">
+                  two-minute install guide
+                </Link>
+                .
+              </p>
+            </div>
+          </div>
+          <figure className="home-hero-stage">
+            <div className="shot home-hero-window">
+              <Image src={run.file} width={run.width} height={run.height} alt={run.alt} sizes="1100px" />
+            </div>
+            <div className="shot home-hero-phone">
+              <Image src={narrow.file} width={narrow.width} height={narrow.height} alt={narrow.alt} sizes="94vw" />
+            </div>
+            <figcaption className="cine-fine home-hero-note">Real screenshots of Mezair, with sample data.</figcaption>
+          </figure>
+        </section>
+
+        <section className="cine-section" aria-labelledby="switch-title">
+          <div className="home-wide home-switch">
+            <div className="home-switch-copy">
+              <h2 id="switch-title" className="cine-h2 max-w-[16ch]">
+                Switch agents, not apps.
+              </h2>
+              <p className="cine-lede mt-5">
+                Every thread picks its own agent and model. They all work in the same repo.
+              </p>
+              <ul className="home-agents">
+                {agents.map((agent) => (
+                  <li key={agent.name}>
+                    <span className="home-agent-name">{agent.name}</span>
+                    <span className="home-agent-plan">{agent.plan}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="cine-fine mt-6">
+                Prefer an API key? Bring your own. Your provider bills you; Mezair adds nothing.
+              </p>
+            </div>
+            <div className="home-lit home-picker">
+              <div className="shot">
+                <Image
+                  src={picker.file}
+                  width={picker.width}
+                  height={picker.height}
+                  alt={picker.alt}
+                  sizes="(min-width: 640px) 372px, 94vw"
+                />
+              </div>
+            </div>
           </div>
         </section>
 
-        <section className="cine-section cine-lit" aria-labelledby="sync-title">
-          <div className="cine-wide">
+        <section className="cine-section" aria-labelledby="away-title">
+          <div className="home-wide home-interlude">
+            <h2 id="away-title" className="home-display home-interlude-title">
+              <span className="home-dim">Set them off.</span>
+              <span>Walk away.</span>
+            </h2>
+            <div className="home-away">
+              <div className="home-lit home-phone">
+                <div className="home-phone-screen">
+                  <Image
+                    src={companion.file}
+                    width={companion.width}
+                    height={companion.height}
+                    alt={companion.alt}
+                    sizes="(min-width: 1024px) 18rem, 70vw"
+                  />
+                </div>
+              </div>
+              <p className="home-body">
+                Background work gets its own worktree, so agents stay out of each other&rsquo;s way and out of your
+                checkout. When one needs you, answer from your iPhone or your watch.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="cine-section home-bleed-section" aria-labelledby="receipts-title">
+          <div className="home-bleed">
+            <div className="home-bleed-copy">
+              <h2 id="receipts-title" className="cine-h2 max-w-[14ch]">
+                The receipts are in the thread.
+              </h2>
+              <p className="cine-lede mt-5">
+                Findings land in the thread that caused them, with the file and line. Ask the agent to fix them, or undo the
+                turn.
+              </p>
+            </div>
+            <ArtShot
+              wide={findings}
+              narrow={findingsNarrow}
+              sizes="(min-width: 1024px) 60vw, 94vw"
+              className="home-bleed-shot"
+            />
+          </div>
+        </section>
+
+        <section className="cine-section" aria-labelledby="factories-title">
+          <div className="home-wide">
             <div className="cine-titlerow">
-              <h2 id="sync-title" className="cine-h2 max-w-[13ch]">
-                Use Mezair on more than one machine
+              <h2 id="factories-title" className="cine-h2 max-w-[15ch]">
+                Label an issue. Come back to a pull request.
               </h2>
               <div>
                 <p className="cine-lede">
-                  Sync keeps your setup the same on every machine, end-to-end encrypted. Mesh runs jobs across them and
-                  moves sessions between them.
+                  Software factories carry a labelled GitHub issue all the way to a reviewed pull request. Nothing merges
+                  until you approve it.
                 </p>
-                <div className="mt-6 flex flex-wrap gap-3">
-                  <Button asChild>
-                    <Link href="/sync">How Sync &amp; Mesh work</Link>
-                  </Button>
-                  <Button asChild variant="outline">
-                    <Link href="/docs/sync/self-deploy">Run your own backend</Link>
-                  </Button>
-                </div>
-                <p className="cine-fine mt-4">
-                  Free to self-host, £8.99 a month hosted. {hostedSignupNotice}
+                <p className="home-factory-link">
+                  <Link href="/docs/desktop/software-factories" className="cine-link inline-flex min-h-11 items-center">
+                    How factories work
+                  </Link>{" "}
+                  <span className="text-muted-foreground">In beta.</span>
                 </p>
               </div>
             </div>
+            <ArtShot
+              wide={factories}
+              narrow={factoriesNarrow}
+              sizes="(min-width: 1440px) 1248px, 94vw"
+              className="home-full-shot"
+            />
           </div>
         </section>
 
-        <section className="cine-section" aria-labelledby="credits-title">
-          <div className="page-shell">
-            <h2 id="credits-title" className="cine-h2 mx-auto max-w-[16ch] text-center">
-              What else is in the app
+        <section className="cine-section cine-lit" aria-labelledby="machines-title">
+          <div className="home-wide home-split">
+            <div>
+              <h2 id="machines-title" className="cine-h2 max-w-[14ch]">
+                Your other machines can work too.
+              </h2>
+              <p className="cine-lede mt-5">
+                Sync keeps your setup identical everywhere, end-to-end encrypted. Mesh sends a job to the Mac in the office or
+                the Linux box under your desk and streams it back.
+              </p>
+              <p className="cine-fine home-price">
+                Self-hosting runs on your own cloud account, which bills you for it. {hostedSignupNotice}
+              </p>
+              <div className="home-machine-actions">
+                <Button asChild variant="outline">
+                  <Link href="/sync">How Sync &amp; Mesh work</Link>
+                </Button>
+                <Link href="/pricing" className="cine-link inline-flex min-h-11 items-center">
+                  Pricing
+                </Link>
+              </div>
+            </div>
+            <Shot id="mesh-jobs" caption={false} className="home-mesh" sizes="(min-width: 1024px) 576px, 94vw" />
+          </div>
+        </section>
+
+        <section className="cine-section" aria-labelledby="yours-title">
+          <div className="home-wide">
+            <h2 id="yours-title" className="cine-h2 max-w-[16ch]">
+              It runs on your machine and answers to you.
             </h2>
-            <dl className="credits mx-auto max-w-[58rem]">
-              {credits.map((item) => (
-                <div key={item.role}>
-                  <dt>{item.role}</dt>
-                  <dd>
-                    {item.href ? (
-                      <Link href={item.href} className="cine-link">
-                        {item.value}
-                      </Link>
-                    ) : (
-                      item.value
-                    )}
-                    {item.note ? <small>{item.note}</small> : null}
-                  </dd>
+            <dl className="home-facts">
+              {facts.map((fact) => (
+                <div key={fact.term}>
+                  <dt>{fact.term}</dt>
+                  <dd>{fact.body}</dd>
                 </div>
               ))}
             </dl>
-            <p className="mt-10 text-center">
-              <Link href="/docs/desktop/feature-directory" className="cine-link inline-flex min-h-11 items-center gap-2">
-                Full Desktop feature list
-                <ArrowRight className="size-4" aria-hidden="true" />
+            <p className="mt-6">
+              <Link href="/docs/desktop/feature-directory" className="cine-link inline-flex min-h-11 items-center">
+                Everything else in the app
               </Link>
             </p>
           </div>
         </section>
 
-        <section className="cine-section" aria-labelledby="dx-title">
-          <div className="page-shell grid gap-12 lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] lg:items-start">
-            <div>
-              <h2 id="dx-title" className="cine-h2 max-w-[15ch]">
-                Keyboard shortcuts and developer tools
-              </h2>
-              <p className="cine-lede mt-5">
-                Works with your editor, terminal and Git.
-              </p>
-              <dl className="mt-10 grid gap-x-10 gap-y-7 sm:grid-cols-2">
-                {dx.map((item) => (
-                  <div key={item.title}>
-                    <dt className="font-semibold">{item.title}</dt>
-                    <dd className="mt-1.5 text-[0.9375rem] leading-relaxed text-muted-foreground">{item.body}</dd>
-                  </div>
-                ))}
-              </dl>
-              <p className="mt-9">
-                <Link href="/docs/desktop/keyboard-shortcuts" className="cine-link inline-flex min-h-11 items-center gap-2">
-                  Shortcuts and composer reference
-                  <ArrowRight className="size-4" aria-hidden="true" />
-                </Link>
-              </p>
-            </div>
-            <figure className="keys">
-              <figcaption className="keys-head">
-                <span>Keyboard</span>
-                <span>macOS shortcuts. You can change them.</span>
-              </figcaption>
-              <dl>
-                {keys.map((item) => (
-                  <div key={item.label}>
-                    <dt>{item.label}</dt>
-                    <dd>
-                      {item.keys.map((key) => (
-                        <kbd key={key}>{key}</kbd>
-                      ))}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </figure>
-          </div>
-        </section>
-
-        <section className="cine-section" aria-labelledby="tools-title">
-          <div className="page-shell">
-            <div className="flex flex-wrap items-end justify-between gap-6">
-              <h2 id="tools-title" className="cine-h2 max-w-[14ch]">
-                Other Mezair tools
-              </h2>
-              <p className="cine-fine max-w-[40ch]">Open source, and none of them need Desktop.</p>
-            </div>
-            <ul className="rows mt-10">
-              {companionProducts.map((product) => (
-                <li key={product.id}>
-                  <p className="flex flex-wrap items-baseline gap-x-3">
-                    <span className="text-lg font-semibold">{product.shortTitle}</span>
-                    <span className="text-sm text-muted-foreground">{product.statusLabel}</span>
-                  </p>
-                  <div className="min-w-0">
-                    <p>{product.tagline}</p>
-                    <code className="mt-2 inline-block max-w-full overflow-x-auto whitespace-nowrap rounded-md border bg-[oklch(var(--artifact-bg))] px-2.5 py-1 font-mono text-[0.8125rem]">
-                      {product.command}
-                    </code>
-                  </div>
-                  <p className="flex gap-4 text-sm font-medium">
-                    <Link href={product.href} className="cine-link inline-flex min-h-11 items-center">
-                      Docs
-                    </Link>
-                    <Link
-                      href={product.repoHref}
-                      className="inline-flex min-h-11 items-center text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      Source
-                    </Link>
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-
-        <section className="cine-section" aria-labelledby="oss-title">
-          <div className="page-shell grid gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-center">
-            <div>
-              <h2 id="oss-title" className="cine-h2 max-w-[13ch]">
-                The source is on GitHub
-              </h2>
-              <p className="cine-lede mt-5">
-                One MIT-licensed repo for everything.
-              </p>
-              <div className="mt-7 flex flex-wrap gap-3">
-                <Button asChild variant="outline">
-                  <Link href={githubRepositoryUrl}>
-                    <Github aria-hidden="true" />
-                    mezair on GitHub
-                  </Link>
-                </Button>
-                <Button asChild variant="ghost">
-                  <Link href="/docs/project/contributing">How to contribute</Link>
-                </Button>
-              </div>
-              <ul className="mt-8 grid text-[0.9375rem]">
-                {docs.map((doc) => (
-                  <li key={doc.href}>
-                    <Link href={doc.href} className="cine-link inline-flex min-h-11 items-center">
-                      {doc.label}
-                    </Link>
-                  </li>
-                ))}
-                <li>
-                  <Link
-                    href="/docs"
-                    className="inline-flex min-h-11 items-center gap-2 font-medium text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    Browse all docs
-                    <ArrowRight className="size-4" aria-hidden="true" />
-                  </Link>
-                </li>
-              </ul>
-            </div>
-            <figure className="cine-term min-w-0">
-              <pre>
-                <code>
-                  <span className="text-[oklch(var(--artifact-dim))]"># clone the monorepo</span>
-                  {"\n"}
-                  <span className="text-[oklch(var(--artifact-accent))]">$</span> git clone {githubRepositoryUrl}
-                  {"\n"}
-                  <span className="text-[oklch(var(--artifact-accent))]">$</span> cd mezair
-                  {"\n"}
-                  <span className="text-[oklch(var(--artifact-accent))]">$</span> node .github/scripts/prepare-desktop-clis.mjs
-                  {"\n"}
-                  <span className="text-[oklch(var(--artifact-accent))]">$</span> cd mezair-app
-                  {"\n\n"}
-                  <span className="text-[oklch(var(--artifact-dim))]"># each project installs on its own</span>
-                  {"\n"}
-                  <span className="text-[oklch(var(--artifact-accent))]">$</span> pnpm install
-                  {"\n"}
-                  <span className="text-[oklch(var(--artifact-accent))]">$</span> pnpm dev
-                </code>
-              </pre>
-              <figcaption className="sr-only">
-                Commands to clone the Mezair repository and start Mezair Desktop in development mode.
-              </figcaption>
-            </figure>
-          </div>
-        </section>
-
         <section className="cine-section cine-lit" aria-labelledby="close-title">
-          <div className="page-shell">
-            <h2 id="close-title" className="cine-title max-w-[16ch]">
-              Try it on a repository you know well
+          <div className="home-wide home-close">
+            <MarkOnView className="hero-mark text-foreground" />
+            <h2 id="close-title" className="home-display home-close-title">
+              Take the reins.
             </h2>
-            <p className="cine-lede mt-6">
-              No sign-up needed.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Button asChild size="lg">
-                <Link href={latestDesktopDmgUrl}>
-                  <Download aria-hidden="true" />
-                  Download for Mac
-                </Link>
-              </Button>
+            <div className="home-close-actions">
+              <DownloadButton />
               <Button asChild size="lg" variant="outline">
                 <Link href="/docs/desktop/installation">Read the install guide</Link>
               </Button>
             </div>
+            <p className="cine-fine mt-5">Free. No sign-up.</p>
           </div>
         </section>
       </main>

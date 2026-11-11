@@ -4,7 +4,8 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Mezair",
     short_name: "Mezair",
-    description: "Run Codex, Claude Code, Cursor, Devin and more from one desktop app. Bring your own subscriptions.",
+    description:
+      "The free, open-source desktop app for Codex, Claude Code, Cursor and Devin. Sign in with the plans you already pay for.",
     start_url: "/",
     display: "browser",
     background_color: "#060a17",

@@ -166,8 +166,8 @@ export default function SyncPage() {
               </Link>
             </div>
             <div className="grid min-w-0 gap-6">
-              <Shot id="mesh-status" sizes="(min-width: 1024px) 640px, 94vw" />
-              <Shot id="mesh-devices" sizes="(min-width: 1024px) 640px, 94vw" />
+              <Shot id="mesh-status" caption={false} sizes="(min-width: 1024px) 640px, 94vw" />
+              <Shot id="mesh-devices" caption={false} sizes="(min-width: 1024px) 640px, 94vw" />
             </div>
           </div>
         </section>
@@ -196,8 +196,8 @@ export default function SyncPage() {
               </Link>
             </div>
             <div className="grid min-w-0 gap-6">
-              <Shot id="mesh-jobs" sizes="(min-width: 1024px) 640px, 94vw" />
-              <Shot id="mesh-approval" sizes="(min-width: 1024px) 640px, 94vw" />
+              <Shot id="mesh-jobs" caption={false} sizes="(min-width: 1024px) 640px, 94vw" />
+              <Shot id="mesh-approval" caption={false} sizes="(min-width: 1024px) 640px, 94vw" />
             </div>
           </div>
         </section>
@@ -213,8 +213,7 @@ export default function SyncPage() {
                 route only after the new route has authenticated and caught up, and Mesh never resends a command.
               </p>
               <p className="cine-fine mt-4">
-                {featureBeta.label}. Your backend still admits and authorises every session, so this is not offline
-                mode. A route labelled Direct is the host&apos;s address hint, not proof of a physical LAN path.
+                {featureBeta.label}.
               </p>
               <Link href="/docs/sync/lan-first-routes" className="cine-link mt-6 inline-flex min-h-11 items-center gap-2">
                 How routes work
@@ -224,7 +223,6 @@ export default function SyncPage() {
             <figure className="min-w-0">
               <figcaption className="mb-4">
                 <span className="block font-semibold">LAN-first routes</span>
-                <span className="cine-fine block">Mesh tries routes in this order.</span>
               </figcaption>
               <ol className="ladder">
                 {routes.map((route, index) => (
@@ -258,7 +256,7 @@ export default function SyncPage() {
                 <ArrowRight className="size-4" aria-hidden="true" />
               </Link>
             </div>
-            <Shot id="mesh-session" className="min-w-0" sizes="(min-width: 1024px) 640px, 94vw" />
+            <Shot id="mesh-session" caption={false} className="min-w-0" sizes="(min-width: 1024px) 640px, 94vw" />
           </div>
         </section>
 

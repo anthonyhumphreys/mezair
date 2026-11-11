@@ -15,11 +15,8 @@ import {
   releasesUrl
 } from "@/lib/site";
 
-const cast = ["Codex", "Claude Code", "Cursor", "Devin"];
-
-/** Providers beyond the cast, named under it so the headline isn't read as the whole list. */
-const moreProviders = desktopProviders.filter((name) => !cast.includes(name));
-const moreProvidersLine = `+ ${moreProviders.slice(0, -1).join(", ")} and ${moreProviders.at(-1)} keys`;
+/** The hero reel: every supported provider, scrolling past in a window that fades at both ends. */
+const reel = [...desktopProviders];
 
 const agents = [
   { name: "Codex", plan: "Your ChatGPT plan" },
@@ -79,12 +76,15 @@ export default function HomePage() {
         <section className="home-hero cine-lit" aria-labelledby="hero-title">
           <div className="home-wide home-hero-copy">
             <h1 id="hero-title" className="home-display home-cast">
-              {cast.map((name) => (
-                <span key={name} className="home-call">
-                  {name}
+              <span className="sr-only">Codex, Claude Code, Cursor, Devin and more. </span>
+              <span className="home-reel" aria-hidden="true">
+                {/* Two copies, so the loop wraps without a seam. */}
+                <span className="home-reel-track">
+                  {[...reel, ...reel].map((name, index) => (
+                    <span key={`${name}-${index}`}>{name}</span>
+                  ))}
                 </span>
-              ))}
-              <span className="home-call-more">{moreProvidersLine}</span>
+              </span>
               <span className="home-claim">One set of reins</span>
             </h1>
             <div className="home-hero-side">

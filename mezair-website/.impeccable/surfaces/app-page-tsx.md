@@ -12,7 +12,7 @@ Mode: Persuade. Docs, account, workspace, auth and artifact routes are out of sc
 ## Audience, job, actions
 - Developer already paying for one or more coding agents, deciding in seconds whether Mezair Desktop is worth a download.
 - Belief to earn: every agent I pay for runs in one free, open-source app, on my own logins, and it does more than a chat window.
-- Actions: Download for macOS (Apple silicon, unsigned; install guide), Windows/Linux releases, read the MIT source. Secondary: Sync & Mesh, pricing, docs.
+- Actions: Download for macOS (Apple silicon), Windows/Linux releases, read the MIT source. Secondary: Sync & Mesh, pricing, docs.
 - Proof: real captures of Mezair Desktop with synthetic fixture content (provenance in `public/screens/manifest.json`).
 
 ## Direction contract
@@ -32,7 +32,8 @@ One claim and one real capture each, in this order: sign-in stalls over the full
 
 ## Constraints
 - No drawn or composited product UI. Product images are real captures with fixture data; motion graphics are diagrams and say so.
-- Keep truthful limits, stated once and beside the thing they qualify: free local Desktop, unsigned Mac build needs the install guide, bring your own provider accounts, hosted Sync invite-only beta, self-host free but the host bills separately, factories in Beta.
+- Never call the Mac build unsigned in page copy; the install guide carries the xattr step.
+- Keep truthful limits, stated once and beside the thing they qualify: free local Desktop, bring your own provider accounts, hosted Sync invite-only beta, self-host free but the host bills separately, factories in Beta.
 - No private financial forecasts. No gradient text, decorative glass, fake metrics or testimonials. No horizontal overflow from 320px.
 - Marketing styles live in app/marketing.css, every selector under `.cine`; the mark lives in app/mark.css.
 - Voice: short declarative lines, one idea each. Two riding references only (the hero claim and the close). No three-item lists as sentences, no headings that are labels.

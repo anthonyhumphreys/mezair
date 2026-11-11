@@ -1146,10 +1146,6 @@ html:has(.cine) {
 
 @media (min-width: 640px) {
   /* The window sits at the foot of the hero: its top rises into the first view, the rest on scroll. */
-  .cine .home-hero-copy {
-    min-height: calc(100svh - 4rem - 13rem);
-  }
-
   .cine .home-hero-stage {
     display: flex;
     flex-direction: column;
@@ -1372,10 +1368,6 @@ html:has(.cine) {
   gap: 3rem 4.5rem;
 }
 
-.cine .home-price {
-  margin-top: 1.25rem;
-}
-
 .cine .home-machine-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1401,50 +1393,87 @@ html:has(.cine) {
   }
 }
 
-/* Ownership: three facts in one ruled row. */
-.cine .home-facts {
+/* Ownership: the free app beside the paid hosting, as two plain plans. */
+.cine .home-offer {
   display: grid;
+  gap: 1rem;
   margin-top: clamp(2.5rem, 2rem + 2vw, 3.5rem);
-  border-block: 1px solid oklch(var(--border) / 0.6);
 }
 
-.cine .home-facts > div {
-  padding-block: 1.5rem;
+.cine .home-offer-plan {
+  display: flex;
+  flex-direction: column;
+  padding: clamp(1.5rem, 1rem + 1.5vw, 2.25rem);
+  border: 1px solid oklch(var(--border) / 0.7);
+  border-radius: 1rem;
 }
 
-.cine .home-facts > div + div {
-  border-top: 1px solid oklch(var(--border) / 0.6);
+.cine .home-offer-plan--hosted {
+  background: oklch(var(--card) / 0.6);
 }
 
-.cine .home-facts dt {
-  font-variation-settings: "wdth" 116;
-  font-weight: 720;
-  font-size: clamp(1.375rem, 1.1rem + 1vw, 1.875rem);
-  line-height: 1.05;
-  letter-spacing: -0.025em;
-}
-
-.cine .home-facts dd {
-  max-width: 32ch;
-  margin-top: 0.6rem;
+.cine .home-offer-name {
   color: oklch(var(--muted-foreground));
   font-size: 0.9375rem;
-  line-height: 1.55;
+}
+
+.cine .home-offer-price {
+  margin-top: 0.35rem;
+  font-variation-settings: "wdth" 116;
+  font-weight: 720;
+  font-size: clamp(2.25rem, 1.8rem + 1.5vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.cine .home-offer-price span {
+  margin-left: 0.35rem;
+  color: oklch(var(--muted-foreground));
+  font-variation-settings: normal;
+  font-weight: 400;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.cine .home-offer-points {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 1.5rem;
+  font-size: 0.9875rem;
+  line-height: 1.5;
+}
+
+.cine .home-offer-points li {
+  padding-left: 1.1rem;
+  position: relative;
+}
+
+.cine .home-offer-points li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.62em;
+  width: 0.4rem;
+  height: 1px;
+  background: oklch(var(--muted-foreground));
+}
+
+.cine .home-offer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  margin-top: auto;
+  padding-top: 1.75rem;
+}
+
+.cine .home-offer-note {
+  margin-top: 0.75rem;
 }
 
 @media (min-width: 768px) {
-  .cine .home-facts {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .cine .home-facts > div {
-    padding: 1.75rem 1.5rem 1.85rem 0;
-  }
-
-  .cine .home-facts > div + div {
-    border-top: 0;
-    border-left: 1px solid oklch(var(--border) / 0.6);
-    padding-left: 1.5rem;
+  .cine .home-offer {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

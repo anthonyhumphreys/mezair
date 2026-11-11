@@ -18,11 +18,6 @@ const agents = [
   { name: "Devin", plan: "Your Devin plan" }
 ];
 
-const facts = [
-  { term: "No account", body: "Everything stays in a local database on this machine." },
-  { term: "MIT", body: "Mezair and its backend are MIT, this site too. Fork it." },
-  { term: "Off by default", body: "Crash reports are sent only if you switch them on." }
-];
 
 function DownloadButton() {
   return (
@@ -83,8 +78,8 @@ export default function HomePage() {
             </h1>
             <div className="home-hero-side">
               <p className="home-body">
-                Mezair is the free, open-source desktop app for the coding agents you already pay for. Sign in with the plans
-                you have. No markup, no account with us.
+                The free, open-source app for running the coding agents you already pay for, side by side. Your plans, no
+                markup.
               </p>
               <div className="home-hero-actions">
                 <DownloadButton />
@@ -93,21 +88,14 @@ export default function HomePage() {
                     Read the source
                   </Link>
                   <Link href={releasesUrl} className="cine-link inline-flex min-h-11 items-center">
-                    Windows and Linux builds
+                    Windows and Linux
                   </Link>
                 </div>
               </div>
               <p className="cine-fine home-hero-fine">
-                Add Sync &amp; Mesh across your machines: free to self-host, or{" "}
+                Sync &amp; Mesh across your machines: free to self-host, or{" "}
                 <Link href="/pricing" className="cine-link">
                   £8.99 a month hosted
-                </Link>
-                .
-              </p>
-              <p className="cine-fine mt-2">
-                Apple silicon, unsigned for now:{" "}
-                <Link href="/docs/desktop/installation" className="cine-link">
-                  two-minute install guide
                 </Link>
                 .
               </p>
@@ -243,9 +231,6 @@ export default function HomePage() {
                 Sync keeps your setup identical everywhere, end-to-end encrypted. Mesh sends a job to the Mac in the office or
                 the Linux box under your desk and streams it back.
               </p>
-              <p className="cine-fine home-price">
-                Self-hosting runs on your own cloud account, which bills you for it. {hostedSignupNotice}
-              </p>
               <div className="home-machine-actions">
                 <Button asChild variant="outline">
                   <Link href="/sync">How Sync &amp; Mesh work</Link>
@@ -261,22 +246,46 @@ export default function HomePage() {
 
         <section className="cine-section" aria-labelledby="yours-title">
           <div className="home-wide">
-            <h2 id="yours-title" className="cine-h2 max-w-[16ch]">
-              It runs on your machine and answers to you.
+            <h2 id="yours-title" className="cine-h2 max-w-[18ch]">
+              Free and open source. Pay us only to host.
             </h2>
-            <dl className="home-facts">
-              {facts.map((fact) => (
-                <div key={fact.term}>
-                  <dt>{fact.term}</dt>
-                  <dd>{fact.body}</dd>
+            <div className="home-offer">
+              <div className="home-offer-plan">
+                <p className="home-offer-name">Mezair Desktop</p>
+                <p className="home-offer-price">Free</p>
+                <ul className="home-offer-points">
+                  <li>Every feature, MIT licensed. Fork it.</li>
+                  <li>Your agents run on the plans you already have, at no markup.</li>
+                  <li>No account. Threads stay in a database on your Mac.</li>
+                </ul>
+                <div className="home-offer-actions">
+                  <DownloadButton />
+                  <Link href={githubRepositoryUrl} className="cine-link inline-flex min-h-11 items-center">
+                    Read the source
+                  </Link>
                 </div>
-              ))}
-            </dl>
-            <p className="mt-6">
-              <Link href="/docs/desktop/feature-directory" className="cine-link inline-flex min-h-11 items-center">
-                Everything else in the app
-              </Link>
-            </p>
+              </div>
+              <div className="home-offer-plan home-offer-plan--hosted">
+                <p className="home-offer-name">Hosted Sync &amp; Mesh</p>
+                <p className="home-offer-price">
+                  £8.99<span> a month</span>
+                </p>
+                <ul className="home-offer-points">
+                  <li>We run the backend that keeps your machines in step and sends jobs between them.</li>
+                  <li>End-to-end encrypted, with the same open-source backend you could run yourself.</li>
+                  <li>Teams £12 a member. Or self-host it free on your own Cloudflare account.</li>
+                </ul>
+                <div className="home-offer-actions">
+                  <Button asChild size="lg" variant="outline">
+                    <Link href="/waitlist">Request beta access</Link>
+                  </Button>
+                  <Link href="/docs/sync/self-deploy" className="cine-link inline-flex min-h-11 items-center">
+                    Self-host it
+                  </Link>
+                </div>
+                <p className="cine-fine home-offer-note">{hostedSignupNotice}</p>
+              </div>
+            </div>
           </div>
         </section>
 

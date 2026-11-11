@@ -934,7 +934,7 @@
       {
         "name": "comparison-columns",
         "value": "768px",
-        "purpose": "Comparison/billing columns, two plans, chapter hints, homepage ownership facts in one row."
+        "purpose": "Comparison/billing columns, two plans, chapter hints, homepage free and hosted plans."
       },
       {
         "name": "desktop-stage",

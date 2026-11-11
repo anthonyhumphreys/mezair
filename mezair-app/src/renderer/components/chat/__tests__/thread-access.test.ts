@@ -22,6 +22,9 @@ import {
   markAccessLevelApplied,
   reconcileThreadAccessStore,
   resolveChatAccessChipLabel,
+  resolveChatAccessDisplay,
+  resolveThreadAccessDisplay,
+  requestedChatAccessMode,
   resolveThreadAccessLevel,
   resolveThreadPermissionProfile,
   setThreadAccessLevel,
@@ -560,5 +563,70 @@ describe('current access authority', () => {
       resolveThreadAccessSelection(readThreadAccessStore('fence'), 'thread', undefined, 'codex')
         .mode,
     ).toBe('read-only');
+  });
+});
+
+describe('resolveChatAccessDisplay / resolveThreadAccessDisplay', () => {
+  const store = (
+    threads: Record<string, 'read-only' | 'on-request' | 'workspace-auto' | 'full-access'>,
+  ): ThreadAccessStore => ({
+    defaultLevel: 'on-request',
+    appliedLevel: 'on-request',
+    threads,
+  });
+  const providers = ['codex', 'cursor', 'devin', 'claude'] as const;
+  const levels = ['read-only', 'on-request', 'workspace-auto', 'full-access'] as const;
+
+  it.each(providers)('gives the rail the composer chip wording for every %s level', (provider) => {
+    for (const level of levels) {
+      const access = store({ thread: level });
+      const selection = resolveThreadAccessForDisplay(access, 'thread', null, provider);
+      const options = chatAccessOptionsForProvider(provider);
+      // What ChatView hands the chip for this thread, resolved the way the chip does.
+      const chip = resolveChatAccessDisplay(
+        options,
+        selection.mode,
+        selection.selectionError
+          ? undefined
+          : requestedChatAccessMode(provider, selection.mode, selection.permissionProfile),
+        selection.selectionError,
+      );
+      const rail = resolveThreadAccessDisplay(access, 'thread', null, provider);
+      expect(rail).toEqual(chip);
+      expect(rail.label.trim()).not.toBe('');
+    }
+  });
+
+  it('names Cursor threads by the mode Cursor applies, not the generic level', () => {
+    expect(resolveThreadAccessDisplay(store({ t: 'workspace-auto' }), 't', null, 'cursor')).toEqual(
+      { label: 'Agent', fullLabel: 'Agent', elevated: false },
+    );
+    // The default level is labelled too; the chip never collapses to an icon alone.
+    expect(resolveThreadAccessDisplay(store({}), 't', null, 'cursor').label).toBe('Agent');
+  });
+
+  it('uses short Codex wording on the chip and badge, with the full label for titles', () => {
+    expect(resolveThreadAccessDisplay(store({ t: 'workspace-auto' }), 't', null, 'codex')).toEqual({
+      label: 'Workspace',
+      fullLabel: 'Auto in workspace',
+      elevated: true,
+    });
+    expect(resolveThreadAccessDisplay(store({}), 't', null, 'codex')).toEqual({
+      label: 'Ask',
+      fullLabel: 'Ask for extra access',
+      elevated: false,
+    });
+  });
+
+  it('labels a read-only persona by the clamp it applies', () => {
+    expect(
+      resolveThreadAccessDisplay(store({ t: 'full-access' }), 't', null, 'codex', true).label,
+    ).toBe('Read only');
+  });
+
+  it('asks for a choice when the selection cannot carry over', () => {
+    expect(resolveChatAccessDisplay([], 'read-only', undefined, 'Choose a replacement').label).toBe(
+      'Choose access',
+    );
   });
 });

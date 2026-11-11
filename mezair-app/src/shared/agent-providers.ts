@@ -23,3 +23,12 @@ export function isAcpAgentProvider(
 ): provider is AcpAgentProvider {
   return ACP_AGENT_PROVIDERS.includes(provider as AcpAgentProvider);
 }
+
+/** User-facing agent name for a session provider (desktop and companion share it). */
+export function agentProviderLabel(provider: AgentProvider | undefined): string | null {
+  if (!provider) return null;
+  if (provider === 'claude') return 'Claude Code';
+  if (provider === 'cursor') return 'Cursor';
+  if (provider === 'devin') return 'Devin';
+  return 'Codex';
+}

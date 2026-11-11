@@ -83,6 +83,8 @@ export interface CompanionStreamEvent {
 
 const CONNECTION_KEY = 'mezair.mobile.connection.v1';
 const CONNECTIONS_KEY = 'mezair.mobile.connections.v2';
+/** Secure-store key holding the paired host list (used by the dev-only sample host). */
+export const COMPANION_CONNECTIONS_KEY = CONNECTIONS_KEY;
 const COMPANION_REQUEST_TIMEOUT_MS = 12_000;
 const CHAT_ATTACHMENT_CHUNK_BYTES = 256 * 1024;
 const MAX_CHAT_ATTACHMENT_BYTES = 25 * 1024 * 1024;

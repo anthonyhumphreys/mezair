@@ -17,7 +17,6 @@ import {
 import type {
   ChatLayout,
   ChatThread,
-  CodexMode,
   CodexSession,
   Persona,
   RepoInfo,
@@ -27,6 +26,7 @@ import { ConfirmDialog } from '../ui';
 import { isEditableShortcutTarget } from '../../utils/keyboard';
 import { formatShortAgo } from './chat-time';
 import { ChatAccessLevelBadge } from './ChatAccessLevelChip';
+import type { ChatAccessDisplay } from './thread-access';
 import { ChatLayoutToggle } from './ChatLayoutToggle';
 import { ChatThreadItemButton, ChatThreadItemFrame } from './shared/ChatPresentation';
 import {
@@ -51,9 +51,8 @@ interface ChatThreadRailProps {
   /** CH4/CH9 — Chat/Tickets layout toggle lives in the rail header. */
   chatLayout?: ChatLayout;
   onChatLayoutChange?: (layout: ChatLayout) => void;
-  /** CH1 — per-thread access level display. */
-  accessLevels?: Record<string, CodexMode>;
-  defaultAccessLevel?: CodexMode;
+  /** CH1 — per-thread access, resolved with the composer chip's wording. */
+  accessDisplays?: Record<string, ChatAccessDisplay>;
 }
 
 type ThreadDisplayState = 'approval' | 'input' | 'failed' | 'complete' | 'working' | 'idle';
@@ -71,8 +70,7 @@ function ChatThreadRailImpl({
   onDeleteThread,
   chatLayout,
   onChatLayoutChange,
-  accessLevels,
-  defaultAccessLevel = 'on-request',
+  accessDisplays,
 }: ChatThreadRailProps) {
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
@@ -93,6 +91,8 @@ function ChatThreadRailImpl({
     }),
     [liveThreadStatuses, personas, repos],
   );
+  // A repo name every thread shares says nothing, so rows only name it when they differ.
+  const showRepoNames = useMemo(() => threadsSpanSeveralRepos(threads), [threads]);
   const visibleThreads = useMemo(
     () => filterChatThreads(threads, filter, searchContext),
     [threads, filter, searchContext],
@@ -125,11 +125,8 @@ function ChatThreadRailImpl({
     const liveStatus = liveThreadStatuses[thread.id];
     const displayState = getThreadDisplayState(thread, liveStatus, active);
     const settleAllowed = canSettleThread(thread, liveStatus);
-    const accessLevel = accessLevels?.[thread.id] ?? defaultAccessLevel;
-    const context =
-      thread.workItemTitle ??
-      (thread.activeRepoId ? searchContext.repoNames.get(thread.activeRepoId) : undefined) ??
-      searchContext.personaNames.get(thread.personaId);
+    const accessDisplay = accessDisplays?.[thread.id];
+    const context = threadContextLabel(thread, searchContext, showRepoNames);
 
     const lastActivity = thread.lastMessageAt ?? thread.updatedAt;
     const unread =
@@ -201,29 +198,33 @@ function ChatThreadRailImpl({
             </p>
           )}
           {!compact && (
-            <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-xs">
-              <span className={`shrink-0 ${threadStateTextClass(displayState)}`}>
+            // Wraps instead of squeezing: the time and access badge drop to a
+            // second line, right-aligned, whenever the first line is full.
+            <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+              <span className={`whitespace-nowrap ${threadStateTextClass(displayState)}`}>
                 {threadStateLabel(displayState)}
               </span>
               {context && (
-                <>
-                  <span className="shrink-0 text-text-tertiary/60" aria-hidden="true">
-                    ·
+                <span className="min-w-0 max-w-full truncate text-text-tertiary">
+                  <span className="text-text-tertiary/60" aria-hidden="true">
+                    ·{' '}
                   </span>
-                  <span className="min-w-0 truncate text-text-tertiary">{context}</span>
-                </>
+                  {context}
+                </span>
               )}
-              <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-1">
-                {timeLabel && (
-                  <span
-                    className={`tabular-nums ${working ? 'text-info' : 'text-text-tertiary'}`}
-                    title={timeTitle}
-                  >
-                    {timeLabel}
-                  </span>
-                )}
-                {accessLevels && <ChatAccessLevelBadge level={accessLevel} />}
-              </span>
+              {(timeLabel || accessDisplay) && (
+                <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                  {timeLabel && (
+                    <span
+                      className={`whitespace-nowrap tabular-nums ${working ? 'text-info' : 'text-text-tertiary'}`}
+                      title={timeTitle}
+                    >
+                      {timeLabel}
+                    </span>
+                  )}
+                  {accessDisplay && <ChatAccessLevelBadge display={accessDisplay} />}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -549,6 +550,26 @@ function threadStateTextClass(state: ThreadDisplayState): string {
   if (state === 'complete') return 'text-success';
   if (state === 'working') return 'text-accent';
   return 'text-text-tertiary';
+}
+
+/** Whether the threads run in more than one repository, so naming it tells them apart. */
+export function threadsSpanSeveralRepos(threads: ChatThread[]): boolean {
+  return new Set(threads.flatMap((thread) => thread.activeRepoId ?? [])).size > 1;
+}
+
+/**
+ * The secondary context a row names: its work item, else its repository when
+ * repositories differ between threads, else its persona for repo-less threads.
+ */
+export function threadContextLabel(
+  thread: ChatThread,
+  context: Pick<ChatThreadSearchContext, 'repoNames' | 'personaNames'>,
+  showRepoNames: boolean,
+): string | undefined {
+  if (thread.workItemTitle) return thread.workItemTitle;
+  if (thread.activeRepoId)
+    return showRepoNames ? context.repoNames.get(thread.activeRepoId) : undefined;
+  return context.personaNames.get(thread.personaId);
 }
 
 export function partitionThreads(threads: ChatThread[]): {

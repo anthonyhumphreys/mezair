@@ -56,7 +56,7 @@ import {
   ChatComposerSurface,
 } from './shared/ChatPresentation';
 import type { ChatAccessOption } from './thread-access';
-import { isAcpAgentProvider } from '../../../shared/agent-providers';
+import { isAcpAgentProvider, type AcpAgentProvider } from '../../../shared/agent-providers';
 import { slugForDomId } from '../../utils/dom-id';
 import { getNextListboxIndex } from '../../utils/list-navigation';
 import { EXECUTION_STRATEGIES, type ExecutionStrategy } from '../../utils/execution-strategy';
@@ -2522,8 +2522,56 @@ function formatReasoningLabel(level: ReasoningEffort): string {
   return `${level.charAt(0).toUpperCase()}${level.slice(1)}`;
 }
 
+/** Cursor encodes effort in its model ids: `gpt-5-high` or `gpt-5.6-sol[reasoning=medium]`. */
 export function getCursorModelReasoningEffort(model: string): ReasoningEffort | undefined {
-  return REASONING_EFFORT_OPTIONS.find((option) => model.endsWith(`-${option.level}`))?.level;
+  const bracketed = /\[reasoning=([a-z]+)\]$/.exec(model)?.[1];
+  return REASONING_EFFORT_OPTIONS.find((option) =>
+    bracketed ? option.level === bracketed : model.endsWith(`-${option.level}`),
+  )?.level;
+}
+
+/**
+ * Reasoning for agent-client providers. Mezair sends none of them a separate
+ * reasoning setting: Cursor and Devin run at whatever level the selected model
+ * id carries, and Claude Code sessions load the user's Claude Code settings.
+ */
+const ACP_REASONING: Record<
+  AcpAgentProvider,
+  { fromModelId: boolean; fallback: string; hint: string }
+> = {
+  cursor: {
+    fromModelId: true,
+    fallback: 'Set by the Cursor model',
+    hint: 'Cursor model IDs include their reasoning level where supported.',
+  },
+  devin: {
+    fromModelId: true,
+    fallback: 'Set by the Devin model',
+    hint: 'Mezair does not send Devin a reasoning setting. The selected Devin model decides.',
+  },
+  claude: {
+    fromModelId: false,
+    fallback: 'Claude Code settings',
+    hint: 'Mezair does not set reasoning for Claude Code. Your Claude Code settings decide how much it thinks.',
+  },
+};
+
+/** The effort an agent-client model runs at, when its id states one. */
+export function getAcpModelReasoningEffort(
+  provider: AcpAgentProvider,
+  model: string,
+): ReasoningEffort | undefined {
+  return ACP_REASONING[provider].fromModelId ? getCursorModelReasoningEffort(model) : undefined;
+}
+
+/** Value and help text for the run settings' Reasoning row on an agent-client provider. */
+export function getAcpReasoningSummary(
+  provider: AcpAgentProvider,
+  model: string,
+): { value: string; hint: string } {
+  const copy = ACP_REASONING[provider];
+  const effort = getAcpModelReasoningEffort(provider, model);
+  return { value: effort ? formatReasoningLabel(effort) : copy.fallback, hint: copy.hint };
 }
 
 export function getCompactModelLabel(
@@ -2542,7 +2590,7 @@ export function getCompactModelLabel(
   const compact = label
     .replace(/\s+\([^)]*\)$/, '')
     .replace(/\s+1M(?:\s+Thinking)?(?:\s+\S+)?$/i, '');
-  const reasoning = getCursorModelReasoningEffort(model);
+  const reasoning = getAcpModelReasoningEffort(provider, model);
   if (!reasoning) return compact.trim();
   return compact.replace(new RegExp(`\\s+${reasoning}$`, 'i'), '').trim();
 }
@@ -2583,7 +2631,7 @@ function resolveRunEffort(
   reasoningLevel: ReasoningEffort,
   reasoningOptions: ReasoningEffort[],
 ): ReasoningEffort | undefined {
-  if (isAcpAgentProvider(modelProvider)) return getCursorModelReasoningEffort(model);
+  if (isAcpAgentProvider(modelProvider)) return getAcpModelReasoningEffort(modelProvider, model);
   return reasoningOptions.includes(reasoningLevel) ? reasoningLevel : undefined;
 }
 
@@ -2690,7 +2738,9 @@ function RunSettingsFields({
   const availableOptions = REASONING_EFFORT_OPTIONS.filter((option) =>
     reasoningOptions.includes(option.level),
   );
-  const acpName = modelProvider === 'devin' ? 'Devin' : 'Cursor';
+  const acpReasoning = isAcpAgentProvider(modelProvider)
+    ? getAcpReasoningSummary(modelProvider, model)
+    : null;
   const segment = (active: boolean, tone: 'neutral' | 'info' = 'neutral') =>
     `flex h-7 items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 ${
       active
@@ -2731,17 +2781,9 @@ function RunSettingsFields({
         </SettingsRow>
       )}
 
-      {isAcpAgentProvider(modelProvider) ? (
-        <SettingsRow
-          label="Reasoning"
-          hint={`${acpName} model IDs include their reasoning level where supported.`}
-        >
-          <span className="text-xs text-text-secondary">
-            {(() => {
-              const effort = getCursorModelReasoningEffort(model);
-              return effort ? formatReasoningLabel(effort) : `Set by the ${acpName} model`;
-            })()}
-          </span>
+      {acpReasoning ? (
+        <SettingsRow label="Reasoning" hint={acpReasoning.hint}>
+          <span className="text-xs text-text-secondary">{acpReasoning.value}</span>
         </SettingsRow>
       ) : (
         onReasoningChange &&

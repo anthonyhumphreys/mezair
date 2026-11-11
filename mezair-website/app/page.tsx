@@ -120,7 +120,6 @@ export default function HomePage() {
             <div className="shot home-hero-phone">
               <Image src={narrow.file} width={narrow.width} height={narrow.height} alt={narrow.alt} sizes="94vw" />
             </div>
-            <figcaption className="cine-fine home-hero-note">Real screenshots of Mezair, with sample data.</figcaption>
           </figure>
         </section>
 

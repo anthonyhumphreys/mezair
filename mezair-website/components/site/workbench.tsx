@@ -146,9 +146,6 @@ export function Workbench() {
             <div aria-hidden="true">
               <Stage step={active} tick={tick} live={visible && !reduced} />
             </div>
-            <p className="mt-4 text-sm text-muted-foreground">
-              An illustration of Mezair Desktop. The repo and task are examples.
-            </p>
           </div>
         </div>
       </div>
@@ -159,14 +156,11 @@ export function Workbench() {
 /** A still of the workbench at one step, for places that need the picture without the scroll. */
 export function WorkbenchStill({ step = 2 }: { step?: number }) {
   return (
-    <figure>
+    <div>
       <div aria-hidden="true">
         <Stage step={step} tick={0} live={false} />
       </div>
-      <figcaption className="mt-3 text-sm text-muted-foreground">
-        An illustration of Mezair Desktop. The repo and task are examples.
-      </figcaption>
-    </figure>
+    </div>
   );
 }
 

@@ -703,9 +703,6 @@ export function MeshStage({ compact = false }: { compact?: boolean }) {
       </div>
 
       <div className="ms-foot">
-        <p className="cine-fine">
-          The devices and commits are examples. The states and their order match the app&apos;s protocol.
-        </p>
         {reduced ? null : (
           <button type="button" className="reel-toggle" onClick={toggle} aria-label={playing ? "Pause the animation" : "Play the animation"}>
             {playing ? <Pause className="size-4" aria-hidden="true" /> : <Play className="size-4" aria-hidden="true" />}

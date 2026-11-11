@@ -958,7 +958,7 @@ html:has(.cine) {
   margin-top: 0.85rem;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 1rem;
 }
 
@@ -1154,11 +1154,6 @@ html:has(.cine) {
   padding: 0 var(--home-gutter) clamp(3.5rem, 2rem + 4vw, 6rem);
 }
 
-.cine .home-hero-note {
-  max-width: none;
-  margin-top: 1rem;
-}
-
 .cine .home-hero-window {
   display: none;
 }
@@ -1178,10 +1173,6 @@ html:has(.cine) {
 
   .cine .home-hero-window {
     display: block;
-    width: min(68.75rem, 100%);
-  }
-
-  .cine .home-hero-note {
     width: min(68.75rem, 100%);
   }
 

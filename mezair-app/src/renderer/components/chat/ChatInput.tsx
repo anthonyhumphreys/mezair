@@ -2700,8 +2700,9 @@ function SettingsRow({
   htmlFor?: string;
   children: ReactNode;
 }) {
+  // The hint is a tooltip, not a visible line: the panel stays a short list of label and value.
   return (
-    <div>
+    <div title={hint}>
       <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2">
         {htmlFor ? (
           <label htmlFor={htmlFor} className="text-xs font-medium text-text-secondary">
@@ -2712,9 +2713,6 @@ function SettingsRow({
         )}
         {children}
       </div>
-      {hint && (
-        <p className="mt-1 pl-[calc(5.5rem+0.5rem)] text-xs leading-4 text-text-tertiary">{hint}</p>
-      )}
     </div>
   );
 }
@@ -2832,7 +2830,8 @@ function RunSettingsFields({
         </SettingsRow>
       )}
 
-      {onFastModeChange && (
+      {/* Hide fast mode where the model can't use it, unless it is still on and needs turning off. */}
+      {onFastModeChange && (fastModeAvailable || fastMode) && (
         <SettingsRow
           label="Fast mode"
           hint={

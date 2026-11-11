@@ -44,7 +44,13 @@ export function ModelSearchList({
     inputRef.current?.focus();
   }, []);
   useEffect(() => {
-    listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
+    const row = listRef.current?.querySelector('[data-active="true"]');
+    // Keep a group's heading visible with its first model, so the list never opens mid-heading.
+    const heading = row?.previousElementSibling;
+    if (heading && heading.getAttribute('role') !== 'option') {
+      heading.scrollIntoView({ block: 'nearest' });
+    }
+    row?.scrollIntoView({ block: 'nearest' });
   }, [active, query]);
 
   return (
@@ -102,13 +108,13 @@ export function ModelSearchList({
         id={`${id}-list`}
         role="listbox"
         aria-label="Models"
-        className="min-h-0 max-h-72 overflow-y-auto overscroll-contain p-1.5"
+        className="min-h-0 max-h-80 overflow-y-auto overscroll-contain p-1.5"
       >
         {[...groups].map(([groupProvider, models]) => (
           <div key={groupProvider} role="group" aria-labelledby={`${id}-${groupProvider}`}>
             <div
               id={`${id}-${groupProvider}`}
-              className="px-2.5 pb-1 pt-3 text-xs font-medium text-text-secondary"
+              className="px-2.5 pb-0.5 pt-2.5 text-xs font-medium text-text-tertiary"
             >
               {MODEL_PROVIDER_LABELS[groupProvider]}
             </div>
@@ -127,20 +133,13 @@ export function ModelSearchList({
                   onMouseDown={(event) => event.preventDefault()}
                   onMouseMove={() => setActiveIndex(index)}
                   onClick={() => onSelect(option)}
-                  className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left ${index === active ? 'bg-bg-hover' : ''}`}
+                  title={option.description || option.id}
+                  className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left ${index === active ? 'bg-bg-hover' : ''}`}
                 >
-                  <span className="min-w-0 flex-1">
-                    <span
-                      className={`block truncate text-sm font-medium ${selected ? 'text-accent' : 'text-text-primary'}`}
-                    >
-                      {option.label}
-                    </span>
-                    <span
-                      className="mt-0.5 block truncate text-xs text-text-secondary"
-                      title={option.description}
-                    >
-                      {option.description || option.id}
-                    </span>
+                  <span
+                    className={`min-w-0 flex-1 truncate text-sm ${selected ? 'font-medium text-accent' : 'text-text-primary'}`}
+                  >
+                    {option.label}
                   </span>
                   {selected && <Check size={15} className="shrink-0 text-accent" />}
                 </button>
@@ -155,12 +154,6 @@ export function ModelSearchList({
               : 'No models available. Enable a provider in AI connections.'}
           </div>
         )}
-      </div>
-      <div className="flex justify-between border-t border-border-subtle px-3 py-2 text-xs text-text-secondary">
-        <span>
-          {ordered.length} {ordered.length === 1 ? 'model' : 'models'}
-        </span>
-        <span>↑ ↓ to browse · Enter to select</span>
       </div>
     </div>
   );

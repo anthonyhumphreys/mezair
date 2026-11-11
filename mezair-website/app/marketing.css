@@ -266,58 +266,6 @@ html:has(.cine) {
   outline-offset: 2px;
 }
 
-/* --- Home: credits ---------------------------------------------------------- */
-
-.cine .credits {
-  margin-top: clamp(2.5rem, 2rem + 2vw, 4rem);
-  display: grid;
-}
-
-.cine .credits > div {
-  display: grid;
-  gap: 0.25rem;
-  border-top: 1px solid oklch(var(--border) / 0.5);
-  padding-block: 1.15rem;
-}
-
-.cine .credits > div:last-child {
-  border-bottom: 1px solid oklch(var(--border) / 0.5);
-}
-
-.cine .credits dt {
-  color: oklch(var(--muted-foreground));
-  font-size: 0.9375rem;
-  font-weight: 500;
-}
-
-.cine .credits dd {
-  max-width: 36ch;
-  font-size: clamp(1.125rem, 1rem + 0.45vw, 1.375rem);
-  font-weight: 560;
-  line-height: 1.35;
-  text-wrap: pretty;
-}
-
-.cine .credits dd small {
-  display: block;
-  margin-top: 0.3rem;
-  font-size: 0.875rem;
-  font-weight: 400;
-  color: oklch(var(--muted-foreground));
-}
-
-@media (min-width: 768px) {
-  .cine .credits > div {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
-    align-items: baseline;
-    column-gap: 2.75rem;
-  }
-
-  .cine .credits dt {
-    text-align: right;
-  }
-}
-
 /* --- Sync: change journey, route ladder ----------------------------------- */
 
 .cine .journey {
@@ -622,24 +570,6 @@ html:has(.cine) {
   color: oklch(var(--muted-foreground));
   font-size: 0.9375rem;
   line-height: 1.7;
-}
-
-/* --- Terminal panel ---------------------------------------------------------------- */
-
-.cine .cine-term {
-  overflow: hidden;
-  border: 1px solid oklch(var(--artifact-line) / 0.75);
-  border-radius: 14px;
-  background: oklch(var(--artifact-bg));
-  color: oklch(var(--artifact-text));
-}
-
-.cine .cine-term pre {
-  overflow-x: auto;
-  padding: 1.25rem 1.4rem;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.8125rem;
-  line-height: 1.85;
 }
 
 /* --- Mesh stage: how Sync & Mesh behave -------------------------------------------- */
@@ -1078,162 +1008,471 @@ html:has(.cine) {
   line-height: 1.5;
 }
 
-/* --- A single request-to-review workflow -------------------------------------------- */
-
-.cine .product-workflow {
-  max-width: 68.75rem;
-  margin-inline: auto;
-}
-
-.cine .workflow-steps {
-  display: grid;
-  gap: 1.5rem 2.5rem;
-  margin-bottom: 2rem;
-  text-align: left;
-}
-
-.cine .workflow-steps li {
-  border-top: 1px solid oklch(var(--border));
-  padding-top: 1rem;
-}
-
-.cine .workflow-steps h2 {
-  font-size: 1rem;
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-.cine .workflow-steps p {
-  max-width: 42ch;
-  margin-top: 0.5rem;
-  color: oklch(var(--muted-foreground));
-  font-size: 0.9375rem;
-  line-height: 1.6;
-}
-
-.cine .workflow-shot picture {
-  display: block;
-}
-
-.cine .workflow-caption {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.5rem 1.5rem;
-  margin-top: 1rem;
-  color: oklch(var(--muted-foreground));
-  font-size: 0.875rem;
-  line-height: 1.6;
-}
-
-@media (min-width: 640px) {
-  .cine .workflow-steps {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-/* --- Developer experience ------------------------------------------------------------ */
-
-.cine .keys {
-  overflow: hidden;
-  border: 1px solid oklch(var(--artifact-line) / 0.75);
-  border-radius: 16px;
-  background: oklch(var(--artifact-bg));
-  box-shadow: 0 50px 100px -50px oklch(0.04 0.02 265 / 0.95);
-}
-
-.cine .keys-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  border-bottom: 1px solid oklch(var(--artifact-line) / 0.6);
-  padding: 0.85rem 1.1rem;
-  font-size: 0.8125rem;
-  color: oklch(var(--artifact-dim));
-}
-
-.cine .keys dl {
-  display: grid;
-}
-
-.cine .keys dl > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  border-top: 1px solid oklch(var(--artifact-line) / 0.4);
-  padding: 0.7rem 1.1rem;
-  font-size: 0.9375rem;
-}
-
-.cine .keys dl > div:first-child {
-  border-top: 0;
-}
-
-.cine .keys dt {
-  color: oklch(var(--artifact-text));
-}
-
-.cine .keys dd {
-  display: flex;
-  flex: none;
-  gap: 0.3rem;
-}
-
-.cine .keys kbd {
-  display: inline-grid;
-  min-width: 1.85rem;
-  height: 1.85rem;
-  place-items: center;
-  border: 1px solid oklch(var(--artifact-line));
-  border-bottom-width: 2px;
-  border-radius: 7px;
-  background: oklch(var(--artifact-raised));
-  padding: 0 0.45rem;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.8125rem;
-  color: oklch(var(--artifact-text));
-}
-
-.cine .providers {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.5rem 1.6rem;
-  font-size: 0.9375rem;
-  color: oklch(var(--muted-foreground));
-}
-
-.cine .providers li {
-  font-weight: 600;
-  color: oklch(var(--foreground) / 0.82);
-}
-
 /* --- Hero mark --------------------------------------------------------------------- */
 
 .cine .hero-mark {
   width: clamp(7.5rem, 5.5rem + 7vw, 12rem);
 }
 
-.cine .cine-fade {
-  animation: cine-fade 900ms var(--cine-ease) both;
-  animation-delay: var(--fade-delay, 0ms);
+/* --- Home: the roll call ------------------------------------------------------------ */
+
+.cine .home-main {
+  overflow-x: clip;
+  --home-gutter: clamp(1.25rem, 6.667vw, 6rem);
+  /* Display size for one-line display headings: "One set of reins." is ~8.6em wide. */
+  --home-display: min(6rem, calc((100vw - 2 * var(--home-gutter)) / 8.9));
 }
 
-@keyframes cine-fade {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-    filter: blur(4px);
+.cine .home-main h2 {
+  text-wrap: balance;
+}
+
+/* Orange belongs to the download action here: homepage links carry a neutral rule. */
+.cine .home-main .cine-link {
+  text-decoration-color: oklch(var(--muted-foreground) / 0.5);
+}
+
+.cine .home-main .cine-link:hover {
+  text-decoration-color: oklch(var(--foreground));
+}
+
+/* The cool key light, pooled behind one product window. */
+.cine .home-lit {
+  position: relative;
+  isolation: isolate;
+}
+
+.cine .home-lit::before {
+  content: "";
+  position: absolute;
+  inset: -22% -24% -28%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(50% 50% at 50% 52%, oklch(var(--cine-key) / 0.55), transparent 74%);
+}
+
+.cine .home-wide {
+  margin-inline: auto;
+  width: 100%;
+  max-width: 90rem;
+  padding-inline: var(--home-gutter);
+}
+
+.cine .home-display {
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-variation-settings: "wdth" 116;
+  font-weight: 740;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+}
+
+.cine .home-display > span {
+  display: block;
+}
+
+.cine .home-body {
+  max-width: 44ch;
+  font-size: 1.1875rem;
+  line-height: 1.45;
+  color: oklch(var(--foreground));
+  text-wrap: pretty;
+}
+
+/* Hero: the cast list in muted ink, the claim in white. */
+.cine .home-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.cine .home-hero.cine-lit::before {
+  inset: 50% -10% -10%;
+}
+
+.cine .home-hero-copy {
+  flex: 1;
+  display: grid;
+  align-content: start;
+  gap: 2.5rem 4rem;
+  padding-top: clamp(2.5rem, 1rem + 4vw, 4.5rem);
+  padding-bottom: clamp(3rem, 2rem + 3vw, 5.5rem);
+}
+
+.cine .home-cast {
+  font-size: var(--home-display);
+  color: oklch(var(--muted-foreground));
+}
+
+.cine .home-claim {
+  margin-top: 0.12em;
+  color: oklch(var(--foreground));
+}
+
+.cine .home-hero-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-top: 1.85rem;
+}
+
+.cine .home-hero-links {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 1.25rem;
+}
+
+.cine .home-hero-fine {
+  margin-top: 1.1rem;
+}
+
+.cine .home-hero-stage {
+  padding: 0 var(--home-gutter) clamp(3.5rem, 2rem + 4vw, 6rem);
+}
+
+.cine .home-hero-note {
+  max-width: none;
+  margin-top: 1rem;
+}
+
+.cine .home-hero-window {
+  display: none;
+}
+
+.cine .home-hero-phone {
+  max-width: 24rem;
+  margin-inline: auto;
+}
+
+@media (min-width: 640px) {
+  /* The window sits at the foot of the hero: its top rises into the first view, the rest on scroll. */
+  .cine .home-hero-copy {
+    min-height: calc(100svh - 4rem - 13rem);
   }
+
+  .cine .home-hero-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  .cine .home-hero-window {
+    display: block;
+    width: min(68.75rem, 100%);
+  }
+
+  .cine .home-hero-note {
+    width: min(68.75rem, 100%);
+  }
+
+  .cine .home-hero-phone {
+    display: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .cine .home-main {
+    --home-hero-side: 22rem;
+  }
+
+  .cine .home-hero-copy {
+    grid-template-columns: minmax(0, 1fr) var(--home-hero-side);
+    column-gap: 2.5rem;
+    align-items: end;
+  }
+
+  .cine .home-cast {
+    font-size: min(6rem, calc((100vw - 2 * var(--home-gutter) - var(--home-hero-side) - 2.5rem) / 8.9));
+  }
+}
+
+/* The signature moment: each name is called in turn, then the claim lands. */
+@media (prefers-reduced-motion: no-preference) {
+  .cine .home-cast .home-call {
+    animation: home-call 560ms var(--cine-ease);
+  }
+
+  .cine .home-cast .home-call:nth-child(1) { animation-delay: 250ms; }
+  .cine .home-cast .home-call:nth-child(2) { animation-delay: 430ms; }
+  .cine .home-cast .home-call:nth-child(3) { animation-delay: 610ms; }
+  .cine .home-cast .home-call:nth-child(4) { animation-delay: 790ms; }
+
+  .cine .home-cast .home-claim {
+    animation: home-claim 900ms var(--cine-ease) 1050ms backwards;
+  }
+
+  /* Once the claim lands, the window settles into place. */
+  .cine .home-hero-stage > .shot {
+    animation: home-rise 600ms cubic-bezier(0.16, 1, 0.3, 1) 1700ms backwards;
+  }
+}
+
+@keyframes home-rise {
+  from {
+    opacity: 0.6;
+    transform: translateY(24px);
+  }
+}
+
+@keyframes home-call {
+  30% {
+    color: oklch(var(--foreground));
+  }
+}
+
+@keyframes home-claim {
+  from {
+    color: oklch(var(--muted-foreground));
+  }
+}
+
+/* Switch agents: the cast list beside a close-up of the model picker. */
+.cine .home-switch {
+  display: grid;
+  gap: 3.5rem 5rem;
+}
+
+.cine .home-agents {
+  margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem);
+  border-bottom: 1px solid oklch(var(--border) / 0.6);
+}
+
+.cine .home-agents li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 1.5rem;
+  padding-block: 1rem;
+  border-top: 1px solid oklch(var(--border) / 0.6);
+}
+
+.cine .home-agent-name {
+  font-variation-settings: "wdth" 116;
+  font-weight: 720;
+  font-size: clamp(1.25rem, 1rem + 0.8vw, 1.5rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: oklch(var(--foreground));
+}
+
+.cine .home-agent-plan {
+  font-size: 1rem;
+  line-height: 1.4;
+  color: oklch(var(--muted-foreground));
+}
+
+.cine .home-picker {
+  width: 100%;
+  max-width: 23.25rem;
+  justify-self: center;
+}
+
+@media (min-width: 1024px) {
+  .cine .home-switch {
+    grid-template-columns: minmax(0, 1fr) 23.25rem;
+    align-items: center;
+  }
+
+  .cine .home-picker {
+    justify-self: end;
+  }
+}
+
+/* Interlude: type only, on the hero's left-heavy grid. */
+.cine .home-interlude {
+  display: grid;
+  gap: 2rem 4rem;
+}
+
+.cine .home-interlude-title {
+  font-size: min(6rem, calc((100vw - 2 * var(--home-gutter)) / 7.8));
+}
+
+/* The iPhone companion: a real capture, cropped above the tab bar, in a phone-shaped frame. */
+.cine .home-away {
+  display: grid;
+  gap: 1.75rem;
+}
+
+.cine .home-phone {
+  width: min(18rem, 70vw);
+}
+
+.cine .home-phone-screen {
+  overflow: hidden;
+  border: 1px solid oklch(var(--border));
+  border-radius: 2.25rem 2.25rem 0.75rem 0.75rem;
+  background: oklch(var(--card));
+}
+
+.cine .home-phone-screen img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.cine .home-dim {
+  color: oklch(var(--muted-foreground));
+}
+
+@media (min-width: 1024px) {
+  .cine .home-interlude {
+    grid-template-columns: minmax(0, 1fr) 26rem;
+    align-items: end;
+  }
+
+  .cine .home-interlude-title {
+    font-size: min(6rem, calc((100vw - 2 * var(--home-gutter) - 30rem) / 7.8));
+  }
+}
+
+/* Receipts: the capture bleeds off the left edge, copy on the right. */
+.cine .home-bleed-section {
+  overflow-x: clip;
+}
+
+.cine .home-bleed {
+  display: grid;
+  gap: 2.5rem;
+  padding-inline: var(--home-gutter);
+}
+
+@media (min-width: 1024px) {
+  .cine .home-bleed {
+    grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 4.5rem;
+    padding-left: 0;
+    padding-right: calc(max(0px, (100% - 90rem) / 2) + var(--home-gutter));
+  }
+
+  .cine .home-bleed-shot {
+    grid-row: 1;
+    grid-column: 1;
+    /* Only the frame leaves the page; the capture's own margin keeps its content in view. */
+    margin-left: -1.5rem;
+  }
+
+  .cine .home-bleed-copy {
+    grid-column: 2;
+  }
+}
+
+.cine .home-factory-link {
+  margin-top: 1rem;
+}
+
+.cine .home-full-shot {
+  margin-top: clamp(2.5rem, 2rem + 2vw, 4rem);
+}
+
+/* Machines: copy left, the transparent Mesh panel right. */
+.cine .home-split {
+  display: grid;
+  gap: 3rem 4.5rem;
+}
+
+.cine .home-price {
+  margin-top: 1.25rem;
+}
+
+.cine .home-machine-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  margin-top: 1.75rem;
+}
+
+.cine .home-mesh {
+  min-width: 0;
+  max-width: 36rem;
+}
+
+@media (min-width: 1024px) {
+  .cine .home-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .cine .home-mesh {
+    justify-self: end;
+    width: 100%;
+  }
+}
+
+/* Ownership: three facts in one ruled row. */
+.cine .home-facts {
+  display: grid;
+  margin-top: clamp(2.5rem, 2rem + 2vw, 3.5rem);
+  border-block: 1px solid oklch(var(--border) / 0.6);
+}
+
+.cine .home-facts > div {
+  padding-block: 1.5rem;
+}
+
+.cine .home-facts > div + div {
+  border-top: 1px solid oklch(var(--border) / 0.6);
+}
+
+.cine .home-facts dt {
+  font-variation-settings: "wdth" 116;
+  font-weight: 720;
+  font-size: clamp(1.375rem, 1.1rem + 1vw, 1.875rem);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+}
+
+.cine .home-facts dd {
+  max-width: 32ch;
+  margin-top: 0.6rem;
+  color: oklch(var(--muted-foreground));
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+@media (min-width: 768px) {
+  .cine .home-facts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cine .home-facts > div {
+    padding: 1.75rem 1.5rem 1.85rem 0;
+  }
+
+  .cine .home-facts > div + div {
+    border-top: 0;
+    border-left: 1px solid oklch(var(--border) / 0.6);
+    padding-left: 1.5rem;
+  }
+}
+
+/* Close: the painted mark over the last call. */
+.cine .home-close {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.cine .home-close-title {
+  margin-top: 1.75rem;
+  font-size: var(--home-display);
+}
+
+.cine .home-close-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 2.25rem;
 }
 
 /* --- Reduced motion -------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .cine .cine-rise,
-  .cine .cine-fade {
+  .cine .cine-rise {
     animation: none;
   }
 

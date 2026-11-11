@@ -3,19 +3,24 @@
  * Captures the real Mezair Desktop UI used on the website.
  *
  * Every image is a production component rendered with synthetic fixture
- * content. Nothing here is drawn by the website. Two sources are supported:
+ * content. Nothing here is drawn by the website. Three sources are supported:
  *
  *   replay   The standalone replay harness in mezair-app (no Electron, no IPC):
  *              cd mezair-app && pnpm exec vite --config scripts/chat-replay.vite.config.ts
+ *   probe    The real ChatView probe in mezair-app, with injected synthetic chat contexts:
+ *              cd mezair-app && pnpm exec vite --config scripts/chat-review.vite.config.ts --host 127.0.0.1 --port 4180
  *   desktop  The Electron app on an isolated fixture profile with remote debugging:
  *              MEZAIR_DEV_USER_DATA_PATH=/tmp/mezair-capture MEZAIR_DEV_PROCESSING_PREVIEW=1 \
  *                pnpm dev -- --remote-debugging-port=9333
  *            See scripts/capture-screens.md for seeding the fixture workspace.
  *
  * Usage: node scripts/capture-screens.mjs [id ...]
- * Env:   CHROME_PATH, MEZAIR_REPLAY_URL (http://127.0.0.1:4179), MEZAIR_DESKTOP_CDP (9333)
+ * Env:   CHROME_PATH, MEZAIR_REPLAY_URL (http://127.0.0.1:4179), MEZAIR_PROBE_URL
+ *        (http://127.0.0.1:4180), MEZAIR_DESKTOP_CDP (9333)
  *
  * Writes public/screens/<id>.webp (or .png without cwebp) and public/screens/manifest.json.
+ * The iPhone companion captures (`source: "simulator"`) are taken by hand in the iOS simulator;
+ * see scripts/capture-screens.md. Full runs keep their manifest entries.
  */
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
@@ -26,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = path.join(root, 'public', 'screens');
 const replayUrl = process.env.MEZAIR_REPLAY_URL ?? 'http://127.0.0.1:4179';
+const probeUrl = process.env.MEZAIR_PROBE_URL ?? 'http://127.0.0.1:4180';
 const desktopPort = Number(process.env.MEZAIR_DESKTOP_CDP ?? 9333);
 const chromePath =
   process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -34,8 +40,8 @@ const chromePath =
 /**
  * @typedef {object} Capture
  * @property {string} id
- * @property {'replay' | 'desktop'} source
- * @property {string} route      Query string for replay, hash route for desktop
+ * @property {'replay' | 'probe' | 'desktop'} source
+ * @property {string} route      Query string for replay, page path for probe, hash route for desktop
  * @property {[number, number]} viewport
  * @property {string} [selector] Element to clip; whole viewport when absent
  * @property {string} [hasText]  Narrows `selector` to the element containing this text
@@ -62,6 +68,15 @@ const captures = [
     id: 'surface-review', source: 'replay', route: '?capture=surface-review-working-tree',
     viewport: [1100, 940], settle: 1500,
     fixture: 'Working tree review: verdict and findings first; supporting context under Review details',
+  },
+  {
+    id: 'agents-at-work',
+    source: 'probe',
+    route: 'agents-at-work.html?picker',
+    viewport: [1440, 900],
+    settle: 2500,
+    fixture:
+      'AgentsAtWorkProbe: production ChatView with synthetic Acme threads for Codex, Claude Code, Cursor and Devin; Cursor thread active with the model picker open',
   },
   {
     id: 'desktop-run-complete',
@@ -167,6 +182,23 @@ const captures = [
     steps: [{ select: ['#chat-replay-scenario', scenario] }, { wait: 400 }, { click: 'Show complete' }, { wait: 1500 }],
     fixture: `ChatReplayPreview ${scenario}: ${fixture}`,
   })),
+];
+
+/**
+ * Focal crops of captures above, for layouts where the whole window would be too small to read.
+ * Box is [x, y, width, height] in the source file's pixels. Each crop is cut from the shipped
+ * source file after captures run, and inherits its source's commit and capture date.
+ * @type {{ id: string, from: string, box: [number, number, number, number] }[]}
+ */
+const crops = [
+  // The open model picker and the composer's Cursor Composer 2 control beneath it.
+  { id: 'agents-at-work-picker', from: 'agents-at-work', box: [1846, 344, 744, 1418] },
+  // The thread rail: five threads waiting, working and finished, with their access badges.
+  { id: 'agents-at-work-rail', from: 'agents-at-work', box: [0, 140, 560, 1405] },
+  // Security audit heading, summary, severity counts and the first four findings.
+  { id: 'surface-findings-mobile', from: 'surface-findings', box: [140, 185, 820, 690] },
+  // The run list: Needs you and In progress groups with station pips and names.
+  { id: 'factories-line-mobile', from: 'factories-line', box: [520, 512, 742, 906] },
 ];
 
 class Cdp {
@@ -317,7 +349,8 @@ async function captureReplay(cdp, capture) {
     sessionId,
   );
   const loaded = cdp.once('Page.loadEventFired', sessionId);
-  await cdp.send('Page.navigate', { url: `${replayUrl}/${capture.route}` }, sessionId);
+  const base = capture.source === 'probe' ? probeUrl : replayUrl;
+  await cdp.send('Page.navigate', { url: `${base}/${capture.route}` }, sessionId);
   await loaded;
   await sleep(capture.settle ?? 1500);
   if (capture.transparent) {
@@ -410,8 +443,15 @@ async function main() {
   await fs.mkdir(outDir, { recursive: true });
   const manifestPath = path.join(outDir, 'manifest.json');
   // A full run rebuilds the manifest; a partial run updates only the named captures.
+  // Companion captures come from the iOS simulator by hand (see capture-screens.md), so a full
+  // run keeps their entries.
+  const existing = JSON.parse(await fs.readFile(manifestPath, 'utf8').catch(() => '{}'));
   const manifest =
-    only.size === 0 ? {} : JSON.parse(await fs.readFile(manifestPath, 'utf8').catch(() => '{}'));
+    only.size === 0
+      ? Object.fromEntries(
+          Object.entries(existing).filter(([, entry]) => entry.source === 'simulator'),
+        )
+      : existing;
   const webp = hasCwebp();
   const commit = appCommit();
   let chrome = null;
@@ -419,11 +459,11 @@ async function main() {
   try {
     for (const capture of selected) {
       process.stdout.write(`${capture.id} … `);
-      if (capture.source === 'replay' && chrome === null) chrome = await launchChrome();
+      if (capture.source !== 'desktop' && chrome === null) chrome = await launchChrome();
       const { data, clip } =
-        capture.source === 'replay'
-          ? await captureReplay(chrome.cdp, capture)
-          : await captureDesktop(capture);
+        capture.source === 'desktop'
+          ? await captureDesktop(capture)
+          : await captureReplay(chrome.cdp, capture);
       const pngPath = path.join(os.tmpdir(), `${capture.id}.png`);
       await fs.writeFile(pngPath, Buffer.from(data, 'base64'));
       const file = `${capture.id}.${webp ? 'webp' : 'png'}`;
@@ -453,6 +493,37 @@ async function main() {
       await fs.rm(chrome.profile, { recursive: true, force: true }).catch(() => undefined);
     }
   }
+  // Derived crops: rerun when their source was captured this run or when named directly.
+  const capturedIds = new Set(selected.map((capture) => capture.id));
+  for (const crop of crops) {
+    if (only.size > 0 && !only.has(crop.id) && !capturedIds.has(crop.from)) continue;
+    const source = manifest[crop.from];
+    if (!source) throw new Error(`Crop ${crop.id}: no manifest entry for ${crop.from}`);
+    if (!source.file.endsWith('.webp') || !webp) {
+      throw new Error(`Crop ${crop.id}: cwebp and a WebP source are required`);
+    }
+    const [x, y, width, height] = crop.box;
+    const file = `${crop.id}.webp`;
+    execFileSync('cwebp', [
+      '-quiet', '-q', '90', '-m', '6',
+      '-crop', String(x), String(y), String(width), String(height),
+      path.join(outDir, path.basename(source.file)),
+      '-o', path.join(outDir, file),
+    ]);
+    manifest[crop.id] = {
+      file: `/screens/${file}`,
+      width,
+      height,
+      source: 'crop',
+      cropOf: crop.from,
+      box: crop.box,
+      appCommit: source.appCommit,
+      ...(source.appWorkingTree !== undefined ? { appWorkingTree: source.appWorkingTree } : {}),
+      capturedAt: source.capturedAt,
+    };
+    console.log(`${crop.id} (crop of ${crop.from}) ${width}×${height}`);
+  }
+
   const sorted = Object.fromEntries(Object.entries(manifest).sort(([a], [b]) => a.localeCompare(b)));
   await fs.writeFile(manifestPath, `${JSON.stringify(sorted, null, 2)}\n`);
 }

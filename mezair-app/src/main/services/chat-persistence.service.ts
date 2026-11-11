@@ -1,5 +1,10 @@
 import { acquireCheckpointLifecycle } from './chat-checkpoint-lifecycle.js';
 import { listThreadPullRequestLinks } from './thread-pull-request.service.js';
+import {
+  getThreadCheckouts,
+  assertThreadCheckoutMutable,
+  assertCheckoutSelectionIdle,
+} from './thread-checkout.service.js';
 import { randomUUID } from 'node:crypto';
 import type {
   AgentProvider,
@@ -305,6 +310,7 @@ function mapThreadRow(row: ChatThreadRow): ChatThread {
     workItemProvider: parseWorkItemProvider(row.work_item_provider),
     workItemTitle: row.work_item_title ?? undefined,
     repoIds: parseRepoIds(row.repo_ids_json),
+    checkouts: getThreadCheckouts(row.id),
     activeRepoId: row.active_repo_id ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -713,6 +719,25 @@ export function updateChatThread(
     }
 
     if (updates.repoIds) {
+      const current = db
+        .prepare('SELECT repo_ids_json FROM chat_threads WHERE id = ?')
+        .get(threadId) as { repo_ids_json: string } | undefined;
+      if (
+        current &&
+        serialiseRepoIds(updates.repoIds) !== serialiseRepoIds(parseRepoIds(current.repo_ids_json))
+      ) {
+        assertCheckoutSelectionIdle(threadId);
+        assertThreadCheckoutMutable(threadId);
+        const removedBindings = getThreadCheckouts(threadId).filter(
+          (binding) => !updates.repoIds!.includes(binding.repoId),
+        );
+        for (const binding of removedBindings) {
+          db.prepare('DELETE FROM thread_checkouts WHERE thread_id = ? AND repo_id = ?').run(
+            threadId,
+            binding.repoId,
+          );
+        }
+      }
       assignments.push('repo_ids_json = ?');
       values.push(serialiseRepoIds(updates.repoIds));
     }
@@ -821,6 +846,7 @@ export function deleteChatThread(threadId: string): void {
     const tx = db.transaction(() => {
       db.prepare('DELETE FROM chat_messages WHERE thread_id = ?').run(threadId);
       db.prepare('DELETE FROM chat_sessions WHERE thread_id = ?').run(threadId);
+      db.prepare('DELETE FROM thread_checkouts WHERE thread_id = ?').run(threadId);
       db.prepare('DELETE FROM chat_threads WHERE id = ?').run(threadId);
     });
     tx();

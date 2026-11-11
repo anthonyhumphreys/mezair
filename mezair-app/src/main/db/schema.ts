@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 122;
+export const SCHEMA_VERSION = 123;
 
 export const CHECKPOINT_CLEANUP_TRIGGER_SQL = `
 DROP TRIGGER IF EXISTS queue_chat_checkpoint_cleanup;
@@ -214,6 +214,17 @@ CREATE TABLE IF NOT EXISTS chat_threads (
   settled_at TEXT,
   summary TEXT,
   title_locked INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS thread_checkouts (
+  thread_id TEXT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+  repo_id TEXT NOT NULL REFERENCES repos(id),
+  source_repo_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  branch TEXT NOT NULL,
+  base_commit TEXT NOT NULL,
+  owned INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(thread_id, repo_id)
 );
 
 CREATE TABLE IF NOT EXISTS chat_sessions (
@@ -4268,6 +4279,17 @@ CREATE TABLE IF NOT EXISTS chat_checkpoint_ref_manifest (
   ref_name TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_checkpoint_ref_manifest_parent ON chat_checkpoint_ref_manifest(checkpoint_id);
+`,
+  123: `CREATE TABLE IF NOT EXISTS thread_checkouts (
+  thread_id TEXT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+  repo_id TEXT NOT NULL REFERENCES repos(id),
+  source_repo_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  branch TEXT NOT NULL,
+  base_commit TEXT NOT NULL,
+  owned INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(thread_id, repo_id)
+);
 `,
 };
 

@@ -2,6 +2,7 @@ import { assertNoManagedWorkerWrites } from '../services/managed-worker-paths.js
 import {
   listActiveCodexSessions,
   getCodexSessionExecutionPaths,
+  hasActiveSessionAtPath,
 } from '../services/codex-session.service.js';
 import { checkpointPathsOverlap } from '../services/chat-checkpoint.service.js';
 import { ipcMain } from 'electron';
@@ -55,6 +56,15 @@ function repoPath(repoId: string): string {
     { path: string } | undefined;
   if (!row) throw new Error(`Repo not found: ${repoId}`);
   return row.path;
+}
+
+function checkoutPathForBranchChange(repoId: string): string {
+  const targetPath = repoPath(repoId);
+  if (hasActiveSessionAtPath(targetPath))
+    throw new Error(
+      'A chat session is using this checkout. Stop its sessions before switching branches, or create a worktree.',
+    );
+  return targetPath;
 }
 
 export function registerGitHandlers(): void {
@@ -151,7 +161,7 @@ export function registerGitHandlers(): void {
     const repo = db.prepare('SELECT name, path FROM repos WHERE id = ?').get(repoId) as
       { name: string; path: string } | undefined;
     if (!repo) throw new Error(`Repo not found: ${repoId}`);
-    return createPullRequestFromChanges(repoId, repo.name, repo.path);
+    return createPullRequestFromChanges(repoId, repo.name, checkoutPathForBranchChange(repoId));
   });
 
   ipcMain.handle(
@@ -225,11 +235,11 @@ export function registerGitHandlers(): void {
   });
 
   ipcMain.handle('git:create-branch', (_e, repoId: string, name: string, startPoint?: string) => {
-    return createBranch(repoPath(repoId), name, startPoint);
+    return createBranch(checkoutPathForBranchChange(repoId), name, startPoint);
   });
 
   ipcMain.handle('git:switch-branch', (_e, repoId: string, name: string) => {
-    return switchBranch(repoPath(repoId), name);
+    return switchBranch(checkoutPathForBranchChange(repoId), name);
   });
 
   ipcMain.handle('git:delete-branch', (_e, repoId: string, name: string, force?: boolean) => {

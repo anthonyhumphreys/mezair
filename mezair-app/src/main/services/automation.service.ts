@@ -22,7 +22,6 @@ import { isAcpAgentProvider, type AcpAgentProvider } from '../../shared/agent-pr
 import { providerSpawnEnv } from './agent-spawn-env.js';
 import { acpProviderLabel, buildAcpPrintInvocation } from './acp-print-cli.js';
 import { spawn } from 'node:child_process';
-import fs from 'node:fs';
 import path from 'node:path';
 import type {
   AutomationDaemonStatus,
@@ -425,8 +424,9 @@ async function prepareWorktrees(
 
 async function cleanupWorktrees(worktrees: PreparedWorktree[]): Promise<void> {
   for (const worktree of worktrees) {
-    await removeWorktree(worktree.originalPath, worktree.path).catch(() => undefined);
-    fs.rmSync(path.dirname(worktree.path), { recursive: true, force: true });
+    // Let Git reject dirty or locked worktrees and retain them on failure.
+    // The parent directory can contain other repositories from this run.
+    await removeWorktree(worktree.originalPath, worktree.path);
   }
 }
 

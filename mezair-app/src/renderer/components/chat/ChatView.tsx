@@ -52,6 +52,7 @@ import { WorkspaceReadinessStrip } from '../workspace/WorkspaceReadinessStrip';
 import { getStarterPrompts } from '../../utils/starter-prompts';
 import { DesignProvider } from '../../contexts/DesignContext';
 import { RepoSelector } from '../shared/RepoSelector';
+import { ThreadCheckoutPicker } from './ThreadCheckoutPicker';
 import { GovernanceSelector } from '../shared/GovernanceSelector';
 import { extractFindings, type ExtractedFinding } from '../../utils/finding-parser';
 import type { ExecutionStrategy } from '../../utils/execution-strategy';
@@ -178,6 +179,7 @@ export function ChatView({ userRole }: ChatViewProps) {
     loadEarlierHistory,
     threadViewSnapshot,
     setActiveRepos,
+    chooseCheckout,
     selectThread,
     renameThread,
     settleThread,
@@ -798,13 +800,30 @@ export function ChatView({ userRole }: ChatViewProps) {
     () =>
       scaffoldModeActive || isTemporaryChat ? null : (
         <>
-          <RepoSelector
-            variant="dropdown"
-            mode="multi"
-            indexedOnly={false}
-            placement="top"
-            selectedRepoIds={activeRepos.map((repo) => repo.id)}
-            onMultiSelect={setActiveRepos}
+          {/* A started thread keeps its repositories and checkouts; start a new thread to change them. */}
+          {activeThread?.messageCount || session ? (
+            <span
+              className="max-w-48 truncate px-1 text-xs text-text-secondary"
+              title={activeRepos.map((repo) => repo.path).join('\n')}
+            >
+              {activeRepos.map((repo) => repo.name).join(', ')}
+            </span>
+          ) : (
+            <RepoSelector
+              variant="dropdown"
+              mode="multi"
+              indexedOnly={false}
+              placement="top"
+              selectedRepoIds={activeRepos.map((repo) => repo.id)}
+              onMultiSelect={setActiveRepos}
+            />
+          )}
+          <ThreadCheckoutPicker
+            key={activeThreadId ?? 'new'}
+            repos={activeRepos}
+            checkouts={activeThread?.checkouts ?? []}
+            disabled={busy || Boolean(session) || Boolean(activeThread?.messageCount)}
+            onChoose={chooseCheckout}
           />
           <GovernanceSelector
             placement="top"
@@ -817,6 +836,12 @@ export function ChatView({ userRole }: ChatViewProps) {
       scaffoldModeActive,
       isTemporaryChat,
       activeRepos,
+      activeThread?.messageCount,
+      activeThread?.checkouts,
+      activeThreadId,
+      session,
+      busy,
+      chooseCheckout,
       selectedGovernanceDocs,
       setActiveRepos,
       setSelectedGovernanceDocs,
@@ -1615,7 +1640,22 @@ export function ChatView({ userRole }: ChatViewProps) {
               : 'New thread'
         }
         workspaceName={
-          isTemporaryChat ? 'Temporary chat' : (activeWorkspace?.name ?? 'No workspace')
+          isTemporaryChat
+            ? 'Temporary chat'
+            : [
+                activeWorkspace?.name ?? 'No workspace',
+                // Name each repository's checkout branch, so a worktree thread says where it works.
+                activeRepos
+                  .map(
+                    (repo) =>
+                      activeThread?.checkouts?.find((checkout) => checkout.repoId === repo.id)
+                        ?.branch || repo.defaultBranch,
+                  )
+                  .filter(Boolean)
+                  .join(', '),
+              ]
+                .filter(Boolean)
+                .join(' · ')
         }
         scaffoldModeActive={scaffoldModeActive}
         scaffoldStatus={scaffoldStatus}

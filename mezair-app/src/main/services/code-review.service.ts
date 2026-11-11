@@ -429,9 +429,14 @@ async function runReviewVerification(opts: {
   }
 
   if (commands.length === 0) {
-    await removeWorktree(repoPath, worktreePath).catch(() => undefined);
+    const removed = await removeWorktree(repoPath, worktreePath).then(
+      () => true,
+      () => false,
+    );
     return {
       status: 'not_run',
+      worktreePath: removed ? undefined : worktreePath,
+      worktreeKept: !removed,
       summary:
         'No suitable branch-local verification commands were configured or detected for this repository.',
       targetRef: startPoint,
@@ -478,7 +483,11 @@ async function runReviewVerification(opts: {
     });
   } finally {
     if (!keepWorktree) {
-      await removeWorktree(repoPath, worktreePath).catch(() => undefined);
+      // The verification worktree is Mezair's own disposable copy, left dirty by installs and
+      // builds, so it is force-removed; a plain remove would leak one per review.
+      await removeWorktree(repoPath, worktreePath, { force: true }).catch(() => {
+        keepWorktree = true;
+      });
     }
   }
 

@@ -80,7 +80,7 @@
     "publish": "ray publish"
   },
   "dependencies": {
-    "@raycast/api": "^1.104.24",
+    "@raycast/api": "^2.12.0",
     "@raycast/utils": "^2.3.3",
     "ws": "^8.22.0"
   },

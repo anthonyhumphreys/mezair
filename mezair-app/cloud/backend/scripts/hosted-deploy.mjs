@@ -682,6 +682,17 @@ function assertFreshAgainstFingerprints(manifest, secrets) {
       'Staging credential fingerprint reference is missing or invalid JSON.',
     );
   }
+  assertFreshAgainstSecretFingerprints(reference, secrets, {
+    requireProvisionerFingerprint: manifest.environments.staging.managedProvisioner,
+  });
+}
+
+/** Shared by CI preflight and file-backed deployments so stale references fail closed. */
+export function assertFreshAgainstSecretFingerprints(
+  reference,
+  secrets,
+  { requireProvisionerFingerprint = false } = {},
+) {
   const entries = reference?.fingerprints;
   if (
     reference?.schemaVersion !== 1 ||
@@ -690,7 +701,7 @@ function assertFreshAgainstFingerprints(manifest, secrets) {
     typeof entries !== 'object' ||
     Array.isArray(entries) ||
     REQUIRED_FINGERPRINT_NAMES.some((name) => !Object.hasOwn(entries, name)) ||
-    (manifest.environments.staging.managedProvisioner && !entries.MANAGED_PROVISIONER_TOKEN) ||
+    (requireProvisionerFingerprint && !entries.MANAGED_PROVISIONER_TOKEN) ||
     Object.entries(entries).some(
       ([name, hashes]) =>
         !SECRET_NAMES.has(name) ||
@@ -703,6 +714,14 @@ function assertFreshAgainstFingerprints(manifest, secrets) {
   )
     throw new HostedDeployError(
       'Staging credential fingerprint reference is incomplete or malformed.',
+    );
+
+  if (
+    Object.hasOwn(secrets, 'CLOUDFLARE_TUNNEL_API_TOKEN') &&
+    !Object.hasOwn(entries, 'CLOUDFLARE_TUNNEL_API_TOKEN')
+  )
+    throw new HostedDeployError(
+      'Production tunnel credentials require a staging CLOUDFLARE_TUNNEL_API_TOKEN fingerprint. Refresh the staging credential fingerprint reference before enabling managed ingress.',
     );
 
   const production = createBackendSecretFingerprints(secrets).fingerprints;

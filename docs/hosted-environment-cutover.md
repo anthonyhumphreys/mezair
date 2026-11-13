@@ -167,6 +167,37 @@ deployment history confirmed the version and traffic allocation for each Worker.
 These checks do not claim live work item or source control writes, a completed
 customer sign-in, subscription checkout, or physical multi-device acceptance.
 
+## CI and managed WAN repair — 13 November 2026
+
+Live inspection confirmed the 1 November backend versions above still receive
+100% traffic and both public descriptors respond with the expected environment
+identity and `sync/2` / `mesh/2` profiles. Checkout, Cloud Agents and managed
+endpoints remain disabled; installed Worker secret names contain no tunnel
+credentials.
+
+Both GitHub deployment environments were missing their Cloudflare deployment
+API token. Staging was also missing `MEZAIR_STAGING_WORKER_VARS_JSON`, causing
+its latest CI run to fail before deployment. Explicit disabled bootstrap
+settings were installed and read back in that staging variable and in
+`MEZAIR_PRODUCTION_WORKER_VARS_JSON`. No Worker rollout flags were changed.
+
+The workflow repair checks required protected inputs before dependency
+installation. Production now preserves a saved managed rollout and installs
+its required tunnel secrets instead of unconditionally resetting the managed
+flag. Checkout and Cloud Agents stay off. Tunnel DNS reconciliation also
+repairs a matching CNAME if proxying is disabled or unknown.
+
+Production tunnel credentials require a current staging tunnel-token fingerprint
+in the comparison reference. A core-only bootstrap reference cannot establish
+that isolation and is rejected before provider mutations.
+
+Public DNS still delegates `mezair.dev` to `ns1.vercel-dns.com` and
+`ns2.vercel-dns.com`; the proposed `sync.mezair.dev` API hostname returns a
+Vercel deployment-not-found response. Clients use the working `workers.dev`
+origins. A managed-host domain decision and scoped runtime tokens remain
+necessary before a staging WAN rehearsal. These repairs do not establish a
+successful deployment workflow or signed-in physical-device acceptance.
+
 ## Remaining operator steps
 
 1. **GitHub deployment access.** The application credentials are installed.

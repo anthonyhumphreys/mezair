@@ -839,7 +839,18 @@ observability settings in generated configurations. Hosted runtime logs redact
 query strings. Production deployment is a manual workflow restricted to `main`
 and the `mezair-production` environment, with a provider-evidence reference.
 Bootstrap deployment keeps checkout, hosted coding agents and managed tunnels
-disabled. Admission approval never substitutes for subscription entitlement.
+disabled. CI requires explicit protected rollout variables for each environment
+and checks required credentials before installing dependencies. Later production
+deployments preserve a reviewed saved managed-tunnel opt-in and domain rather
+than resetting ingress; enabling it requires the dedicated tunnel secrets and
+the existing staging/production credential-isolation checks. A production tunnel
+token requires a valid staging tunnel-token fingerprint in both CI preflight and
+the deployment wrapper; a core-only bootstrap reference cannot establish token
+isolation for managed ingress. Checkout remains
+disabled and hosted coding agents stay forced off in these workflows. Admission
+approval never substitutes for subscription entitlement.
+Managed Tunnel DNS reconciliation must restore proxied CNAMEs even when the
+tunnel target already matches; successful allocation cannot leave DNS-only ingress.
 WorkOS staging has public signup and its waitlist disabled for internal testing;
 production retains waitlist approval.
 

@@ -900,6 +900,64 @@ test('fingerprint isolation rejects reused scalar and renamed HMAC credentials w
   }
 });
 
+test('production tunnel secrets require a complete staging tunnel fingerprint reference', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'hosted-tunnel-fingerprints-test-'));
+  const referencePath = join(directory, 'fingerprints.json');
+  const stageSecrets = {
+    HOSTED_SERVICE_KEYS: JSON.stringify({ website: 's'.repeat(48) }),
+    WORKOS_API_KEY: 'sk_staging_unique',
+    WORKOS_WEBHOOK_SECRET: 'staging_webhook_unique',
+  };
+  const productionSecrets = {
+    HOSTED_SERVICE_KEYS: JSON.stringify({ website: 'x'.repeat(48) }),
+    WORKOS_API_KEY: 'sk_production_unique',
+    WORKOS_WEBHOOK_SECRET: 'production_webhook_unique',
+  };
+  const targetManifest = { ...manifest, stagingSecretFingerprintsFile: referencePath };
+  try {
+    const coreReference = createBackendSecretFingerprints(stageSecrets);
+    writeJson(referencePath, coreReference);
+    assert.doesNotThrow(() => assertProductionSecretsAreFresh(targetManifest, productionSecrets));
+    const withTunnel = {
+      ...productionSecrets,
+      CLOUDFLARE_TUNNEL_API_TOKEN: 'staging-tunnel-token',
+    };
+    assert.throws(
+      () => assertProductionSecretsAreFresh(targetManifest, withTunnel),
+      /require a staging CLOUDFLARE_TUNNEL_API_TOKEN fingerprint/,
+    );
+    for (const invalid of [[], ['not-a-hash']]) {
+      writeJson(referencePath, {
+        ...coreReference,
+        fingerprints: { ...coreReference.fingerprints, CLOUDFLARE_TUNNEL_API_TOKEN: invalid },
+      });
+      assert.throws(
+        () => assertProductionSecretsAreFresh(targetManifest, withTunnel),
+        /incomplete or malformed/,
+      );
+    }
+    writeJson(
+      referencePath,
+      createBackendSecretFingerprints({
+        ...stageSecrets,
+        CLOUDFLARE_TUNNEL_API_TOKEN: 'staging-tunnel-token',
+      }),
+    );
+    assert.throws(
+      () => assertProductionSecretsAreFresh(targetManifest, withTunnel),
+      /Production secret CLOUDFLARE_TUNNEL_API_TOKEN reuses staging/,
+    );
+    assert.doesNotThrow(() =>
+      assertProductionSecretsAreFresh(targetManifest, {
+        ...withTunnel,
+        CLOUDFLARE_TUNNEL_API_TOKEN: 'independent-production-tunnel-token',
+      }),
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('fingerprint isolation fails closed on incomplete or malformed references', () => {
   const directory = mkdtempSync(join(tmpdir(), 'hosted-fingerprints-test-'));
   const referencePath = join(directory, 'fingerprints.json');

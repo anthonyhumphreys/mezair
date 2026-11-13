@@ -32,6 +32,7 @@ interface DnsRecord {
   type?: string;
   name?: string;
   content?: string;
+  proxied?: boolean;
 }
 
 export type CloudflareTunnelPhase =
@@ -221,7 +222,7 @@ export class CloudflareTunnelProvider {
       throw new CloudflareTunnelError('multiple DNS records match allocation hostname', false, null, 'dns-list');
     }
     const existing = matching[0];
-    if (existing?.id && existing.content === tunnelTarget) return existing.id;
+    if (existing?.id && existing.content === tunnelTarget && existing.proxied === true) return existing.id;
     if (existing?.id) {
       const updated = await this.call(
         'PUT',

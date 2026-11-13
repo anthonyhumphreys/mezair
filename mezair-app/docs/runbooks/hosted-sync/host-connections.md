@@ -116,6 +116,22 @@ and provider credentials. The backend needs:
 - `CLOUDFLARE_TUNNEL_ACCOUNT_ID`, `CLOUDFLARE_TUNNEL_ZONE_ID` and
   `CLOUDFLARE_TUNNEL_API_TOKEN` as Worker secrets.
 
+The runtime token needs account-scoped **Cloudflare One Connector: cloudflared
+Write** (or **Cloudflare Tunnel Write**) and **DNS Write** for the selected
+Cloudflare zone. Keep staging and production tokens separate. The zone must
+control the generated hostnames; the old `anvilstack.dev` zone ID is not a
+`mezair.dev` zone ID. On 13 November 2026, `mezair.dev` still delegated DNS to
+Vercel. Choose an accessible Cloudflare-managed domain or arrange a reviewed DNS
+cutover before enabling allocation.
+
+The provider creates proxied CNAMEs and repairs matching DNS-only records on
+reconciliation. Check certificate coverage for the generated hostname as well:
+`MACHINE_ENDPOINT_DOMAIN=mezair.dev` produces first-level
+`host-<hash>.mezair.dev` names, while `mesh.mezair.dev` produces deeper names
+that need additional certificate coverage under a full Cloudflare DNS setup.
+See [Tunnel API setup](https://developers.cloudflare.com/tunnel/get-started/)
+and [Universal SSL coverage](https://developers.cloudflare.com/ssl/edge-certificates/universal-ssl/).
+
 The backend allocates a generation-fenced Cloudflare Tunnel and publishes its
 HTTPS hostname only when allocation is ready. The host starts a separate
 loopback listener on `127.0.0.1` and gives that origin to the tunnel

@@ -193,6 +193,58 @@ describe('Cloudflare managed tunnel adapter', () => {
     });
   });
 
+  it.each([
+    { initialProxyStatus: false, expectedUpdates: 1 },
+    { initialProxyStatus: undefined, expectedUpdates: 1 },
+    { initialProxyStatus: true, expectedUpdates: 0 },
+  ])('requires a proxied CNAME and reuses it after reconciliation ($initialProxyStatus)', async ({
+    initialProxyStatus,
+    expectedUpdates,
+  }) => {
+    let proxied = initialProxyStatus;
+    let updates = 0;
+    const request = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = new URL(input.toString());
+      const method = init?.method ?? 'GET';
+      if (url.pathname.endsWith('/cfd_tunnel') && method === 'GET') {
+        return response([{ id: tunnelId, name: tunnelName, deleted_at: null }]);
+      }
+      if (url.pathname.endsWith(`/cfd_tunnel/${tunnelId}/configurations`) && method === 'PUT') {
+        return response({});
+      }
+      if (url.pathname.endsWith('/dns_records') && method === 'GET') {
+        return response([{
+          id: dnsRecordId,
+          type: 'CNAME',
+          name: hostname,
+          content: `${tunnelId}.cfargotunnel.com`,
+          proxied,
+        }]);
+      }
+      if (url.pathname.endsWith(`/dns_records/${dnsRecordId}`) && method === 'PUT') {
+        expect(JSON.parse(init?.body as string)).toEqual({
+          type: 'CNAME', name: hostname, content: `${tunnelId}.cfargotunnel.com`, proxied: true, ttl: 1,
+        });
+        updates += 1;
+        proxied = true;
+        return response({});
+      }
+      if (url.pathname.endsWith(`/cfd_tunnel/${tunnelId}/token`) && method === 'GET') {
+        return response(connectorToken);
+      }
+      throw new Error(`unexpected Cloudflare API request: ${method} ${url.pathname}`);
+    };
+    const tunnels = provider(request as typeof fetch);
+    const input = { stableName: tunnelName, stableHostLabel: 'host-0123456789abcdef01234567', operationId };
+    const allocation = { tunnelId, connectorToken, dnsRecordId, hostname };
+
+    await expect(tunnels.ensure(input)).resolves.toEqual(allocation);
+    expect(updates).toBe(expectedUpdates);
+    expect(proxied).toBe(true);
+    await expect(tunnels.ensure(input)).resolves.toEqual(allocation);
+    expect(updates).toBe(expectedUpdates);
+  });
+
   it('rejects malformed DNS IDs returned by Cloudflare and never deletes with a malformed stored ID', async () => {
     const calls: string[] = [];
     const request = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {

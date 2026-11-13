@@ -8,8 +8,9 @@ signed-in or physical-device acceptance.
 ## Hosted backend workflow
 
 `.github/workflows/sync-backend-staging.yml` deploys the existing staging
-backend on matching pushes to `develop` and
-`feature/sync-mesh--foundations`. The workflow checks backend and deployment
+backend on matching pushes to `develop` and manual dispatches from `develop`
+or `main`. Both backend workflows check required protected inputs before
+installing dependencies. The workflow checks backend and deployment
 guards, builds the Cloud CLI, generates staging config from
 `hosted-targets.ci.json`, reviews a plan, applies D1 migrations, deploys the
 Worker, installs the protected runtime secrets, verifies their names on the
@@ -35,7 +36,11 @@ The `mezair-staging` GitHub environment needs these secrets:
   settings. It must set `HOSTED_CHECKOUT_ENABLED` to the string `false`.
   Never put secret values in this JSON.
 
-For the current managed host rehearsal, save
+The saved staging configuration was restored on 13 November 2026 with checkout,
+Cloud Agents and managed endpoints explicitly set to the string `false`.
+The protected `CLOUDFLARE_DEPLOY_API_TOKEN` is still required before CI can deploy.
+
+For an approved managed host rehearsal, save
 `MEZAIR_MESH_MANAGED_ENDPOINTS: "true"` and a valid `MACHINE_ENDPOINT_DOMAIN` in
 `MEZAIR_STAGING_WORKER_VARS_JSON`, and add protected secrets
 `CLOUDFLARE_TUNNEL_ACCOUNT_ID`, `CLOUDFLARE_TUNNEL_ZONE_ID`, and
@@ -50,6 +55,33 @@ Keep the pilot off until its controlled domain, scoped Cloudflare token, and
 trusted host connector are ready. The workflow's descriptor check requires
 `mezair-backend/1`, `sync/2`, `mesh/2`, `workos-device`, and the staging public
 client.
+
+## Production deployment inputs
+
+The manual production workflow runs only on `main`, uses the protected
+`mezair-production` environment and requires a provider-evidence reference.
+It reads `MEZAIR_PRODUCTION_WORKER_VARS_JSON` rather than resetting a saved
+managed rollout on each deploy. Its initial configuration has checkout,
+Cloud Agents and managed endpoints disabled. Checkout must remain disabled
+for this deployment path; Cloud Agents are forced off.
+
+Production needs its own `CLOUDFLARE_DEPLOY_API_TOKEN`, the three core hosted
+secrets listed above and `STAGING_SECRET_FINGERPRINTS_JSON`. An enabled managed
+rollout also needs `MACHINE_ENDPOINT_DOMAIN` in the protected JSON and all
+three tunnel secrets. Use a distinct production tunnel token and refresh the
+staging fingerprint reference whenever staging credentials change. Optional
+`HOSTED_OPERATOR_KEYS` are passed through when configured.
+
+An enabled production managed rollout requires the reference to include the
+staging `CLOUDFLARE_TUNNEL_API_TOKEN` fingerprint. A bootstrap reference created
+before staging tunnel setup is rejected; refresh it after the staging token is
+installed, without copying the staging credential bundle into production.
+
+Create deployment API tokens using the [Cloudflare CI authentication guide](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/).
+Include the account permissions needed by Workers deployment, D1 migrations
+and R2 provisioning. Store each token directly in its selected GitHub
+environment; an interactive Wrangler OAuth session is not a CI credential.
+The managed tunnel token is a separate runtime credential.
 
 ## Desktop candidates
 
